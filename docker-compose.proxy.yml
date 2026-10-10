@@ -1,0 +1,27 @@
+# Despliegue detrás del Nginx de OTRO sistema del mismo servidor, que ya tiene 80/443 y termina el
+# HTTPS (en el VPS: el Nginx del SGA, como con FadeApp). Ver docs/07-despliegue.md §2c.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d --build --wait
+#
+# El gateway no publica puertos: se une a la red del otro Nginx con el alias `huellitas-web`, y ese
+# Nginx le pasa el tráfico del dominio con `proxy_pass https://huellitas-web:443`.
+# TRUSTED_PROXY debe ser la subred de esa red, para tomar la IP real del cliente de X-Forwarded-For.
+services:
+  gateway:
+    ports: !reset []
+    environment:
+      SERVER_NAME: ${SERVER_NAME:?define SERVER_NAME (dominio público)}
+      HTTPS_PORT: 443
+      TRUSTED_PROXY: ${TRUSTED_PROXY:?define TRUSTED_PROXY (subred de la red del proxy)}
+    networks:
+      publica:
+      interna:
+      proxy:
+        aliases: [huellitas-web]
+
+  frontend-dev: !reset null
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:?define PROXY_NETWORK (red de Docker del proxy de delante)}

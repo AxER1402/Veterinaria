@@ -97,7 +97,7 @@ Abrir <https://localhost:8443>. En local el certificado es autofirmado y se gene
 tests/seguridad.sh
 ```
 
-Corre los casos CP-01 a CP-34 contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto manipulado), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2 vencimiento de pedidos sin pagar y verificación en dos pasos.
+Corre los casos CP-01 a CP-35 contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto manipulado), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2 vencimiento de pedidos sin pagar , verificación en dos pasos e IP del cliente no falsificable.
 
 > La ráfaga del CP-16 agota el cupo de `/login` del gateway. Si se repite la prueba enseguida, la suite espera sola a que se recupere (hasta ~1 min).
 
@@ -156,5 +156,6 @@ docs/                STRIDE/DFD, OWASP, PCI-DSS, BCP/DRP, ALE/ROSI, ISO 27001, d
 ops/                 generar-env.sh, backup.sh, backup-binlogs.sh, restore.sh, simulacro-drp.sh, evidencia.sh
 .github/workflows/   CI: lint, build, npm audit, php -l, secretos, pruebas de seguridad y simulacro DRP
 docker-compose.prod.yml  producción: puertos 80/443 y Let's Encrypt (certbot)
+docker-compose.proxy.yml detrás del Nginx de otro sistema (VPS compartido); scripts en ops/vps/
 tests/seguridad.sh   pruebas end-to-end de los controles
 ```

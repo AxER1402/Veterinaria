@@ -341,7 +341,7 @@ Las 4 semanas del cronograma están implementadas y subidas, más extras: recupe
 
 | # | Pendiente | Qué hace falta | Afecta |
 |---|---|---|---|
-| 1 | **Desplegar en una URL pública** | Elegir dónde: VPS propio (31.220.50.103, detrás del Nginx del SGA, como FadeApp) o Railway/Render. Se necesita un subdominio apuntando ahí. Guía: `docs/07-despliegue.md` | Hosting en la nube (0.5 pts), URL pública y URL del panel admin |
+| 1 | **Desplegar en una URL pública** | Propuesta lista para el VPS 31.220.50.103 (detrás del Nginx del SGA, como FadeApp): crear el registro DNS (supuesto: `huellitas.fadeappgt.com`) y pegar `ops/vps/1-levantar.sh`, `2-nginx-http.sh` y `3-nginx-https.sh` (docs/07-despliegue.md §2c). Antes, confirmar dominio y RAM libre del VPS | Hosting en la nube (0.5 pts), URL pública y URL del panel admin |
 | 2 | **ZAP contra la URL pública** | Correr `zap-baseline.py` contra el dominio una vez desplegado (comando en `docs/07-despliegue.md` §3) | SEC-4 |
 | 3 | **Claves sandbox de Stripe** | `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET` (con `stripe listen` en local o el webhook del panel en producción) en `.env` | Pago real con la tarjeta 4242 en la demo |
 | 4 | **Claves sandbox de PayPal** | `PAYPAL_CLIENT_ID` y `PAYPAL_CLIENT_SECRET` en `.env` | Botón de PayPal en la demo |

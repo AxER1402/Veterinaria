@@ -417,6 +417,13 @@ r=$(intento_login "$CLIENTE3" Segura123); D2=$(jq -r .desafio <<<"${r%$'\n'*}")
 esperar "el mismo código con otro desafío tampoco (anti-replay)" 401 "$(mfa_codigo "$D2" "$CODIGO")"
 esperar "desactivar sin el código correcto → 401" 401 "$(codigo -X POST -H "Authorization: Bearer $T3" -H 'Content-Type: application/json' -d '{"password":"Segura123","codigo":"000000"}' "$BASE/api/auth/mfa/desactivar")"
 
+caso "CP-35 La IP del cliente no se puede falsificar con cabeceras"
+correo_ip="ip$SUF@correo.gt"
+"${C[@]}" -o /dev/null -X POST -H 'X-Forwarded-For: 6.6.6.6' -H 'X-Real-IP: 7.7.7.7' -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$correo_ip\",\"password\":\"x\"}" "$BASE/api/auth/login"
+ip=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auditoria/eventos?usuario_email=$correo_ip&limite=1" | jq -r '.eventos[0].ip_origen')
+[[ -n "$ip" && "$ip" != null && "$ip" != 6.6.6.6 && "$ip" != 7.7.7.7 ]] && ok "la bitácora registra la IP real de la conexión ($ip), no la inventada" || mal "se aceptó una IP falsificada: $ip"
+
 caso "CP-16 Rate limiting en /login (gateway, se corre al final)"
 codigos=$(for i in $(seq 1 15); do codigo -X POST -H 'Content-Type: application/json' -d '{"email":"flood@correo.gt","password":"x"}' "$BASE/api/auth/login"; echo; done)
 grep -q 429 <<<"$codigos" && ok "ráfaga de logins → 429" || mal "ninguna respuesta 429 en la ráfaga"
