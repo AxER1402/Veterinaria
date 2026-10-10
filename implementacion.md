@@ -351,7 +351,7 @@ Las 4 semanas del cronograma están implementadas y subidas, más extras: recupe
 | 8 | **Mapas en un navegador real** | Abrir `/contacto` y confirmar que se dibujan los mapas (en Chromium headless solo carga el marco) | Detalle visual |
 | 9 | **Presentación de 10 min** | Ensayar con el guion de `docs/08-guion-presentacion.md` (ya escrito). Sin claves de Stripe, el pago se demuestra con el webhook firmado (CP-26) | Presentación |
 | 10 | ~~**CI en GitHub**~~ ✅ | En verde desde `d75c1a4`: frontend, PHP/secretos y stack completo con 158 pruebas + simulacro DRP en un runner limpio. Solo hay que mantenerlo verde | — |
-| 11 | **SAST (opcional)** | Agregar Semgrep al CI (`semgrep scan --config p/php --config p/javascript --config p/secrets`). No se corrió en local por el peso de la imagen. CodeQL no analiza PHP | Riesgo residual A06/A03 |
+| 11 | ~~**SAST**~~ ✅ | Semgrep CE en el CI (job `sast`, `p/php` + `p/javascript` + `p/secrets`): 0 hallazgos. Los 3 hashes bcrypt intencionales (seed de prueba y señuelo antienumeración) llevan `nosemgrep` justificado | — |
 | 12 | **Activar MFA en el admin** | Entrar con `admin@huellitas.gt` → aviso del panel → *Activar ahora* y escanear el QR. Hacerlo en producción, no en el seed de desarrollo, porque las pruebas automáticas usan el admin sin MFA | Riesgo «credenciales admin comprometidas» |
 
 Al desplegar: secretos nuevos (no los de desarrollo), cambiar la contraseña de `admin@huellitas.gt`, instalar el cron de respaldos (`docs/04-bcp-drp.md` §3) y correr `tests/seguridad.sh` contra el dominio.

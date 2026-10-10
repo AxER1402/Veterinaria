@@ -48,9 +48,19 @@ jobs:
           fi
           test ! -e .env
 
+  sast:
+    name: SAST (Semgrep CE)
+    runs-on: ubuntu-24.04
+    # CodeQL no analiza PHP y en repos privados requiere Advanced Security: Semgrep CE cubre PHP, JS y secretos.
+    container: semgrep/semgrep:1.95.0
+    steps:
+      - uses: actions/checkout@v5
+      # Falla con cualquier hallazgo; los falsos positivos se justifican en línea con `nosemgrep: <regla> (motivo)`.
+      - run: semgrep scan --config p/php --config p/javascript --config p/secrets --metrics=off --error
+
   seguridad:
     name: Stack completo + pruebas de seguridad + simulacro DRP
-    needs: [frontend, php]
+    needs: [frontend, php, sast]
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:

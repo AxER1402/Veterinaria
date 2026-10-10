@@ -23,6 +23,7 @@ final class AuthController
     private const DESAFIO_MFA_SEG = 300;          // el segundo paso del login vence en 5 min            // S (STRIDE): misma cuenta atacada desde ≥3 IPs
 
     // Hash fijo para gastar el mismo tiempo cuando el correo no existe (evita enumerar usuarios).
+    // nosemgrep: detected-bcrypt-hash (señuelo sin contraseña asociada, no es un secreto)
     private const HASH_SENUELO = '$2y$12$RXrg6QrXzZtqAI8PEr/DF.dE62D.UFMHnAiqbjjKjdZCGHwxoG47a';
 
     public function registro(): array

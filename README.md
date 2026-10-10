@@ -126,7 +126,8 @@ ops/simulacro-drp.sh                  # simulacro de ransomware en el maestro, c
 
 1. **Frontend:** `npm ci`, lint, build y `npm audit` (falla con vulnerabilidades altas o críticas).
 2. **PHP y secretos:** `php -l` de todos los servicios y búsqueda de claves o llaves privadas en archivos versionados.
-3. **Seguridad:** levanta el stack completo con un `.env` efímero (`ops/generar-env.sh`), corre `tests/seguridad.sh` y el simulacro DRP, y sube la evidencia como artefacto.
+3. **SAST:** Semgrep CE (`p/php`, `p/javascript`, `p/secrets`); falla con cualquier hallazgo. Los falsos positivos se justifican en línea con `nosemgrep: <regla> (motivo)`.
+4. **Seguridad:** levanta el stack completo con un `.env` efímero (`ops/generar-env.sh`), corre `tests/seguridad.sh` y el simulacro DRP, y sube la evidencia como artefacto.
 
 ## Frontend en desarrollo
 

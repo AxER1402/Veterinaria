@@ -48,7 +48,7 @@
 | Hosting HTTPS | VPS (parte proporcional) o Railway Hobby | 120 | Sitio A. El sitio B se enciende solo en una contingencia |
 | Dominio | `.com` | 15 | |
 | Escáner de vulnerabilidades | OWASP ZAP | 0 | `docs/zap/` |
-| SAST | GitHub CodeQL | 0 | Gratis en repos públicos. En repos privados requiere GitHub Advanced Security, y la alternativa gratuita es Semgrep CE |
+| SAST | Semgrep CE en GitHub Actions | 0 | Corre en cada push (job `sast` del CI). Se eligió en lugar de CodeQL porque CodeQL no analiza PHP y en repos privados requiere GitHub Advanced Security |
 | Correo transaccional | EmailJS Free (200/mes) | 0 | |
 | **Subtotal** | | **147** | |
 | Contingencia (10 %) | | 15 | |
