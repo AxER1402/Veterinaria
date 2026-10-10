@@ -313,6 +313,10 @@ esperar "pagos_user no puede borrar pagos" 0 "$(docker compose exec -T mariadb-m
 caso "CP-29 Rutas de pago solo internas (PCI-DSS)"
 esperar "/internal/pagos/iniciar no se publica" 404 "$(codigo -X POST "$BASE/internal/pagos/iniciar")"
 esperar "/api/pagos/* (fuera del webhook) no se publica" 404 "$(codigo -X POST "$BASE/api/pagos/iniciar")"
+r=$(codigo -X POST -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d '{"metodo":"stripe"}' "$BASE/api/pedidos/$PED_F/pago")
+# Con claves de Stripe responde 200 (client_secret); sin ellas, 503. En ambos casos el intento queda registrado.
+[[ $r =~ ^(200|503)$ ]] && ok "iniciar el pago de un pedido propio → $r ($( [[ $r == 200 ]] && echo 'Stripe configurado' || echo 'Stripe sin claves'))" || mal "iniciar pago respondió $r"
+esperar "el intento queda como PAGO_INICIADO con el pedido" "$PED_F" "$(evento_ultimo PAGO_INICIADO | jq -r .pedido_id)"
 esperar "pagar un pedido ajeno → 404" 404 "$(codigo -X POST -H "Authorization: Bearer $T1" -H 'Content-Type: application/json' -d '{"metodo":"stripe"}' "$BASE/api/pedidos/$PED_F/pago")"
 r=$(docker compose exec -T catalogo-service php -r '
     const SERVICE_DIR = "/var/www/app"; require "/var/www/shared/bootstrap.php";
