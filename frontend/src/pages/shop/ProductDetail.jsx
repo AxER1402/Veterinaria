@@ -7,18 +7,21 @@ import ProductCard from '../../components/shop/ProductCard'
 import SectionTitle from '../../components/SectionTitle'
 import NotFound from '../NotFound'
 import { useShop } from '../../context/useShop'
-import { findProduct, products, pets, categories, formatPrice } from '../../data/shop'
+import { pets, categories, formatPrice } from '../../data/shop'
+import Loading from '../../components/Loading'
 
 export default function ProductDetail() {
   const { slug } = useParams()
+  const { findProduct, catalogLoading } = useShop()
   const product = findProduct(slug)
+  if (!product && catalogLoading) return <Loading />
   // key={slug} reinicia la variante y cantidad al navegar entre productos.
   return product ? <ProductView key={slug} product={product} /> : <NotFound />
 }
 
 function ProductView({ product }) {
-  const { addToCart, toggleWish, isWished } = useShop()
-  const [variantLabel, setVariantLabel] = useState(product.variants[0].label)
+  const { addToCart, toggleWish, isWished, products } = useShop()
+  const [variantLabel, setVariantLabel] = useState((product.variants.find((v) => v.available) ?? product.variants[0]).label)
   const [qty, setQty] = useState(1)
 
   const variant = product.variants.find((v) => v.label === variantLabel)
@@ -56,6 +59,8 @@ function ProductView({ product }) {
                 {variant.oldPrice && <del>{formatPrice(variant.oldPrice)}</del>}
               </p>
               <p>{product.description}</p>
+              {!variant.available && <p className="stock-note stock-note--out">Agotado por ahora</p>}
+              {variant.few && <p className="stock-note">¡Quedan pocas unidades!</p>}
 
               {product.variants.length > 1 && (
                 <fieldset className="variants">
@@ -79,7 +84,7 @@ function ProductView({ product }) {
 
               <div className="product-detail__actions">
                 <QuantityInput value={qty} onChange={setQty} />
-                <button className="btn btn--primary" onClick={() => addToCart(product.id, variantLabel, qty)}>
+                <button className="btn btn--primary" onClick={() => addToCart(product.id, variantLabel, qty)} disabled={!variant.available}>
                   <ShoppingBag size={18} /> Agregar al carrito
                 </button>
                 <button

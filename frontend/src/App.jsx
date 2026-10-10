@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Outlet, useLocation } from 'react-router-dom'
 import { ShopProvider } from './context/ShopContext'
+import { AuthProvider } from './context/AuthContext'
 import Header from './components/Header'
 import Footer from './components/Footer'
 import CtaBanner from './components/CtaBanner'
@@ -17,9 +18,12 @@ import ProductDetail from './pages/shop/ProductDetail'
 import Cart from './pages/shop/Cart'
 import Checkout from './pages/shop/Checkout'
 import Wishlist from './pages/shop/Wishlist'
+import Account from './pages/account/Account'
+import Orders from './pages/account/Orders'
+import OrderDetail from './pages/account/OrderDetail'
 
 // En el flujo de compra el banner de reservas distrae, así que se oculta.
-const NO_CTA = ['/carrito', '/checkout']
+const NO_CTA = ['/carrito', '/checkout', '/cuenta']
 
 function Layout() {
   const { pathname } = useLocation()
@@ -30,7 +34,7 @@ function Layout() {
       <main>
         <Outlet />
       </main>
-      {!NO_CTA.includes(pathname) && <CtaBanner />}
+      {!NO_CTA.some((p) => pathname.startsWith(p)) && <CtaBanner />}
       <Footer />
       <CartDrawer />
     </>
@@ -39,25 +43,30 @@ function Layout() {
 
 export default function App() {
   return (
-    <ShopProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route index element={<Home />} />
-            <Route path="servicios" element={<Services />} />
-            <Route path="nosotros" element={<About />} />
-            <Route path="preguntas" element={<FaqPage />} />
-            <Route path="contacto" element={<Contact />} />
-            <Route path="tienda" element={<ShopHome />} />
-            <Route path="tienda/productos" element={<Catalog />} />
-            <Route path="tienda/producto/:slug" element={<ProductDetail />} />
-            <Route path="carrito" element={<Cart />} />
-            <Route path="checkout" element={<Checkout />} />
-            <Route path="favoritos" element={<Wishlist />} />
-            <Route path="*" element={<NotFound />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </ShopProvider>
+    <AuthProvider>
+      <ShopProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route index element={<Home />} />
+              <Route path="servicios" element={<Services />} />
+              <Route path="nosotros" element={<About />} />
+              <Route path="preguntas" element={<FaqPage />} />
+              <Route path="contacto" element={<Contact />} />
+              <Route path="tienda" element={<ShopHome />} />
+              <Route path="tienda/productos" element={<Catalog />} />
+              <Route path="tienda/producto/:slug" element={<ProductDetail />} />
+              <Route path="carrito" element={<Cart />} />
+              <Route path="checkout" element={<Checkout />} />
+              <Route path="favoritos" element={<Wishlist />} />
+              <Route path="cuenta" element={<Account />} />
+              <Route path="cuenta/pedidos" element={<Orders />} />
+              <Route path="cuenta/pedidos/:id" element={<OrderDetail />} />
+              <Route path="*" element={<NotFound />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </ShopProvider>
+    </AuthProvider>
   )
 }

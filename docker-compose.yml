@@ -46,6 +46,8 @@ services:
     networks: [publica, interna]
     depends_on:
       auth-service: { condition: service_healthy }
+      catalogo-service: { condition: service_healthy }
+      pedidos-service: { condition: service_healthy }
       security-audit-service: { condition: service_healthy }
     mem_limit: 128m
     cpu_shares: 1024
@@ -66,6 +68,45 @@ services:
     depends_on:
       mariadb-master: { condition: service_healthy }
       redis: { condition: service_healthy }
+      security-audit-service: { condition: service_healthy }
+
+  catalogo-service:
+    <<: *php
+    build: { context: ./services, args: { SERVICE: catalogo, PORT: 8082 } }
+    image: huellitas/catalogo-service:latest
+    environment:
+      <<: *php-env
+      SERVICE_NAME: catalogo-service
+      DB_HOST: mariadb-master
+      DB_READ_HOST: mariadb-slave
+      DB_NAME: catalogo_db
+      DB_USER: catalogo_user
+      DB_PASSWORD: ${CATALOGO_DB_PASSWORD:?falta CATALOGO_DB_PASSWORD}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+    depends_on:
+      mariadb-master: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      security-audit-service: { condition: service_healthy }
+
+  pedidos-service:
+    <<: *php
+    build: { context: ./services, args: { SERVICE: pedidos, PORT: 8083 } }
+    image: huellitas/pedidos-service:latest
+    environment:
+      <<: *php-env
+      SERVICE_NAME: pedidos-service
+      DB_HOST: mariadb-master
+      DB_READ_HOST: mariadb-slave
+      DB_NAME: pedidos_db
+      DB_USER: pedidos_user
+      DB_PASSWORD: ${PEDIDOS_DB_PASSWORD:?falta PEDIDOS_DB_PASSWORD}
+      CATALOGO_URL: http://catalogo-service:8082
+    depends_on:
+      mariadb-master: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      catalogo-service: { condition: service_healthy }
       security-audit-service: { condition: service_healthy }
 
   security-audit-service:

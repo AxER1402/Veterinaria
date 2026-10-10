@@ -1,56 +1,104 @@
-import { useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
-import { CheckCircle2, CreditCard, Store, Truck, Lock } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Link, Navigate, useLocation } from 'react-router-dom'
+import { CheckCircle2, CreditCard, Store, Truck, Lock, LogIn } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import { OrderSummary } from './Cart'
 import { useShop } from '../../context/useShop'
+import { useAuth } from '../../context/useAuth'
 import { formatPrice } from '../../data/shop'
-import { locations } from '../../data/content'
+import { api } from '../../api'
 import Field from '../../components/Field'
-
-const initial = { name: '', email: '', phone: '', address: '', city: '', delivery: 'envio', payment: 'tarjeta', notes: '' }
+import Loading from '../../components/Loading'
 
 function validate(v) {
   const e = {}
-  if (!v.name.trim()) e.name = 'Ingresa tu nombre'
-  if (!/^\S+@\S+\.\S+$/.test(v.email)) e.email = 'Correo no válido'
-  if (v.phone.replace(/\D/g, '').length < 7) e.phone = 'Teléfono no válido'
-  if (v.delivery === 'envio') {
-    if (!v.address.trim()) e.address = 'Ingresa tu dirección'
-    if (!v.city.trim()) e.city = 'Ingresa tu ciudad'
-  }
+  if (v.nombre.trim().length < 2) e.nombre = 'Ingresa tu nombre'
+  if (v.telefono.replace(/\D/g, '').length < 7) e.telefono = 'Teléfono no válido'
+  if (v.metodo_entrega === 'domicilio') {
+    if (v.direccion.trim().length < 5) e.direccion = 'Ingresa tu dirección'
+    if (v.ciudad.trim().length < 2) e.ciudad = 'Ingresa tu ciudad'
+  } else if (!v.sede) e.sede = 'Elige una sede'
   return e
 }
 
+// El servidor devuelve los totales con otros nombres; se adaptan al resumen del carrito.
+const fromServer = (t) => ({ subtotal: t.subtotal, discount: t.descuento, shipping: t.envio, total: t.total, missingForFreeShipping: 0 })
+
 export default function Checkout() {
-  const { lines, totals, clearCart } = useShop()
-  const [values, setValues] = useState(initial)
-  const [errors, setErrors] = useState({})
+  const { lines, coupon, clearCart, catalogLoading } = useShop()
+  const { user, checking } = useAuth()
+  const location = useLocation()
   const [order, setOrder] = useState(null)
 
+  if (order) return <OrderConfirmed order={order} />
+  if (catalogLoading || checking) return <Loading />
+  if (lines.length === 0) return <Navigate to="/carrito" replace />
+  if (!user) return <LoginRequired from={location.pathname} />
+
+  return <CheckoutForm user={user} lines={lines} coupon={coupon} onDone={(o) => { setOrder(o); clearCart() }} />
+}
+
+function CheckoutForm({ user, lines, coupon, onDone }) {
+  const [values, setValues] = useState({
+    nombre: user.nombre, telefono: '', metodo_entrega: 'domicilio', direccion: '', ciudad: '', notas: '', sede: '',
+  })
+  const [errors, setErrors] = useState({})
+  const [sedes, setSedes] = useState([])
+  const [quote, setQuote] = useState(null)
+  const [problem, setProblem] = useState('')
+  const [sending, setSending] = useState(false)
+
+  const items = lines.map((l) => ({ variante_id: l.variant.id, cantidad: l.qty }))
+  const itemsKey = JSON.stringify(items)
   const set = (field) => (e) => setValues((v) => ({ ...v, [field]: e.target.value }))
 
-  if (order) return <OrderConfirmed order={order} />
-  if (lines.length === 0) return <Navigate to="/carrito" replace />
+  useEffect(() => {
+    api('/api/pedidos/sedes', { auth: false }).then((d) => setSedes(d.sedes)).catch(() => setSedes([]))
+  }, [])
 
-  const pickup = values.delivery === 'tienda'
-  const summaryTotals = pickup ? { ...totals, shipping: 0, total: Math.round((totals.total - totals.shipping) * 100) / 100, missingForFreeShipping: 0 } : totals
+  // Cada cambio de carrito, cupón o entrega vuelve a pedir el total al servidor (es el que se cobra).
+  useEffect(() => {
+    let current = true
+    api('/api/pedidos/cotizar', {
+      method: 'POST',
+      auth: false,
+      body: { items: JSON.parse(itemsKey), cupon: coupon?.codigo, metodo_entrega: values.metodo_entrega },
+    })
+      .then((d) => {
+        if (!current) return
+        setQuote(d)
+        const out = d.lineas.find((l) => !l.disponible)
+        setProblem(out ? `No hay suficiente stock de ${out.nombre} (${out.etiqueta}). Ajusta la cantidad en el carrito.` : '')
+      })
+      .catch((e) => current && setProblem(e.message))
+    return () => {
+      current = false
+    }
+  }, [itemsKey, coupon?.codigo, values.metodo_entrega])
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault()
     const found = validate(values)
     setErrors(found)
     if (Object.keys(found).length) return
-    // Proyecto solo frontend: aquí se enviaría el pedido a la API / pasarela de pago.
-    setOrder({
-      number: `HU-${Date.now().toString().slice(-6)}`,
-      name: values.name.split(' ')[0],
-      email: values.email,
-      total: summaryTotals.total,
-      pickup,
-    })
-    clearCart()
+    setSending(true)
+    setProblem('')
+    try {
+      const body = { items, cupon: coupon?.codigo, nombre: values.nombre, telefono: values.telefono, metodo_entrega: values.metodo_entrega }
+      if (values.metodo_entrega === 'retiro') body.sede = values.sede
+      else Object.assign(body, { direccion: values.direccion, ciudad: values.ciudad, notas: values.notas })
+      const d = await api('/api/pedidos', { method: 'POST', body })
+      onDone(d.pedido)
+    } catch (err) {
+      if (err.data?.campo) setErrors({ [err.data.campo]: err.message })
+      else setProblem(err.message)
+    } finally {
+      setSending(false)
+    }
   }
+
+  const pickup = values.metodo_entrega === 'retiro'
+  const totals = quote ? fromServer(quote.totales) : null
 
   return (
     <>
@@ -60,55 +108,88 @@ export default function Checkout() {
           <form id="checkout-form" className="checkout-form" onSubmit={submit} noValidate>
             <h3>1. Datos de contacto</h3>
             <div className="form-grid">
-              <Field label="Nombre completo" error={errors.name} full>
-                <input value={values.name} onChange={set('name')} autoComplete="name" />
+              <Field label="Nombre completo" error={errors.nombre} full>
+                <input value={values.nombre} onChange={set('nombre')} autoComplete="name" maxLength={100} />
               </Field>
-              <Field label="Correo" error={errors.email}>
-                <input type="email" value={values.email} onChange={set('email')} autoComplete="email" />
+              <Field label="Correo">
+                <input type="email" value={user.email} readOnly />
               </Field>
-              <Field label="Teléfono" error={errors.phone}>
-                <input type="tel" value={values.phone} onChange={set('phone')} autoComplete="tel" />
+              <Field label="Teléfono" error={errors.telefono}>
+                <input type="tel" value={values.telefono} onChange={set('telefono')} autoComplete="tel" maxLength={20} />
               </Field>
             </div>
 
             <h3>2. Entrega</h3>
             <div className="option-cards">
-              <OptionCard name="delivery" value="envio" current={values.delivery} onChange={set('delivery')} icon={Truck}
-                title="Envío a domicilio" text={totals.shipping ? formatPrice(totals.shipping) : 'Gratis'} />
-              <OptionCard name="delivery" value="tienda" current={values.delivery} onChange={set('delivery')} icon={Store}
-                title="Retiro en tienda" text={`Gratis · ${locations[0].address}`} />
+              <OptionCard name="metodo_entrega" value="domicilio" current={values.metodo_entrega} onChange={set('metodo_entrega')} icon={Truck}
+                title="Envío a domicilio" text="Gratis desde $50" />
+              <OptionCard name="metodo_entrega" value="retiro" current={values.metodo_entrega} onChange={set('metodo_entrega')} icon={Store}
+                title="Retiro en sede" text="Gratis" />
             </div>
-            {!pickup && (
+            {pickup ? (
               <div className="form-grid">
-                <Field label="Dirección" error={errors.address} full>
-                  <input value={values.address} onChange={set('address')} autoComplete="street-address" />
+                <Field label="Sede" error={errors.sede} full>
+                  <select value={values.sede} onChange={set('sede')}>
+                    <option value="">Elige una sede…</option>
+                    {sedes.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
                 </Field>
-                <Field label="Ciudad" error={errors.city}>
-                  <input value={values.city} onChange={set('city')} autoComplete="address-level2" />
+              </div>
+            ) : (
+              <div className="form-grid">
+                <Field label="Dirección" error={errors.direccion} full>
+                  <input value={values.direccion} onChange={set('direccion')} autoComplete="street-address" maxLength={200} />
                 </Field>
-                <Field label="Notas de entrega">
-                  <input value={values.notes} onChange={set('notes')} placeholder="Opcional" />
+                <Field label="Ciudad" error={errors.ciudad}>
+                  <input value={values.ciudad} onChange={set('ciudad')} autoComplete="address-level2" maxLength={80} />
+                </Field>
+                <Field label="Notas de entrega" error={errors.notas}>
+                  <input value={values.notas} onChange={set('notas')} placeholder="Opcional" maxLength={200} />
                 </Field>
               </div>
             )}
 
             <h3>3. Pago</h3>
             <div className="option-cards">
-              <OptionCard name="payment" value="tarjeta" current={values.payment} onChange={set('payment')} icon={CreditCard}
-                title="Tarjeta" text="Débito o crédito" />
-              <OptionCard name="payment" value="entrega" current={values.payment} onChange={set('payment')} icon={Store}
-                title="Pago contra entrega" text="Efectivo o tarjeta al recibir" />
+              <OptionCard name="pago" value="tarjeta" current="tarjeta" onChange={() => {}} icon={CreditCard}
+                title="Tarjeta o PayPal" text="Al confirmar el pedido" />
             </div>
             <p className="demo-note">
-              <Lock size={14} /> Demostración: no se solicitan ni procesan datos de pago reales.
+              <Lock size={14} /> Los datos de tu tarjeta los recibe directamente la pasarela de pago (Stripe/PayPal). Huellitas nunca los ve ni los guarda.
             </p>
+            {problem && <p className="form-alert" role="alert">{problem}</p>}
           </form>
 
-          <OrderSummary totals={summaryTotals} lines={lines}>
-            <button type="submit" form="checkout-form" className="btn btn--primary btn--block">
-              Confirmar pedido · {formatPrice(summaryTotals.total)}
-            </button>
-          </OrderSummary>
+          {totals ? (
+            <OrderSummary totals={totals} lines={lines}>
+              <button type="submit" form="checkout-form" className="btn btn--primary btn--block" disabled={sending || Boolean(problem && quote?.lineas.some((l) => !l.disponible))}>
+                {sending ? 'Creando pedido…' : `Confirmar pedido · ${formatPrice(totals.total)}`}
+              </button>
+              <p className="summary__hint">El total lo calcula el servidor con los precios vigentes.</p>
+            </OrderSummary>
+          ) : (
+            <aside className="summary"><Loading text="Calculando total…" /></aside>
+          )}
+        </div>
+      </section>
+    </>
+  )
+}
+
+function LoginRequired({ from }) {
+  return (
+    <>
+      <PageHeader title="Finalizar compra" />
+      <section className="section">
+        <div className="container empty-state">
+          <LogIn size={56} />
+          <h3>Inicia sesión para terminar tu compra</h3>
+          <p>Tu carrito se conserva. Así podrás ver el estado de tu pedido en «Mis pedidos».</p>
+          <Link to="/cuenta" state={{ from }} className="btn btn--primary">
+            Iniciar sesión o crear cuenta
+          </Link>
         </div>
       </section>
     </>
@@ -120,15 +201,16 @@ function OrderConfirmed({ order }) {
     <section className="section">
       <div className="container order-confirmed">
         <CheckCircle2 size={72} />
-        <h1>¡Gracias, {order.name}!</h1>
+        <h1>¡Pedido recibido, {order.contacto.nombre.split(' ')[0]}!</h1>
         <p>
-          Tu pedido <strong>{order.number}</strong> por <strong>{formatPrice(order.total)}</strong> fue recibido.
-          Te enviaremos la confirmación a <strong>{order.email}</strong>.
+          Tu pedido <strong className="mono">{order.id.slice(0, 8).toUpperCase()}</strong> por <strong>{formatPrice(order.total)}</strong> quedó
+          registrado y está <strong>pendiente de pago</strong>.
         </p>
-        <p>{order.pickup ? 'Te avisaremos cuando esté listo para retirar en tienda.' : 'Te avisaremos cuando tu pedido salga a reparto.'}</p>
-        <Link to="/tienda" className="btn btn--primary">
-          Seguir comprando
-        </Link>
+        <p>{order.metodo_entrega === 'retiro' ? `Lo retiras en: ${order.sede}.` : 'Te avisaremos cuando salga a reparto.'}</p>
+        <div className="order-confirmed__actions">
+          <Link to={`/cuenta/pedidos/${order.id}`} className="btn btn--primary">Ver mi pedido</Link>
+          <Link to="/tienda" className="btn btn--dark">Seguir comprando</Link>
+        </div>
       </div>
     </section>
   )

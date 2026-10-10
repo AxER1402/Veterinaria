@@ -8,7 +8,12 @@ client_header_timeout 10s;
 # ---------- Rate limiting (A07, D de STRIDE) ----------
 limit_req_zone $binary_remote_addr zone=general:10m rate=30r/s;
 limit_req_zone $binary_remote_addr zone=login:10m   rate=20r/m;
-limit_req_zone $binary_remote_addr zone=api:10m     rate=10r/s;
+# Una zona por servicio: la ráfaga en uno no deja sin cupo a los demás.
+limit_req_zone $binary_remote_addr zone=auth:10m      rate=10r/s;
+limit_req_zone $binary_remote_addr zone=catalogo:10m  rate=20r/s;
+limit_req_zone $binary_remote_addr zone=pedidos:10m   rate=10r/s;
+limit_req_zone $binary_remote_addr zone=cotizar:10m   rate=5r/s;
+limit_req_zone $binary_remote_addr zone=auditoria:10m rate=10r/s;
 limit_conn_zone $binary_remote_addr zone=conexiones:10m;
 limit_req_status 429;
 limit_conn_status 429;
@@ -34,8 +39,10 @@ map "$http_referer$http_cookie" $waf_cabeceras {
     "~*(<script|union(\s|\+)+select|javascript:)"                      1;
 }
 
-upstream auth_service  { server auth-service:8081;  keepalive 16; }
-upstream audit_service { server security-audit-service:8086; keepalive 8; }
+upstream auth_service     { server auth-service:8081;  keepalive 16; }
+upstream catalogo_service { server catalogo-service:8082; keepalive 16; }
+upstream pedidos_service  { server pedidos-service:8083;  keepalive 16; }
+upstream audit_service    { server security-audit-service:8086; keepalive 8; }
 
 # ---------- HTTP → HTTPS ----------
 server {
@@ -87,12 +94,27 @@ server {
         include /etc/nginx/conf.d/proxy_comun.inc;
     }
     location /api/auth/ {
-        limit_req zone=api burst=20 nodelay;
+        limit_req zone=auth burst=20 nodelay;
         proxy_pass http://auth_service;
         include /etc/nginx/conf.d/proxy_comun.inc;
     }
+    location /api/catalogo/ {
+        limit_req zone=catalogo burst=40 nodelay;
+        proxy_pass http://catalogo_service;
+        include /etc/nginx/conf.d/proxy_comun.inc;
+    }
+    location = /api/pedidos/cotizar {
+        limit_req zone=cotizar burst=15 nodelay;
+        proxy_pass http://pedidos_service;
+        include /etc/nginx/conf.d/proxy_comun.inc;
+    }
+    location /api/pedidos {
+        limit_req zone=pedidos burst=30 nodelay;
+        proxy_pass http://pedidos_service;
+        include /etc/nginx/conf.d/proxy_comun.inc;
+    }
     location /api/auditoria/ {
-        limit_req zone=api burst=20 nodelay;
+        limit_req zone=auditoria burst=30 nodelay;
         proxy_pass http://audit_service;
         include /etc/nginx/conf.d/proxy_comun.inc;
     }

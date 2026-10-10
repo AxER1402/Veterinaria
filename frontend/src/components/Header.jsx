@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
-import { Menu, X, Phone, Heart, ShoppingBag } from 'lucide-react'
+import { Menu, X, Phone, Heart, ShoppingBag, User } from 'lucide-react'
 import { Logo } from './Brand'
 import { business, navLinks } from '../data/content'
 import { useShop } from '../context/useShop'
+import { useAuth } from '../context/useAuth'
 
 export default function Header() {
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const { totals, wishlist, openDrawer } = useShop()
+  const { user } = useAuth()
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20)
     onScroll()
@@ -42,6 +44,10 @@ export default function Header() {
           <a href={`tel:${business.phone}`} className="header__phone">
             <Phone size={18} /> {business.phone}
           </a>
+          <Link to={user ? '/cuenta/pedidos' : '/cuenta'} className="header__icon" aria-label={user ? `Mi cuenta (${user.nombre})` : 'Ingresar'}>
+            <User size={22} />
+            {user && <span className="header__dot" />}
+          </Link>
           <Link to="/favoritos" className="header__icon" aria-label={`Favoritos (${wishlist.length})`}>
             <Heart size={22} />
             {wishlist.length > 0 && <span className="header__count">{wishlist.length}</span>}

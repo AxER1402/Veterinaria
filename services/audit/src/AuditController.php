@@ -36,6 +36,8 @@ final class AuditController
         'PRECIO_MODIFICADO'       => ['catalogo-service'],
         'PRODUCTO_AGOTADO'        => ['catalogo-service', 'pedidos-service'],
         'EMAIL_ENVIADO'           => ['notificaciones-service'],
+        // Extra: intentos de ver recursos ajenos (A01), útil para detectar enumeración.
+        'ACCESO_DENEGADO'         => ['auth-service', 'catalogo-service', 'pedidos-service', 'pagos-service'],
     ];
     private const SERVICIOS = ['auth-service', 'catalogo-service', 'pedidos-service', 'pagos-service', 'notificaciones-service'];
     private const ROLES = ['admin', 'cliente', 'anonimo'];

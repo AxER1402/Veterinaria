@@ -46,7 +46,8 @@ export default function ProductCard({ product }) {
               <ShoppingBag size={18} />
             </Link>
           ) : (
-            <button className="icon-btn" onClick={() => addToCart(product.id, first.label)} aria-label={`Agregar ${product.name} al carrito`}>
+            <button className="icon-btn" onClick={() => addToCart(product.id, first.label)} disabled={!first.available}
+              aria-label={first.available ? `Agregar ${product.name} al carrito` : `${product.name} está agotado`}>
               <ShoppingBag size={18} />
             </button>
           )}

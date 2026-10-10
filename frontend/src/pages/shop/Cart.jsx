@@ -4,17 +4,21 @@ import { Trash2, ShoppingBag, Tag, X } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import QuantityInput from '../../components/shop/QuantityInput'
 import { useShop } from '../../context/useShop'
-import { coupons, formatPrice } from '../../data/shop'
+import { formatPrice } from '../../data/shop'
+import { api } from '../../api'
+import Loading from '../../components/Loading'
 
 export default function Cart() {
-  const { lines, totals, setQty, removeFromCart } = useShop()
+  const { lines, totals, setQty, removeFromCart, catalogLoading } = useShop()
 
   return (
     <>
       <PageHeader title="Carrito" />
       <section className="section">
         <div className="container">
-          {lines.length === 0 ? (
+          {catalogLoading ? (
+            <Loading />
+          ) : lines.length === 0 ? (
             <div className="empty-state">
               <ShoppingBag size={56} />
               <h3>Tu carrito está vacío</h3>
@@ -71,14 +75,24 @@ export function OrderSummary({ totals, lines, children }) {
   const { coupon, applyCoupon } = useShop()
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
 
-  const submit = (e) => {
+  // El cupón lo valida pedidos-service; el descuento real también se recalcula allí al comprar.
+  const submit = async (e) => {
     e.preventDefault()
     const normalized = code.trim().toUpperCase()
-    if (!coupons[normalized]) return setError('Cupón no válido')
-    applyCoupon(normalized)
-    setCode('')
-    setError('')
+    if (!/^[A-Z0-9]{3,30}$/.test(normalized)) return setError('Cupón no válido')
+    setChecking(true)
+    try {
+      const d = await api(`/api/pedidos/cupones/${normalized}`, { auth: false })
+      applyCoupon(d.cupon)
+      setCode('')
+      setError('')
+    } catch (err) {
+      setError(err.status === 404 ? 'Cupón no válido' : err.message)
+    } finally {
+      setChecking(false)
+    }
   }
 
   return (
@@ -104,7 +118,7 @@ export function OrderSummary({ totals, lines, children }) {
 
       {coupon ? (
         <div className="coupon-applied">
-          <Tag size={16} /> <span><strong>{coupon}</strong> · {coupons[coupon].label}</span>
+          <Tag size={16} /> <span><strong>{coupon.codigo}</strong> · {coupon.descripcion}</span>
           <button onClick={() => applyCoupon(null)} aria-label="Quitar cupón">
             <X size={16} />
           </button>
@@ -117,8 +131,8 @@ export function OrderSummary({ totals, lines, children }) {
             onChange={(e) => setCode(e.target.value)}
             aria-label="Código de descuento"
           />
-          <button type="submit" className="btn btn--dark btn--sm">
-            Aplicar
+          <button type="submit" className="btn btn--dark btn--sm" disabled={checking}>
+            {checking ? '…' : 'Aplicar'}
           </button>
           {error && <small>{error}</small>}
         </form>

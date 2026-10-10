@@ -1,4 +1,4 @@
-import { products, coupons, FREE_SHIPPING_FROM, SHIPPING_COST } from '../data/shop'
+import { FREE_SHIPPING_FROM, SHIPPING_COST } from '../data/shop'
 
 const STORAGE_KEY = 'huellitas-shop'
 
@@ -7,7 +7,9 @@ export const initialState = { cart: [], wishlist: [], coupon: null }
 export function loadState() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY))
-    return saved ? { ...initialState, ...saved } : initialState
+    if (!saved) return initialState
+    // Versiones anteriores guardaban el cupón como texto; ahora es el objeto que valida la API.
+    return { ...initialState, ...saved, coupon: typeof saved.coupon === 'object' ? saved.coupon : null }
   } catch {
     return initialState
   }
@@ -50,14 +52,15 @@ export function reducer(state, action) {
           : [...state.wishlist, action.id],
       }
     case 'setCoupon':
-      return { ...state, coupon: action.code }
+      return { ...state, coupon: action.coupon }
     default:
       return state
   }
 }
 
+// Vista previa en el navegador: el total que se cobra lo calcula pedidos-service.
 // Une cada línea del carrito con los datos del producto y su variante.
-export function cartLines(cart) {
+export function cartLines(cart, products) {
   return cart
     .map((item) => {
       const product = products.find((p) => p.id === item.id)
@@ -68,13 +71,12 @@ export function cartLines(cart) {
     .filter(Boolean)
 }
 
-export function cartTotals(lines, couponCode) {
+export function cartTotals(lines, coupon) {
   const subtotal = lines.reduce((sum, l) => sum + l.total, 0)
-  const coupon = couponCode ? coupons[couponCode] : null
   const eligible = coupon
-    ? lines.filter((l) => !coupon.brand || l.product.brand === coupon.brand).reduce((s, l) => s + l.total, 0)
+    ? lines.filter((l) => !coupon.marca || l.product.brand === coupon.marca).reduce((s, l) => s + l.total, 0)
     : 0
-  const discount = coupon ? round(eligible * (coupon.percent / 100)) : 0
+  const discount = coupon ? round(eligible * (coupon.porcentaje / 100)) : 0
   const afterDiscount = subtotal - discount
   const shipping = lines.length === 0 || afterDiscount >= FREE_SHIPPING_FROM ? 0 : SHIPPING_COST
   return {

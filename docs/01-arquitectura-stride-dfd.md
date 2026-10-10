@@ -52,8 +52,8 @@ flowchart LR
 | MariaDB master / slave | ✅ semana 1 | MariaDB 10.6, replicación por binlog | 3306 interno |
 | MariaDB audit | ✅ semana 1 | MariaDB 10.6, volumen `audit_data` | 3306 interno |
 | Redis | ✅ semana 1 | Redis 7, AOF, contraseña | 6379 interno |
-| catalogo-service | semana 2 | PHP 8.3 · catalogo_db · Cloudinary | 8082 interno |
-| pedidos-service | semana 2 | PHP 8.3 · pedidos_db | 8083 interno |
+| catalogo-service | ✅ semana 2 | PHP 8.3 · catalogo_db (lee de la réplica) · Redis · Cloudinary | 8082 interno |
+| pedidos-service | ✅ semana 2 | PHP 8.3 · pedidos_db | 8083 interno |
 | pagos-service | semana 3 | PHP 8.3 · pagos_db · Stripe/PayPal | 8084 interno |
 | notificaciones-service | semana 3 | PHP 8.3 · EmailJS | 8085 interno |
 
@@ -132,15 +132,16 @@ flowchart TB
 |---|---|---|---|---|---|
 | **S** Spoofing | Login (P1) | Credential stuffing, fuerza bruta | bcrypt cost 12; bloqueo de la cuenta 15 min tras 5 fallos; 50 intentos por IP cada 15 min; 20 req/min por IP en `/login` en el gateway; si la misma cuenta falla desde ≥3 IPs, el evento se marca `FRAUDE`; mismo mensaje y mismo tiempo de respuesta exista o no el correo | `services/auth/src/AuthController.php` (`login()`, `fallo()`, `HASH_SENUELO`), `gateway/default.conf.template` (`zone=login`) | ✅ |
 | **S** Spoofing | Servicio → servicio | Un contenedor comprometido se hace pasar por otro | JWT de servicio con secreto aparte, 60 s, de un solo uso (anti-replay en Redis); lista de servicios permitidos | `services/shared/src/Guard.php::servicio()` | ✅ |
-| **T** Tampering | Carrito → pedido (P3) | Cambiar el precio en `POST /api/pedidos` | El precio se toma siempre de `catalogo-service`; el del cliente se ignora | pedidos-service | semana 2 |
+| **T** Tampering | Carrito → pedido (P3) | Cambiar el precio en `POST /api/pedidos` | Solo se reenvían `variante_id` y `cantidad`; el precio se lee del maestro en `catalogo-service`; descuento y envío se calculan en el servidor, en centavos | `PedidosController::cotizarEnCatalogo()`, `StockController::cotizar()`, `Totales.php` | ✅ |
 | **T** Tampering | Token (P1) | Editar el payload del JWT o usar `alg=none` | Solo HS256; firma comparada en tiempo constante (`hash_equals`) | `services/shared/src/Jwt.php::verificar()` | ✅ |
 | **T** Tampering | Bitácora (D5) | Borrar o alterar los rastros | Triggers que prohíben UPDATE/DELETE incluso a root; `audit_user` solo con INSERT/SELECT; cadena de hashes SHA-256 verificable | `db/audit/01-audit_db.sh`, `AuditController::integridad()` | ✅ |
+| **R** Repudiation | Pedido (P3) | El cliente niega haber hecho un pedido | `PEDIDO_CREADO` con cliente, IP, user-agent, líneas y precios; historial de estados con quién los cambió | `PedidosController::crear()`, tabla `historial_estados` | ✅ |
 | **R** Repudiation | Pago (P4) | El cliente niega haber pagado | Evento `PAGO_CONFIRMADO` con `payment_intent_id` inmutable, IP y user-agent; email de confirmación | audit-service ✅ · pagos-service | semana 3 |
 | **R** Repudiation | Cualquier acción | Un servicio reporta eventos que no le corresponden | `servicio` se toma del token, no del cuerpo; cada código de evento tiene sus servicios permitidos; la hora la pone el audit-service | `AuditController::EVENTOS` | ✅ |
-| **I** Info Disclosure | Pedidos (D3) | `GET /api/pedidos` de otros clientes, IDs secuenciales | `WHERE id_cliente = <sub del JWT>` en todas las consultas; pedidos con **UUID** | pedidos-service | semana 2 |
+| **I** Info Disclosure | Pedidos (D3) | `GET /api/pedidos` de otros clientes, IDs secuenciales | `WHERE id_cliente = <sub del JWT>` en todas las consultas; pedidos con **UUID v4**; 404 también cuando es ajeno, y queda registrado `ACCESO_DENEGADO` | `PedidosController::misPedidos()`, `ver()` | ✅ |
 | **I** Info Disclosure | Errores | Stack traces, versión del servidor | `display_errors=Off`; errores genéricos en JSON; `server_tokens off`; `ServerTokens Prod`; sin `X-Powered-By` | `services/shared/src/Router.php`, `services/Dockerfile` | ✅ |
 | **I** Info Disclosure | Tránsito | Sniffing | Solo TLS 1.3, HSTS, HTTP → 301 a HTTPS | `gateway/default.conf.template` | ✅ |
-| **D** DoS | Catálogo (P2) | Scraping masivo o inundación | Rate limit por IP (`zone=api`, `zone=general`), `limit_conn`, caché Redis del catálogo, CDN de Cloudinary, `mem_limit`/`cpu_shares` por contenedor | gateway ✅ · caché del catálogo | semana 2 |
+| **D** DoS | Catálogo (P2) | Scraping masivo o inundación | Rate limit por IP y por servicio, `limit_conn`, catálogo servido desde Redis y leído de la réplica, CDN de Cloudinary, `mem_limit`/`cpu_shares` por contenedor; el stock exacto no se publica | `gateway/default.conf.template`, `CatalogoController::listar()` | ✅ |
 | **E** Elevation of Privilege | Panel admin | Manipular el JWT o enviar `rol=admin` al registrarse | El rol solo sale del token firmado; el registro público siempre crea `cliente`; `Guard::usuario(['admin'])` en cada ruta administrativa; intento de cliente en el panel → `ACCESO_ADMIN_PANEL FALLO` | `AuthController::registro()`, `accesoAdmin()`, `Guard.php` | ✅ |
 
 ### Riesgo residual que se acepta

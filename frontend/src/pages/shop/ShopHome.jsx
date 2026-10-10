@@ -7,13 +7,15 @@ import ProductCard from '../../components/shop/ProductCard'
 import Rating from '../../components/shop/Rating'
 import Countdown from '../../components/shop/Countdown'
 import { PawIcon } from '../../components/Brand'
-import { products, pets, brands, tips, shopReviews, FREE_SHIPPING_FROM } from '../../data/shop'
+import { pets, brands, tips, shopReviews, FREE_SHIPPING_FROM } from '../../data/shop'
+import { useShop } from '../../context/useShop'
 import { locations } from '../../data/content'
 
 const heroImage =
   'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?auto=format&fit=crop&w=1000&h=1000&q=75'
 
 export default function ShopHome() {
+  const { products } = useShop()
   const featured = products.filter((p) => p.featured)
 
   return (

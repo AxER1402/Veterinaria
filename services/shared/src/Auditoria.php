@@ -25,25 +25,17 @@ final class Auditoria
 
         $servicio = Env::required('SERVICE_NAME');
         $url = rtrim(Env::get('AUDIT_URL', 'http://security-audit-service:8086'), '/') . '/internal/eventos';
-        $json = json_encode($evento, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        [$codigo] = Interno::post($url, $evento, 3);
 
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $json,
-            CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/json',
-                'Authorization: Bearer ' . Jwt::tokenServicio($servicio),
-            ],
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 2,
-            CURLOPT_TIMEOUT        => 3,
-        ]);
-        $respuesta = curl_exec($ch);
-        $codigo = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-
-        if ($respuesta === false || $codigo !== 201) {
+        if ($codigo !== 201) {
+            $json = json_encode($evento, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             error_log("AUDITORIA_PENDIENTE servicio=$servicio http=$codigo evento=$json");
         }
+    }
+
+    /** Datos del actor (usuario_id, email, rol) a partir de los claims del JWT. */
+    public static function actor(array $claims): array
+    {
+        return ['usuario_id' => (int) $claims['sub'], 'usuario_email' => $claims['email'], 'rol' => $claims['rol']];
     }
 }

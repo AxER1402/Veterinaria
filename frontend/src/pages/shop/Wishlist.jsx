@@ -3,10 +3,9 @@ import { Heart } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import ProductCard from '../../components/shop/ProductCard'
 import { useShop } from '../../context/useShop'
-import { products } from '../../data/shop'
 
 export default function Wishlist() {
-  const { wishlist } = useShop()
+  const { wishlist, products } = useShop()
   const items = products.filter((p) => wishlist.includes(p.id))
 
   return (

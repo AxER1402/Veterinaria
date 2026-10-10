@@ -3,7 +3,9 @@ import { useSearchParams } from 'react-router-dom'
 import { Search, SlidersHorizontal, X, PackageSearch } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import ProductCard from '../../components/shop/ProductCard'
-import { products, pets, categories, brands, minPrice, isOnSale } from '../../data/shop'
+import { pets, categories, brands, minPrice, isOnSale } from '../../data/shop'
+import { useShop } from '../../context/useShop'
+import Loading from '../../components/Loading'
 
 const sorts = {
   relevancia: { label: 'Relevancia', fn: (a, b) => Number(!!b.featured) - Number(!!a.featured) },
@@ -15,6 +17,7 @@ const sorts = {
 export default function Catalog() {
   const [params, setParams] = useSearchParams()
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const { products, catalogLoading, catalogError } = useShop()
 
   const pet = params.get('mascota') || ''
   const category = params.get('categoria') || ''
@@ -39,7 +42,7 @@ export default function Catalog() {
       .filter((p) => !sale || isOnSale(p))
       .filter((p) => !q || `${p.name} ${p.brand} ${p.description}`.toLowerCase().includes(q))
       .sort(sorts[sort].fn)
-  }, [pet, category, brand, sale, query, sort])
+  }, [products, pet, category, brand, sale, query, sort])
 
   const activeCount = [pet, category, brand, sale].filter(Boolean).length
   const petLabel = pets.find((p) => p.slug === pet)?.label
@@ -126,7 +129,15 @@ export default function Catalog() {
               {results.length} {results.length === 1 ? 'producto' : 'productos'}
             </p>
 
-            {results.length ? (
+            {catalogLoading ? (
+              <Loading />
+            ) : catalogError ? (
+              <div className="empty-state">
+                <PackageSearch size={56} />
+                <h3>No pudimos cargar el catálogo</h3>
+                <p>{catalogError}. Intenta de nuevo en unos minutos.</p>
+              </div>
+            ) : results.length ? (
               <div className="products-grid products-grid--3">
                 {results.map((p) => (
                   <ProductCard key={p.id} product={p} />
