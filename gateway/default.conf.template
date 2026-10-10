@@ -1,0 +1,121 @@
+# API Gateway Huellitas. Plantilla: Nginx sustituye ${SERVER_NAME} y ${HTTPS_PORT} al arrancar.
+
+server_tokens off;
+client_max_body_size 1m;
+client_body_timeout 10s;
+client_header_timeout 10s;
+
+# ---------- Rate limiting (A07, D de STRIDE) ----------
+limit_req_zone $binary_remote_addr zone=general:10m rate=30r/s;
+limit_req_zone $binary_remote_addr zone=login:10m   rate=20r/m;
+limit_req_zone $binary_remote_addr zone=api:10m     rate=10r/s;
+limit_conn_zone $binary_remote_addr zone=conexiones:10m;
+limit_req_status 429;
+limit_conn_status 429;
+
+# ---------- WAF básico: firmas conocidas de SQLi / XSS / path traversal ----------
+# Nginx no inspecciona el cuerpo; esa segunda capa está en Huellitas\Validar::sinAtaques().
+map $request_uri $waf_uri {
+    default 0;
+    "~*(union(\s|\+|%20|/\*.*\*/)+(all(\s|\+|%20)+)?select)"           1;
+    "~*(<|%3c)(\s|%20)*/?(\s|%20)*(script|iframe|svg|img)"             1;
+    "~*(javascript|vbscript)(:|%3a)"                                   1;
+    "~*(\.\./|\.\.%2f|%2e%2e/|%2e%2e%2f)"                             1;
+    "~*(information_schema|sleep(\s|%20)*\(|benchmark(\s|%20)*\(|load_file)" 1;
+    "~*(/etc/passwd|/proc/self|\.env|\.git/)"                          1;
+    "~*('|%27)(\s|\+|%20)*(or|and)(\s|\+|%20)+[^&]*="                1;
+}
+map $http_user_agent $waf_ua {
+    default 0;
+    "~*(sqlmap|nikto|masscan|acunetix|havij|dirbuster|nessus|w3af)"     1;
+}
+map "$http_referer$http_cookie" $waf_cabeceras {
+    default 0;
+    "~*(<script|union(\s|\+)+select|javascript:)"                      1;
+}
+
+upstream auth_service  { server auth-service:8081;  keepalive 16; }
+upstream audit_service { server security-audit-service:8086; keepalive 8; }
+
+# ---------- HTTP → HTTPS ----------
+server {
+    listen 80;
+    server_name _;
+
+    # Salud para el healthcheck del contenedor (sin redirección).
+    location = /salud { access_log off; default_type text/plain; return 200 "ok\n"; }
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://$host:${HTTPS_PORT}$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${SERVER_NAME};
+
+    # A02 / PCI-DSS: solo TLS 1.3.
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    ssl_protocols       TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_tickets off;
+
+    # ---------- Cabeceras de seguridad (A05) ----------
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(self), payment=(self)" always;
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://images.unsplash.com https://res.cloudinary.com; connect-src 'self'; frame-src https://www.google.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+
+    limit_conn conexiones 50;
+
+    if ($waf_uri)       { return 403; }
+    if ($waf_ua)        { return 403; }
+    if ($waf_cabeceras) { return 403; }
+
+    # Solo métodos esperados.
+    if ($request_method !~ ^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS)$) { return 405; }
+
+    # Las rutas /internal/* son solo para comunicación entre servicios: nunca se publican.
+    location ^~ /internal/ { return 404; }
+
+    location = /api/auth/login {
+        limit_req zone=login burst=10 nodelay;
+        proxy_pass http://auth_service;
+        include /etc/nginx/conf.d/proxy_comun.inc;
+    }
+    location /api/auth/ {
+        limit_req zone=api burst=20 nodelay;
+        proxy_pass http://auth_service;
+        include /etc/nginx/conf.d/proxy_comun.inc;
+    }
+    location /api/auditoria/ {
+        limit_req zone=api burst=20 nodelay;
+        proxy_pass http://audit_service;
+        include /etc/nginx/conf.d/proxy_comun.inc;
+    }
+    location /api/ { default_type application/json; return 404 '{"error":"Recurso no encontrado"}'; }
+
+    # ---------- Frontend (SPA) ----------
+    root /usr/share/nginx/html;
+    index index.html;
+    gzip on;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+
+    location /assets/ {
+        limit_req zone=general burst=100 nodelay;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        # add_header en un location anula los del server: se repiten los imprescindibles.
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        try_files $uri =404;
+    }
+    location / {
+        limit_req zone=general burst=50 nodelay;
+        try_files $uri $uri/ /index.html;
+    }
+}

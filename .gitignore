@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Secretos: nunca al repositorio (A05 / PCI-DSS)
+.env
+.env.*
+!.env.example
+gateway/certs/
+backups/

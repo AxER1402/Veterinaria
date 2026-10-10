@@ -1,79 +1,84 @@
-# Huellitas – Frontend para veterinaria
+# Huellitas — E-Commerce distribuido con seguridad y auditoría
 
-Sitio web frontend (sin backend) para una veterinaria, hecho con **React + Vite** y empaquetado con **Docker + Nginx**.
-El diseño está inspirado en [PetMania](https://petmania.vamtam.com/): paleta amarillo `#FFD100`, azul marino `#002842` y celeste `#E5EEFF`, con tipografías *Fredoka* y *Readex Pro*.
+Tienda en línea de productos para mascotas de la veterinaria *Huellitas*. La arquitectura es de microservicios, con controles OWASP Top 10, bitácora de seguridad append-only y Zero Trust entre servicios.
+Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 
-## Páginas
+- Arquitectura, DFD y STRIDE: [`docs/01-arquitectura-stride-dfd.md`](docs/01-arquitectura-stride-dfd.md)
 
-| Ruta          | Contenido                                                                  |
-| ------------- | -------------------------------------------------------------------------- |
-| `/`           | Portada, sobre nosotros, servicios, por qué elegirnos, testimonios, reserva, sedes, FAQ, galería |
-| `/servicios`  | Detalle y precio de cada servicio                                          |
-| `/nosotros`   | Historia, estadísticas, valores y testimonios                              |
-| `/preguntas`  | Preguntas frecuentes                                                       |
-| `/contacto`   | Datos de contacto, formulario de reserva y sedes                           |
-| `/tienda`     | Portada de la tienda: destacados, oferta flash, compra por mascota, marcas, consejos, reseñas |
-| `/tienda/productos` | Catálogo con búsqueda, filtros (mascota, categoría, marca, ofertas) y orden. Los filtros viven en la URL |
-| `/tienda/producto/:slug` | Ficha de producto con variantes, cantidad y productos relacionados |
-| `/carrito`    | Carrito con cupones y cálculo de envío                                     |
-| `/checkout`   | Datos, entrega (domicilio o retiro), pago y confirmación del pedido        |
-| `/favoritos`  | Productos guardados                                                         |
+## Servicios
 
-## Ejecutar con Docker (producción)
+| Servicio | Qué hace | Puerto |
+|---|---|---|
+| `gateway` | Nginx: única entrada. Usa TLS 1.3, WAF y rate limiting, y sirve el frontend React | host 8088 (HTTP→HTTPS) y 8443 |
+| `auth-service` | Registro, login, JWT (1 h), logout con lista negra en Redis, bloqueo tras 5 intentos | 8081 (interno) |
+| `security-audit-service` | Bitácora `security_audit_logs`: append-only, con cadena de hashes | 8086 (interno) |
+| `mariadb-master` / `mariadb-slave` | BD de negocio (una por servicio) con réplica de solo lectura | interno |
+| `mariadb-audit` | `audit_db` en una instancia y un volumen aparte | interno |
+| `redis` | JWT revocados, contadores de rate limit y caché | interno |
 
-```bash
-docker compose up -d --build web
-```
+`catalogo-service`, `pedidos-service`, `pagos-service` y `notificaciones-service` se agregan en las semanas 2 y 3 (ver `implementacion.md`).
 
-Abre http://localhost:8080. Para detenerlo: `docker compose down`.
-
-Sin docker compose:
+## Levantar
 
 ```bash
-docker build -t huellitas-veterinaria .
-docker run -d -p 8080:80 huellitas-veterinaria
+cp .env.example .env      # rellenar los secretos (el comando para generarlos está dentro del archivo)
+docker compose up -d --build
 ```
 
-## Desarrollo
+Abrir <https://localhost:8443>. En local el certificado es autofirmado y se genera solo. En producción se monta el de Let's Encrypt en `gateway/certs/`.
 
-Con Node 20+ instalado:
+### Usuarios de prueba
+
+| Rol | Correo | Contraseña |
+|---|---|---|
+| Admin | `admin@huellitas.gt` | `Admin#2026` |
+| Cliente | `cliente@huellitas.gt` | `Cliente#2026` |
+
+## API (vía gateway)
+
+| Método | Ruta | Acceso |
+|---|---|---|
+| POST | `/api/auth/registro` | público. Crea siempre rol `cliente` |
+| POST | `/api/auth/login` | público, con rate limit |
+| POST | `/api/auth/logout` | usuario. Revoca el JWT |
+| GET | `/api/auth/me` | usuario |
+| POST | `/api/auth/admin/acceso` | admin. Registra `ACCESO_ADMIN_PANEL` |
+| GET | `/api/auditoria/eventos?accion=&resultado=&servicio=&usuario_email=&desde=&hasta=&limite=&pagina=` | admin |
+| GET | `/api/auditoria/resumen` | admin |
+| GET | `/api/auditoria/integridad` | admin. Verifica la cadena de hashes |
+
+`/internal/*` es solo para la comunicación entre servicios y el gateway nunca lo publica.
+
+## Pruebas de seguridad
 
 ```bash
-npm install
-npm run dev        # http://localhost:5173
-npm run build      # genera /dist
-npm run lint
+tests/seguridad.sh
 ```
 
-O con Docker, con recarga en caliente:
+Corre los casos CP-01 a CP-16 contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root y replicación.
+
+> La ráfaga del CP-16 agota el cupo de `/login` del gateway. Si se repite la prueba, conviene esperar ~30 s.
+
+## Frontend en desarrollo
 
 ```bash
-docker compose --profile dev up dev   # http://localhost:5173
+docker compose --profile dev up frontend-dev   # http://localhost:5173, /api pasa al gateway
 ```
+
+O con Node 20+: `cd frontend && npm install && npm run dev`.
 
 ## Estructura
 
 ```
-src/
-├── data/content.js     # Contenido del sitio: textos, servicios, sedes, FAQ, imágenes
-├── data/shop.js        # Tienda: productos, variantes y precios, categorías, cupones, reseñas
-├── context/            # Estado del carrito y favoritos (useReducer + localStorage)
-├── components/         # Header, Hero, ServicesGrid, Testimonials, BookingForm, Footer…
-├── pages/              # Home, Services, About, FaqPage, Contact, NotFound
-├── pages/shop/         # ShopHome, Catalog, ProductDetail, Cart, Checkout, Wishlist
-├── App.jsx             # Rutas (react-router-dom)
-├── index.css           # Estilos globales y variables de color
-└── shop.css            # Estilos de la tienda
-Dockerfile              # Build multi-etapa: Node → Nginx
-nginx.conf              # Fallback de SPA + caché de assets
+frontend/            React + Vite (tienda, carrito, checkout)
+gateway/             Dockerfile + plantilla Nginx (WAF, TLS, rate limit, proxy)
+services/
+  Dockerfile         imagen PHP común (Apache en puerto alto, USER www-data)
+  shared/            JWT, Guard (Zero Trust), Redis, PDO, validación, cliente de auditoría
+  auth/              auth-service
+  audit/             security-audit-service
+db/master/           auth_db, catalogo_db, pedidos_db, pagos_db + usuarios por servicio
+db/audit/            audit_db: tabla, triggers append-only, usuario INSERT/SELECT
+docs/                arquitectura, DFD, STRIDE (y luego OWASP, PCI-DSS, BCP/DRP, ALE/ROSI)
+tests/seguridad.sh   pruebas end-to-end de los controles
 ```
-
-Para cambiar el nombre, teléfono, servicios o textos, edita `src/data/content.js`.
-Los colores se definen como variables CSS al inicio de `src/index.css`.
-
-## Notas
-
-- La tienda es solo de demostración: el carrito y los favoritos se guardan en `localStorage` del navegador y el checkout **no cobra ni envía pedidos**. Cupones de prueba: `HUELLITAS10` (10% en todo) y `FLASH50` (50% en productos NutriHuella). Envío gratis desde $50.
-- Para agregar productos, añade un objeto al arreglo `products` en `src/data/shop.js`.
-- El formulario de reserva y el newsletter validan los datos y muestran confirmación, pero **no envían nada**: es un proyecto solo frontend. Para conectarlo, reemplaza el `console.info` en `src/components/BookingForm.jsx` por una llamada a tu API o a un servicio como Formspree o EmailJS.
-- Las fotos se cargan desde Unsplash (licencia libre). Para producción conviene descargarlas a `public/`.
