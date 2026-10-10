@@ -37,6 +37,7 @@ Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 | `auth-service` | Registro, login, JWT (1 h), logout con lista negra en Redis, bloqueo tras 5 intentos | 8081 (interno) |
 | `catalogo-service` | 24 productos con variantes, precio y stock. Lecturas en la réplica con caché Redis; imágenes por Cloudinary | 8082 (interno) |
 | `pedidos-service` | Pedidos con UUID, total calculado en el servidor, cupones, estados con historial | 8083 (interno) |
+| `pedidos-vencimientos` | Tarea periódica (cada 15 min): cancela los pedidos sin pagar tras `PEDIDO_VENCE_HORAS` (24 h) y devuelve el stock | — |
 | `pagos-service` | Stripe (PaymentIntent + webhook firmado) y PayPal (Orders v2, captura en servidor). Sin datos de tarjeta | 8084 (interno; solo el webhook es público) |
 | `notificaciones-service` | Correo de confirmación por EmailJS con código de verificación HMAC | 8085 (interno) |
 | `security-audit-service` | Bitácora `security_audit_logs`: append-only, con cadena de hashes | 8086 (interno) |
@@ -92,9 +93,9 @@ Abrir <https://localhost:8443>. En local el certificado es autofirmado y se gene
 tests/seguridad.sh
 ```
 
-Corre los casos CP-01 a CP-32 contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto manipulado), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada y evidencia de SEC-2.
+Corre los casos CP-01 a CP-33 contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto manipulado), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2 y vencimiento de pedidos sin pagar.
 
-> La ráfaga del CP-16 agota el cupo de `/login` del gateway. Si se repite la prueba, conviene esperar ~30 s.
+> La ráfaga del CP-16 agota el cupo de `/login` del gateway. Si se repite la prueba enseguida, la suite espera sola a que se recupere (hasta ~1 min).
 
 ## Panel de administración
 

@@ -117,6 +117,26 @@ services:
       catalogo-service: { condition: service_healthy }
       security-audit-service: { condition: service_healthy }
 
+  # Tarea periódica: cancela los pedidos que siguen sin pagar tras PEDIDO_VENCE_HORAS y devuelve el stock.
+  pedidos-vencimientos:
+    <<: *php
+    image: huellitas/pedidos-service:latest
+    command: ["sh", "-c", "while :; do php /var/www/app/bin/vencer.php; sleep ${PEDIDO_VENCIMIENTO_CADA_SEG:-900}; done"]
+    healthcheck: { disable: true }
+    mem_limit: 96m
+    cpu_shares: 256
+    environment:
+      <<: *php-env
+      SERVICE_NAME: pedidos-service
+      DB_HOST: mariadb-master
+      DB_NAME: pedidos_db
+      DB_USER: pedidos_user
+      DB_PASSWORD: ${PEDIDOS_DB_PASSWORD}
+      CATALOGO_URL: http://catalogo-service:8082
+      PEDIDO_VENCE_HORAS: ${PEDIDO_VENCE_HORAS:-24}
+    depends_on:
+      pedidos-service: { condition: service_healthy }
+
   # Pagos y notificaciones son los únicos con salida a Internet (Stripe, PayPal, EmailJS).
   pagos-service:
     <<: *php

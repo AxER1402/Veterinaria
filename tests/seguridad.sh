@@ -20,7 +20,30 @@ esperar() { # esperar <descripción> <esperado> <obtenido>
 }
 codigo() { "${C[@]}" -o /dev/null -w '%{http_code}' "$@"; }
 post()   { local url=$1 datos=$2; shift 2; "${C[@]}" -X POST -H 'Content-Type: application/json' -d "$datos" "$@" "$BASE$url"; }
-login()  { post /api/auth/login "{\"email\":\"$1\",\"password\":\"$2\"}" | jq -r '.token // empty'; }
+# El gateway limita /login (20/min, ráfaga de 10). La suite hace ~12 logins seguidos: ante un 429 se
+# reintenta tras 3 s (lo que tarda en reponerse un turno), como haría un cliente real.
+intento_login() { # intento_login <email> <password> → "cuerpo<LF>código", reintentando en 429
+    local r i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        r=$("${C[@]}" -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"email\":\"$1\",\"password\":\"$2\"}" "$BASE/api/auth/login")
+        [[ "${r##*$'\n'}" != 429 ]] && break
+        sleep 3
+    done
+    printf '%s' "$r"
+}
+login()        { local r; r=$(intento_login "$1" "$2"); jq -r '.token // empty' <<<"${r%$'\n'*}" 2>/dev/null; }
+login_codigo() { local r; r=$(intento_login "$1" "$2"); echo "${r##*$'\n'}"; }
+login_error()  { local r; r=$(intento_login "$1" "$2"); jq -r '.error // empty' <<<"${r%$'\n'*}" 2>/dev/null; }
+
+# Si una corrida anterior agotó el cupo de /login del gateway (ráfaga del CP-16), se espera a que se
+# recupere: la sonda consume menos de lo que se repone (1 cada 5 s frente a 1 cada 3 s), y después
+# se esperan 30 s más para recuperar margen para los ~12 logins de la suite.
+espera_login() { "${C[@]}" -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/api/auth/login"; }
+if [[ "$(espera_login)" == 429 ]]; then
+    echo "(esperando a que se recupere el cupo de /login de la corrida anterior…)"
+    until [[ "$(espera_login)" != 429 ]]; do sleep 5; done
+    t0=$(date +%s); until (( $(date +%s) - t0 >= 30 )); do sleep 5; done
+fi
 
 # Se limpian los contadores de login de corridas anteriores para que la prueba sea repetible.
 docker compose exec -T redis sh -c 'redis-cli --scan --pattern "login:*" | xargs -r redis-cli del' >/dev/null
@@ -57,8 +80,8 @@ exp=$(cut -d. -f2 <<<"$TOKEN" | tr '_-' '/+' | base64 -d 2>/dev/null | jq -r '.e
 esperar "el JWT expira en 1 h" 3600 "$exp"
 esperar "/me con token → 200" 200 "$(codigo -H "Authorization: Bearer $TOKEN" "$BASE/api/auth/me")"
 esperar "/me sin token → 401" 401 "$(codigo "$BASE/api/auth/me")"
-esperar "contraseña incorrecta → 401 genérico" "Credenciales inválidas" "$(post /api/auth/login "{\"email\":\"$CLIENTE\",\"password\":\"Mala1234\"}" | jq -r .error)"
-esperar "correo inexistente → mismo mensaje (sin enumeración)" "Credenciales inválidas" "$(post /api/auth/login '{"email":"noexiste@correo.gt","password":"Mala1234"}' | jq -r .error)"
+esperar "contraseña incorrecta → 401 genérico" "Credenciales inválidas" "$(login_error "$CLIENTE" Mala1234)"
+esperar "correo inexistente → mismo mensaje (sin enumeración)" "Credenciales inválidas" "$(login_error noexiste@correo.gt Mala1234)"
 
 caso "CP-06 Tokens manipulados (E de STRIDE)"
 h=$(printf '{"alg":"none","typ":"JWT"}' | base64 -w0 | tr '+/' '-_' | tr -d '=')
@@ -78,9 +101,9 @@ esperar "logout → 200" 200 "$(codigo -X POST -H "Authorization: Bearer $TOKEN"
 esperar "el mismo token después del logout" "Token revocado" "$("${C[@]}" -H "Authorization: Bearer $TOKEN" "$BASE/api/auth/me" | jq -r .error)"
 
 caso "CP-09 Bloqueo tras 5 intentos fallidos durante 15 min (A07)"
-for i in 1 2 3 4; do post /api/auth/login "{\"email\":\"$CLIENTE\",\"password\":\"Mala1234\"}" >/dev/null; done
-esperar "5.º intento fallido → 423" 423 "$(codigo -X POST -H 'Content-Type: application/json' -d "{\"email\":\"$CLIENTE\",\"password\":\"Mala1234\"}" "$BASE/api/auth/login")"
-esperar "contraseña correcta durante el bloqueo → 423" 423 "$(codigo -X POST -H 'Content-Type: application/json' -d "{\"email\":\"$CLIENTE\",\"password\":\"Segura123\"}" "$BASE/api/auth/login")"
+for i in 1 2 3 4; do login_codigo "$CLIENTE" Mala1234 >/dev/null; done
+esperar "5.º intento fallido → 423" 423 "$(login_codigo "$CLIENTE" Mala1234)"
+esperar "contraseña correcta durante el bloqueo → 423" 423 "$(login_codigo "$CLIENTE" Segura123)"
 
 caso "CP-10 WAF y validación de entradas (A03)"
 esperar "SQLi en la URL → 403" 403 "$(codigo "$BASE/tienda/productos?q=1'%20OR%20'1'='1")"
@@ -322,6 +345,22 @@ res=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auditoria/resumen")
 [[ $(jq .tipos_de_evento <<<"$res") -ge 8 ]] && ok "$(jq .tipos_de_evento <<<"$res") tipos de evento" || mal "menos de 8 tipos"
 faltan=$(jq -r '[.por_evento[].accion] | unique as $hay | ["LOGIN_CLIENTE_EXITOSO","LOGIN_CLIENTE_FALLIDO","REGISTRO_CLIENTE","PEDIDO_CREADO","PAGO_INICIADO","PAGO_CONFIRMADO","PAGO_FALLIDO","PEDIDO_ESTADO_CAMBIADO","PRECIO_MODIFICADO","PRODUCTO_AGOTADO","EXPORTACION_CLIENTES","ACCESO_ADMIN_PANEL","WEBHOOK_STRIPE_RECIBIDO","TOKEN_REVOCADO"] - $hay | join(",")' <<<"$res")
 esperar "los 14 eventos obligatorios aparecen en la bitácora" "" "$faltan"
+
+caso "CP-33 Pedidos sin pagar vencen y devuelven el stock"
+stock_admin() { auth_json GET "$ADMIN" /api/catalogo/admin/productos | jq --argjson v "$var_id" '.productos[].variantes[] | select(.id==$v) | .stock'; }
+antes_stock=$(stock_admin)
+read -r PED_V _ <<<"$(auth_json POST "$T2" /api/pedidos "{\"items\":[{\"variante_id\":$var_id,\"cantidad\":3}],$ENTREGA}" | jq -r '.pedido | "\(.id) \(.total)"')"
+esperar "al crear el pedido se apartan 3 unidades" "$((antes_stock - 3))" "$(stock_admin)"
+docker compose exec -T -e MYSQL_PWD="$DB_ROOT_PASSWORD" mariadb-master mariadb -uroot -e \
+    "UPDATE pedidos_db.pedidos SET fecha = NOW() - INTERVAL 25 HOUR WHERE id = '$PED_V'"
+salida=$(docker compose exec -T pedidos-vencimientos php /var/www/app/bin/vencer.php)
+esperar "el pedido de hace 25 h se vence" true "$(jq --arg p "$PED_V" '.vencidos | index($p) != null' <<<"$salida")"
+esperar "queda cancelado con el motivo en el historial" "cancelado|Vencido: 24 h sin pago" "$(auth_json GET "$T2" "/api/pedidos/$PED_V" | jq -r '.pedido | "\(.estado)|\(.historial[-1].comentario)"')"
+esperar "el stock apartado vuelve al catálogo" "$antes_stock" "$(stock_admin)"
+esperar "PEDIDO_ESTADO_CAMBIADO con origen vencimiento automático" "$PED_V|vencimiento automático" "$(evento_ultimo PEDIDO_ESTADO_CAMBIADO | jq -r '"\(.pedido_id)|\(.dato_nuevo.origen)"')"
+esperar "un pedido reciente no se toca" "[]" "$(docker compose exec -T pedidos-vencimientos php /var/www/app/bin/vencer.php | jq -c .vencidos)"
+# bin/ está fuera del DocumentRoot (public/): ni siquiera desde la red interna se puede ejecutar por HTTP.
+esperar "el script no se puede llamar por HTTP (ni desde la red interna)" 404 "$(docker compose exec -T auth-service curl -s -o /dev/null -w '%{http_code}' http://pedidos-service:8083/bin/vencer.php)"
 
 caso "CP-16 Rate limiting en /login (gateway, se corre al final)"
 codigos=$(for i in $(seq 1 15); do codigo -X POST -H 'Content-Type: application/json' -d '{"email":"flood@correo.gt","password":"x"}' "$BASE/api/auth/login"; echo; done)

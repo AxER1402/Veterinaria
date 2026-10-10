@@ -266,6 +266,56 @@ final class PedidosController
         return [200, ['pedido' => $this->detalle($id)]];
     }
 
+    /**
+     * Cancela los pedidos que siguen pendientes de pago después de $horas y devuelve su stock.
+     * Lo ejecuta bin/vencer.php (contenedor pedidos-vencimientos) cada 15 min.
+     * Si un pago llega después del vencimiento, marcarPagado() no reactiva el pedido y lo deja
+     * como REEMBOLSO_PENDIENTE en el log.
+     */
+    public function vencerPendientes(int $horas): array
+    {
+        $db = Db::escritura();
+        $consulta = $db->prepare("SELECT id FROM pedidos WHERE estado = 'pendiente_pago'
+                                   AND fecha < NOW() - INTERVAL ? HOUR ORDER BY fecha LIMIT 200");
+        $consulta->execute([$horas]);
+        $vencidos = [];
+        foreach ($consulta->fetchAll(\PDO::FETCH_COLUMN) as $id) {
+            $db->beginTransaction();
+            try {
+                $bloqueo = $db->prepare('SELECT estado, id_cliente, total FROM pedidos WHERE id = ? FOR UPDATE');
+                $bloqueo->execute([$id]);
+                $pedido = $bloqueo->fetch();
+                // Pudo pagarse entre la consulta y el bloqueo: solo se vence si sigue pendiente.
+                if (!$pedido || $pedido['estado'] !== 'pendiente_pago') {
+                    $db->rollBack();
+                    continue;
+                }
+                $comentario = "Vencido: $horas h sin pago";
+                $db->prepare("UPDATE pedidos SET estado = 'cancelado' WHERE id = ?")->execute([$id]);
+                $db->prepare('INSERT INTO historial_estados (pedido_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, ?, ?, NULL, ?)')
+                    ->execute([$id, 'pendiente_pago', 'cancelado', $comentario]);
+                $db->commit();
+            } catch (\Throwable $e) {
+                $db->rollBack();
+                error_log("Vencimiento del pedido $id falló: " . $e->getMessage());
+                continue;
+            }
+
+            [$codigo] = Interno::post($this->catalogo('/internal/catalogo/liberar'), ['pedido_id' => $id]);
+            if ($codigo !== 200) {
+                error_log("No se pudo liberar el stock del pedido vencido $id (catálogo respondió $codigo)");
+            }
+            Auditoria::registrar('PEDIDO_ESTADO_CAMBIADO', 'EXITO', [
+                'usuario_id' => (int) $pedido['id_cliente'], 'rol' => 'cliente', 'pedido_id' => $id,
+                'dato_anterior' => ['estado' => 'pendiente_pago'],
+                'dato_nuevo'    => ['estado' => 'cancelado', 'origen' => 'vencimiento automático', 'comentario' => $comentario,
+                                    'stock_liberado' => $codigo === 200],
+            ]);
+            $vencidos[] = $id;
+        }
+        return $vencidos;
+    }
+
     /** Inicia el pago de un pedido propio. Entrada: {metodo: stripe|paypal} */
     public function iniciarPago(string $id): array
     {
