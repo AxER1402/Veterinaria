@@ -29,3 +29,6 @@ dist-ssr
 !.env.example
 gateway/certs/
 backups/
+
+# Intermedio del PDF de SEC-1
+docs/pdf/SEC-1.html

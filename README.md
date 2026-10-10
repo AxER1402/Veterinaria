@@ -6,7 +6,26 @@ Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 - Arquitectura, DFD y STRIDE: [`docs/01-arquitectura-stride-dfd.md`](docs/01-arquitectura-stride-dfd.md)
 - Controles OWASP Top 10 con referencias al código: [`docs/02-owasp-top10.md`](docs/02-owasp-top10.md)
 - Pagos y PCI-DSS: [`docs/03-pci-dss-pagos.md`](docs/03-pci-dss-pagos.md)
+- Continuidad y recuperación (BCP/DRP): [`docs/04-bcp-drp.md`](docs/04-bcp-drp.md) · simulacros en [`docs/simulacros/`](docs/simulacros/)
+- Presupuesto ALE/ROSI: [`docs/05-presupuesto-ale-rosi.md`](docs/05-presupuesto-ale-rosi.md) · ISO 27001: [`docs/06-iso27001.md`](docs/06-iso27001.md)
+- Despliegue en producción: [`docs/07-despliegue.md`](docs/07-despliegue.md)
 - Reportes de OWASP ZAP: [`docs/zap/`](docs/zap/)
+- **SEC-1 en PDF:** [`docs/pdf/SEC-1-Huellitas-Seguridad.pdf`](docs/pdf/SEC-1-Huellitas-Seguridad.pdf)
+
+## Entregables
+
+| Entregable | Dónde |
+|---|---|
+| Tienda pública (catálogo sin registro) | `https://<dominio>/tienda` (local: <https://localhost:8443/tienda>) |
+| Panel de administración | `/admin` con `admin@huellitas.gt` / `Admin#2026` |
+| Microservicios + compose + README | este repositorio (8 servicios propios + 3 BD + Redis) |
+| Scripts SQL con ≥ 20 productos | `db/master/*.sql` (24 productos, 40 variantes), `db/audit/` |
+| **SEC-1** PDF de seguridad | `docs/pdf/SEC-1-Huellitas-Seguridad.pdf` (se regenera con `docs/pdf/construir.mjs`) |
+| **SEC-2** ≥ 30 registros, ≥ 8 tipos | `/admin/bitacora` o `GET /api/auditoria/resumen` (CP-32 lo comprueba: los 14 eventos obligatorios + 2 extra) |
+| **SEC-3** sin datos de tarjeta | `SELECT * FROM pagos_db.pagos;` → solo `payment_intent_id` (CP-28) |
+| **SEC-4** reporte OWASP ZAP | `docs/zap/zap-baseline-2.html` (0 FAIL, 0 alertas medias o altas) |
+| **SEC-5** hardening Docker | `docker ps` → ningún `0.0.0.0:3306` ni `0.0.0.0:6379` (CP-14) |
+| Demo de recuperación | `ops/simulacro-drp.sh` → informe en `docs/simulacros/` |
 
 ## Servicios
 
@@ -71,9 +90,27 @@ Abrir <https://localhost:8443>. En local el certificado es autofirmado y se gene
 tests/seguridad.sh
 ```
 
-Corre los casos CP-01 a CP-30 contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto manipulado), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo.
+Corre los casos CP-01 a CP-32 contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto manipulado), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada y evidencia de SEC-2.
 
 > La ráfaga del CP-16 agota el cupo de `/login` del gateway. Si se repite la prueba, conviene esperar ~30 s.
+
+## Panel de administración
+
+`/admin` (solo rol admin; cada ingreso queda como `ACCESO_ADMIN_PANEL`):
+
+- **Resumen:** ventas cobradas, pedidos pendientes, eventos de auditoría, integridad de la bitácora y ventas por día.
+- **Pedidos:** filtro por estado y cambio de estado según las transiciones permitidas.
+- **Catálogo:** precio, precio anterior, stock, activo y destacado. Los cambios generan `PRECIO_MODIFICADO` y `PRODUCTO_AGOTADO`.
+- **Bitácora:** filtros, detalle con antes y después, y botón «Verificar integridad».
+- **Clientes:** listado y exportación a CSV (`EXPORTACION_CLIENTES`).
+
+## Respaldos y recuperación
+
+```bash
+ops/backup.sh                         # respaldo AES-256 de todas las bases → backups/<fecha>/
+ops/restore.sh backups/<fecha>        # restaura (verifica SHA-256 antes)
+ops/simulacro-drp.sh                  # simulacro de ransomware en el maestro, con informe y RTO medido
+```
 
 ## Frontend en desarrollo
 
@@ -99,6 +136,8 @@ services/
   audit/             security-audit-service
 db/master/           usuarios por servicio + esquemas y datos de auth_db, catalogo_db (24 productos), pedidos_db, pagos_db
 db/audit/            audit_db: tabla, triggers append-only, usuario INSERT/SELECT
-docs/                arquitectura, DFD, STRIDE (y luego OWASP, PCI-DSS, BCP/DRP, ALE/ROSI)
+docs/                STRIDE/DFD, OWASP, PCI-DSS, BCP/DRP, ALE/ROSI, ISO 27001, despliegue, ZAP, PDF de SEC-1
+ops/                 backup.sh, restore.sh, simulacro-drp.sh
+docker-compose.prod.yml  producción: puertos 80/443 y Let's Encrypt (certbot)
 tests/seguridad.sh   pruebas end-to-end de los controles
 ```

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
-import { Menu, X, Phone, Heart, ShoppingBag, User } from 'lucide-react'
+import { Menu, X, Phone, Heart, ShoppingBag, User, ShieldCheck } from 'lucide-react'
 import { Logo } from './Brand'
 import { business, navLinks } from '../data/content'
 import { useShop } from '../context/useShop'
@@ -10,7 +10,7 @@ export default function Header() {
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const { totals, wishlist, openDrawer } = useShop()
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20)
     onScroll()
@@ -35,6 +35,11 @@ export default function Header() {
               {link.label}
             </NavLink>
           ))}
+          {isAdmin && (
+            <NavLink to="/admin" className="nav__link nav__admin-mobile">
+              Panel de administración
+            </NavLink>
+          )}
           <Link to="/contacto#reservar" className="btn btn--primary nav__cta-mobile">
             Reservar cita
           </Link>
@@ -44,6 +49,11 @@ export default function Header() {
           <a href={`tel:${business.phone}`} className="header__phone">
             <Phone size={18} /> {business.phone}
           </a>
+          {isAdmin && (
+            <Link to="/admin" className="header__icon header__icon--admin" aria-label="Panel de administración">
+              <ShieldCheck size={22} />
+            </Link>
+          )}
           <Link to={user ? '/cuenta/pedidos' : '/cuenta'} className="header__icon" aria-label={user ? `Mi cuenta (${user.nombre})` : 'Ingresar'}>
             <User size={22} />
             {user && <span className="header__dot" />}

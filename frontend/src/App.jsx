@@ -21,9 +21,15 @@ import Wishlist from './pages/shop/Wishlist'
 import Account from './pages/account/Account'
 import Orders from './pages/account/Orders'
 import OrderDetail from './pages/account/OrderDetail'
+import AdminLayout from './pages/admin/AdminLayout'
+import AdminResumen from './pages/admin/AdminResumen'
+import AdminPedidos from './pages/admin/AdminPedidos'
+import AdminCatalogo from './pages/admin/AdminCatalogo'
+import AdminBitacora from './pages/admin/AdminBitacora'
+import AdminClientes from './pages/admin/AdminClientes'
 
 // En el flujo de compra el banner de reservas distrae, así que se oculta.
-const NO_CTA = ['/carrito', '/checkout', '/cuenta']
+const NO_CTA = ['/carrito', '/checkout', '/cuenta', '/admin']
 
 function Layout() {
   const { pathname } = useLocation()
@@ -62,6 +68,13 @@ export default function App() {
               <Route path="cuenta" element={<Account />} />
               <Route path="cuenta/pedidos" element={<Orders />} />
               <Route path="cuenta/pedidos/:id" element={<OrderDetail />} />
+              <Route path="admin" element={<AdminLayout />}>
+                <Route index element={<AdminResumen />} />
+                <Route path="pedidos" element={<AdminPedidos />} />
+                <Route path="catalogo" element={<AdminCatalogo />} />
+                <Route path="bitacora" element={<AdminBitacora />} />
+                <Route path="clientes" element={<AdminClientes />} />
+              </Route>
               <Route path="*" element={<NotFound />} />
             </Route>
           </Routes>

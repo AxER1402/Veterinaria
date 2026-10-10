@@ -1,0 +1,42 @@
+# Producción: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# - El gateway escucha en 80/443 del host (o en los puertos de HTTP_PORT/HTTPS_PORT si hay
+#   otro proxy delante, como en un VPS compartido).
+# - Certificados de Let's Encrypt: certbot en modo webroot con renovación automática cada 12 h.
+#   Al renovar, el gateway recarga Nginx sin cortar conexiones.
+services:
+  gateway:
+    environment:
+      SERVER_NAME: ${SERVER_NAME:?define SERVER_NAME (dominio público)}
+      HTTPS_PORT: ${PUBLIC_HTTPS_PORT:-443}
+    ports: !override
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    # Usa el certificado vigente de /etc/letsencrypt/live/<dominio>/ y recarga Nginx cada 6 h
+    # para tomar los renovados.
+    entrypoint: >
+      sh -c 'mkdir -p /etc/nginx/certs &&
+             if [ -f /etc/letsencrypt/live/$$SERVER_NAME/fullchain.pem ]; then
+               ln -sf /etc/letsencrypt/live/$$SERVER_NAME/fullchain.pem /etc/nginx/certs/fullchain.pem;
+               ln -sf /etc/letsencrypt/live/$$SERVER_NAME/privkey.pem /etc/nginx/certs/privkey.pem; fi;
+             (while sleep 6h; do nginx -s reload; done) &
+             exec /docker-entrypoint.sh nginx -g "daemon off;"'
+    restart: always
+
+  certbot:
+    image: certbot/certbot:v2.11.0
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: >
+      sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done'
+    restart: always
+
+  frontend-dev: !reset null
+
+volumes:
+  letsencrypt:
+  certbot_www:

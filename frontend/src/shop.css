@@ -712,3 +712,67 @@
 .payment__paypal { min-height: 50px; }
 .btn--paypal { background: #ffc439; color: #003087; font-weight: 700; }
 .btn--paypal:hover { background: #f2ba36; }
+
+/* ---------- Panel de administración ---------- */
+.admin { padding: 40px 0 80px; background: var(--soft); min-height: 70vh; }
+.admin__head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.admin__head h1 { font-size: 2rem; margin: 0; }
+.admin__head span { color: var(--gray); }
+.admin__tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 24px; padding-bottom: 4px; }
+.admin__tabs a { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 999px; color: var(--navy); font-weight: 500; white-space: nowrap; background: var(--white); }
+.admin__tabs a.active { background: var(--navy); color: var(--white); }
+.admin-card { background: var(--white); border-radius: 20px; padding: 24px; margin-bottom: 24px; min-width: 0; }
+.admin-card h2 { font-size: 1.25rem; margin: 0; }
+.admin-card h2 small { font-family: var(--font-body); font-weight: 300; font-size: 0.85rem; color: var(--gray); }
+.admin-card__head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.admin-card select, .admin-filters input, .admin-filters select, .admin-table input[type=number] {
+  font: inherit; font-size: 0.9rem; color: var(--navy); border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; background: var(--white);
+}
+.admin-grid { display: grid; grid-template-columns: 3fr 2fr; gap: 24px; }
+.admin-filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.admin-filters input { min-width: 220px; }
+.admin-pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 16px; color: var(--gray); }
+.table-scroll { overflow-x: auto; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.admin-table th { text-align: left; font-weight: 500; color: var(--gray); border-bottom: 1px solid var(--line); padding: 8px 10px; white-space: nowrap; }
+.admin-table td { border-bottom: 1px solid var(--line); padding: 10px; vertical-align: middle; color: var(--navy); }
+.admin-table td small { display: block; color: var(--gray); }
+.admin-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.admin-table input[type=number] { width: 96px; text-align: right; }
+.admin-table tr.is-out td { background: #fff7f6; }
+.admin-table tr.is-clickable { cursor: pointer; }
+.admin-table tr.is-clickable:hover td { background: var(--sky); }
+.admin-table--log td { white-space: nowrap; }
+.log-detail td { background: var(--soft); white-space: normal; }
+.log-detail dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; font-size: 0.85rem; }
+.log-detail dt { color: var(--gray); }
+.log-detail dd { margin: 0; word-break: break-all; }
+.form-ok { background: #e3f5ea; color: #1f6f3d; border-radius: 12px; padding: 12px 16px; margin: 0 0 16px; font-size: 0.92rem; }
+.link-btn { font: inherit; font-size: 0.9rem; border: 0; background: none; color: var(--navy); text-decoration: underline; cursor: pointer; }
+
+/* Indicadores */
+.stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.stat-tile { background: var(--white); border-radius: 20px; padding: 18px 20px; display: grid; gap: 4px; }
+.stat-tile span { color: var(--gray); font-size: 0.88rem; }
+.stat-tile strong { font-family: var(--font-display); font-size: 1.9rem; color: var(--navy); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.stat-tile small { color: var(--gray); font-size: 0.8rem; }
+.stat-tile--ok strong { color: #1f6f3d; }
+.stat-tile--bad strong { color: #a12622; }
+
+/* Gráfico de barras (una serie) */
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart__grid, .chart__axis { stroke: #e8e8e6; stroke-width: 1; }
+.chart__tick { fill: var(--gray); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart__bar { fill: #2a78d6; }
+.chart__bar.is-hover { fill: #1c5fae; }
+.chart__tooltip {
+  position: absolute; top: 0; transform: translateX(-50%); pointer-events: none; white-space: nowrap;
+  background: var(--navy); color: var(--white); border-radius: 10px; padding: 8px 12px; font-size: 0.82rem; display: grid; gap: 2px;
+}
+@media (max-width: 900px) { .admin-grid { grid-template-columns: 1fr; } }
+
+/* Acceso al panel: ícono en escritorio; en teléfonos va dentro del menú para no desbordar el encabezado. */
+.nav__admin-mobile { display: none; }
+@media (max-width: 960px) { .nav__admin-mobile { display: block; } }
+@media (max-width: 640px) { .header__icon--admin { display: none; } }

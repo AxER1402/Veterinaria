@@ -307,6 +307,22 @@ fugas=$(git grep -nE 'sk_(test|live)_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|EMA
 esperar "ninguna API key en archivos versionados" 0 "$fugas"
 esperar "solo pagos y notificaciones tienen salida a Internet" "000" "$(docker compose exec -T catalogo-service curl -s -o /dev/null -w '%{http_code}' --max-time 3 https://api.stripe.com || true)"
 
+# ======================= Semana 4: panel de administración y evidencia =======================
+caso "CP-31 Exportación de clientes auditada (A09, A.5.34)"
+esperar "cliente no puede exportar → 403" 403 "$(codigo -H "Authorization: Bearer $T2" "$BASE/api/auth/admin/clientes/exportar")"
+csv=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auth/admin/clientes/exportar")
+esperar "CSV solo con columnas mínimas" "id,nombre,email,activo,creado" "$(head -1 <<<"$csv" | sed 's/^\xEF\xBB\xBF//')"
+grep -q 'password\|\$2y\$' <<<"$csv" && mal "el CSV contiene hashes" || ok "el CSV no contiene contraseñas ni hashes"
+esperar "EXPORTACION_CLIENTES registra cuántos registros salieron" "admin@huellitas.gt|$(($(wc -l <<<"$csv") - 1))" "$(evento_ultimo EXPORTACION_CLIENTES | jq -r '"\(.usuario_email)|\(.dato_nuevo.registros)"')"
+esperar "intento de un cliente de entrar al panel → ACCESO_ADMIN_PANEL FALLO" "FALLO" "$(codigo -X POST -H "Authorization: Bearer $T2" "$BASE/api/auth/admin/acceso" >/dev/null; evento_ultimo ACCESO_ADMIN_PANEL | jq -r .resultado)"
+
+caso "CP-32 Evidencia SEC-2: ≥30 registros y ≥8 tipos de evento"
+res=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auditoria/resumen")
+[[ $(jq .total <<<"$res") -ge 30 ]] && ok "$(jq .total <<<"$res") registros en security_audit_logs" || mal "menos de 30 registros"
+[[ $(jq .tipos_de_evento <<<"$res") -ge 8 ]] && ok "$(jq .tipos_de_evento <<<"$res") tipos de evento" || mal "menos de 8 tipos"
+faltan=$(jq -r '[.por_evento[].accion] | unique as $hay | ["LOGIN_CLIENTE_EXITOSO","LOGIN_CLIENTE_FALLIDO","REGISTRO_CLIENTE","PEDIDO_CREADO","PAGO_INICIADO","PAGO_CONFIRMADO","PAGO_FALLIDO","PEDIDO_ESTADO_CAMBIADO","PRECIO_MODIFICADO","PRODUCTO_AGOTADO","EXPORTACION_CLIENTES","ACCESO_ADMIN_PANEL","WEBHOOK_STRIPE_RECIBIDO","TOKEN_REVOCADO"] - $hay | join(",")' <<<"$res")
+esperar "los 14 eventos obligatorios aparecen en la bitácora" "" "$faltan"
+
 caso "CP-16 Rate limiting en /login (gateway, se corre al final)"
 codigos=$(for i in $(seq 1 15); do codigo -X POST -H 'Content-Type: application/json' -d '{"email":"flood@correo.gt","password":"x"}' "$BASE/api/auth/login"; echo; done)
 grep -q 429 <<<"$codigos" && ok "ráfaga de logins → 429" || mal "ninguna respuesta 429 en la ráfaga"

@@ -152,6 +152,49 @@ final class AuthController
         return [200, ['acceso' => true]];
     }
 
+    public function clientes(): array
+    {
+        Guard::usuario(['admin']);
+        $filas = Db::lectura()->query("SELECT id, nombre, email, activo, bloqueado_hasta, created_at FROM usuarios
+                                        WHERE rol = 'cliente' ORDER BY id DESC LIMIT 500")->fetchAll();
+        return [200, ['clientes' => array_map(fn($u) => [
+            'id' => (int) $u['id'], 'nombre' => $u['nombre'], 'email' => $u['email'], 'activo' => (bool) $u['activo'],
+            'bloqueado' => $u['bloqueado_hasta'] !== null && strtotime($u['bloqueado_hasta']) > time(), 'creado' => $u['created_at'],
+        ], $filas)]];
+    }
+
+    /**
+     * CSV de clientes. A.5.34 (datos mínimos): sin hashes, intentos ni datos de pedidos.
+     * Cada exportación queda en la bitácora con quién la hizo y cuántos registros salieron.
+     */
+    public function exportarClientes(): never
+    {
+        $claims = Guard::usuario(['admin']);
+        $filas = Db::lectura()->query("SELECT id, nombre, email, activo, created_at FROM usuarios WHERE rol = 'cliente' ORDER BY id")->fetchAll();
+
+        Auditoria::registrar('EXPORTACION_CLIENTES', 'EXITO', Auditoria::actor($claims) + [
+            'dato_nuevo' => ['registros' => count($filas), 'formato' => 'csv', 'columnas' => ['id', 'nombre', 'email', 'activo', 'creado']],
+        ]);
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="clientes-huellitas-' . date('Ymd-His') . '.csv"');
+        header('Cache-Control: no-store');
+        $salida = fopen('php://output', 'w');
+        fwrite($salida, "\xEF\xBB\xBF");  // BOM para que Excel lea bien los acentos
+        fputcsv($salida, ['id', 'nombre', 'email', 'activo', 'creado'], ',', '"', '');
+        foreach ($filas as $f) {
+            fputcsv($salida, [$f['id'], self::celdaSegura($f['nombre']), self::celdaSegura($f['email']), $f['activo'] ? 'sí' : 'no', $f['created_at']], ',', '"', '');
+        }
+        fclose($salida);
+        exit;
+    }
+
+    /** Evita inyección de fórmulas en Excel/Sheets (=, +, -, @ al inicio de la celda). */
+    private static function celdaSegura(string $valor): string
+    {
+        return preg_match('/^[=+\-@\t\r]/', $valor) ? "'" . $valor : $valor;
+    }
+
     private function fallo(string $email, ?array $usuario, string $motivo): void
     {
         // Detección de credential stuffing: la misma cuenta fallando desde varias IPs.

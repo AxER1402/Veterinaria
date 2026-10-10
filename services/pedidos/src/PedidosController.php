@@ -193,6 +193,26 @@ final class PedidosController
         return [200, ['pedidos' => array_map([self::class, 'resumenJson'], $consulta->fetchAll()), 'pagina' => $pagina]];
     }
 
+    /** Indicadores del panel: pedidos por estado, ventas cobradas y ventas por día (14 días). */
+    public function resumen(): array
+    {
+        Guard::usuario(['admin']);
+        $db = Db::lectura();
+        $porEstado = $db->query('SELECT estado, COUNT(*) AS pedidos, COALESCE(SUM(total), 0) AS monto FROM pedidos GROUP BY estado')->fetchAll();
+        $porDia = $db->query("SELECT DATE(fecha) AS dia, COUNT(*) AS pedidos, COALESCE(SUM(total), 0) AS monto
+                                FROM pedidos WHERE estado IN ('pagado','preparando','enviado','entregado')
+                                 AND fecha >= CURDATE() - INTERVAL 13 DAY GROUP BY DATE(fecha) ORDER BY dia")->fetchAll();
+        $clientes = (int) $db->query('SELECT COUNT(*) FROM clientes')->fetchColumn();
+        $cobrado = array_sum(array_map(fn($e) => in_array($e['estado'], ['pagado', 'preparando', 'enviado', 'entregado'], true) ? (float) $e['monto'] : 0, $porEstado));
+
+        return [200, [
+            'por_estado'  => array_map(fn($e) => ['estado' => $e['estado'], 'pedidos' => (int) $e['pedidos'], 'monto' => (float) $e['monto']], $porEstado),
+            'por_dia'     => array_map(fn($d) => ['dia' => $d['dia'], 'pedidos' => (int) $d['pedidos'], 'monto' => (float) $d['monto']], $porDia),
+            'ventas'      => round($cobrado, 2),
+            'clientes_con_pedidos' => $clientes,
+        ]];
+    }
+
     public function cambiarEstado(string $id): array
     {
         $claims = Guard::usuario(['admin']);

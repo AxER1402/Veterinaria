@@ -16,5 +16,7 @@ $router->add('POST', '/api/auth/login', fn() => $auth->login());
 $router->add('POST', '/api/auth/logout', fn() => $auth->logout());
 $router->add('GET',  '/api/auth/me', fn() => $auth->me());
 $router->add('POST', '/api/auth/admin/acceso', fn() => $auth->accesoAdmin());
+$router->add('GET',  '/api/auth/admin/clientes', fn() => $auth->clientes());
+$router->add('GET',  '/api/auth/admin/clientes/exportar', fn() => $auth->exportarClientes());
 
 $router->dispatch();
