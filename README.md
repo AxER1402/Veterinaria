@@ -8,7 +8,8 @@ Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 - Pagos y PCI-DSS: [`docs/03-pci-dss-pagos.md`](docs/03-pci-dss-pagos.md)
 - Continuidad y recuperación (BCP/DRP): [`docs/04-bcp-drp.md`](docs/04-bcp-drp.md) · simulacros en [`docs/simulacros/`](docs/simulacros/)
 - Presupuesto ALE/ROSI: [`docs/05-presupuesto-ale-rosi.md`](docs/05-presupuesto-ale-rosi.md) · ISO 27001: [`docs/06-iso27001.md`](docs/06-iso27001.md)
-- Despliegue en producción: [`docs/07-despliegue.md`](docs/07-despliegue.md)
+- Despliegue en producción: [`docs/07-despliegue.md`](docs/07-despliegue.md) · guion de la presentación: [`docs/08-guion-presentacion.md`](docs/08-guion-presentacion.md)
+- Evidencia de SEC-2, SEC-3 y SEC-5 (salidas reales y capturas): [`docs/evidencia/`](docs/evidencia/) (se regenera con `ops/evidencia.sh`)
 - Reportes de OWASP ZAP: [`docs/zap/`](docs/zap/)
 - **SEC-1 en PDF:** [`docs/pdf/SEC-1-Huellitas-Seguridad.pdf`](docs/pdf/SEC-1-Huellitas-Seguridad.pdf)
 
@@ -26,6 +27,7 @@ Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 | **SEC-4** reporte OWASP ZAP | `docs/zap/zap-baseline-2.html` (0 FAIL, 0 alertas medias o altas) |
 | **SEC-5** hardening Docker | `docker ps` → ningún `0.0.0.0:3306` ni `0.0.0.0:6379` (CP-14) |
 | Demo de recuperación | `ops/simulacro-drp.sh` → informe en `docs/simulacros/` |
+| Presentación de 10 min | `docs/08-guion-presentacion.md` (tiempos, comandos de la demo y preguntas probables) |
 
 ## Servicios
 
@@ -108,7 +110,8 @@ Corre los casos CP-01 a CP-32 contra el stack levantado: TLS 1.3, cabeceras, JWT
 
 ```bash
 ops/backup.sh                         # respaldo AES-256 de todas las bases → backups/<fecha>/
-ops/restore.sh backups/<fecha>        # restaura (verifica SHA-256 antes)
+ops/backup-binlogs.sh                 # archiva los binlogs del maestro (cron cada 5 min → RPO ≤ 5 min)
+ops/restore.sh backups/<fecha> negocio [--hasta "AAAA-MM-DD HH:MM:SS"]   # completo + binlogs (PITR)
 ops/simulacro-drp.sh                  # simulacro de ransomware en el maestro, con informe y RTO medido
 ```
 
@@ -137,7 +140,7 @@ services/
 db/master/           usuarios por servicio + esquemas y datos de auth_db, catalogo_db (24 productos), pedidos_db, pagos_db
 db/audit/            audit_db: tabla, triggers append-only, usuario INSERT/SELECT
 docs/                STRIDE/DFD, OWASP, PCI-DSS, BCP/DRP, ALE/ROSI, ISO 27001, despliegue, ZAP, PDF de SEC-1
-ops/                 backup.sh, restore.sh, simulacro-drp.sh
+ops/                 backup.sh, backup-binlogs.sh, restore.sh, simulacro-drp.sh, evidencia.sh
 docker-compose.prod.yml  producción: puertos 80/443 y Let's Encrypt (certbot)
 tests/seguridad.sh   pruebas end-to-end de los controles
 ```

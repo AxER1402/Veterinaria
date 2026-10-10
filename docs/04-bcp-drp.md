@@ -30,9 +30,9 @@
 |---|---|
 | Detección | Healthcheck del maestro en rojo, 500 en `/api/pedidos/*`, archivos `.ibd` ilegibles |
 | Contención | Aislar el host (sacarlo de la red), **no pagar**, preservar el volumen para el análisis forense (`docker volume` → snapshot) |
-| Recuperación | Maestro nuevo con volumen limpio → `ops/restore.sh <último respaldo> negocio` → réplica nueva (se pone al día sola) → invalidar la caché del catálogo. Si el host entero está comprometido, todo se levanta en el **sitio B** |
+| Recuperación | Maestro nuevo con volumen limpio → `ops/restore.sh <último respaldo> negocio`, que restaura el respaldo completo **y reaplica los binlogs archivados** (PITR, RPO ≤ 5 min; con `--hasta` se puede parar justo antes del ataque) → réplica nueva (se pone al día sola) → invalidar la caché del catálogo. Si el host entero está comprometido, todo se levanta en el **sitio B** |
 | Verificación | Conteos iguales a los del último respaldo, cadena de hashes íntegra, prueba de compra |
-| **Probado** | ✅ `ops/simulacro-drp.sh` · **RTO medido: 12,4 s** desde la detección ([informe](simulacros/)) |
+| **Probado** | ✅ `ops/simulacro-drp.sh`: respaldo completo → actividad posterior → archivado de binlogs → destrucción del maestro y la réplica → restauración con PITR. El cambio posterior al respaldo se recupera, el RTO medido es de segundos y no se pierden datos ([informes](simulacros/)) |
 
 ### Escenario 2 — DDoS al API Gateway · Prob. **alta** · Impacto **alto**
 
@@ -82,7 +82,8 @@
 
 | Componente | Tipo | Frecuencia | Retención | Dónde | Cómo |
 |---|---|---|---|---|---|
-| BD de negocio (maestro) | Completo `mariadb-dump --single-transaction` + binlogs | Diario 03:00 + cada 4 h | 30 días | Local cifrado + Cloudflare R2 | `ops/backup.sh` (cron), AES-256-CBC + PBKDF2, SHA-256 |
+| BD de negocio (maestro) | Completo `mariadb-dump --single-transaction --master-data=2` | Diario 03:00 + cada 4 h | 30 días | Local cifrado + Cloudflare R2 | `ops/backup.sh` (cron), AES-256-CBC + PBKDF2, SHA-256 |
+| Binlogs del maestro (incremental) | Archivado de binlogs cerrados, por instancia del maestro | **Cada 5 min** | 7 días | Local cifrado + R2 | `ops/backup-binlogs.sh` → recuperación a un punto en el tiempo con `ops/restore.sh … --hasta "AAAA-MM-DD HH:MM:SS"` |
 | Bitácora (`audit_db`) | Completo | Cada hora | 2 años | R2 con **Object Lock** (WORM) | `ops/backup.sh` · nadie puede borrar ni sobrescribir |
 | Imágenes de productos | CDN redundante | Continuo | Indefinido | Cloudinary | Original en Cloudinary + URL en `catalogo_db` |
 | Código fuente | Git | Cada push | Indefinido | GitHub | Incluye compose, Nginx y SQL de inicio |
@@ -93,6 +94,7 @@
 # /etc/cron.d/huellitas-respaldos
 0 3 * * *      deploy cd /srv/huellitas && ops/backup.sh >> /var/log/huellitas-backup.log 2>&1
 0 */4 * * *    deploy cd /srv/huellitas && ops/backup.sh >> /var/log/huellitas-backup.log 2>&1
+*/5 * * * *    deploy cd /srv/huellitas && ops/backup-binlogs.sh >> /var/log/huellitas-binlogs.log 2>&1
 0 4 1 * *      deploy cd /srv/huellitas && ops/simulacro-drp.sh --si >> /var/log/huellitas-drp.log 2>&1   # en el sitio B
 ```
 

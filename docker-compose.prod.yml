@@ -9,6 +9,7 @@ services:
     environment:
       SERVER_NAME: ${SERVER_NAME:?define SERVER_NAME (dominio público)}
       HTTPS_PORT: ${PUBLIC_HTTPS_PORT:-443}
+      TRUSTED_PROXY: ${TRUSTED_PROXY:-127.0.0.1/32}
     ports: !override
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"

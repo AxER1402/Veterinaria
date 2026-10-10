@@ -53,14 +53,13 @@ server {
         proxy_pass https://127.0.0.1:8443;
         proxy_ssl_verify off;            # cert interno autofirmado, tráfico local
         proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
     }
 }
 server { listen 80; server_name tienda.ejemplo.com; return 301 https://$host$request_uri; }
 ```
 
-> Con un proxy delante, `$remote_addr` del gateway es la IP del proxy. Para que el rate limit y la bitácora vean la IP real, agrega a `gateway/default.conf.template`:
-> `set_real_ip_from 172.16.0.0/12; real_ip_header X-Real-IP;` (o `CF-Connecting-IP` si está detrás de Cloudflare).
+> Con un proxy delante, `$remote_addr` del gateway es la IP del proxy. Para que el rate limit y la bitácora vean la IP real del cliente, define en `.env` `TRUSTED_PROXY` con la IP desde la que llega el proxy (por ejemplo `172.17.0.1/32`, la puerta de enlace de Docker). Solo de esa dirección se acepta `X-Forwarded-For`, así que un cliente no puede falsear su IP. El Nginx de adelante debe enviar `proxy_set_header X-Forwarded-For $remote_addr;`.
 
 ## 3. Después de desplegar
 

@@ -45,6 +45,7 @@ services:
     environment:
       SERVER_NAME: ${SERVER_NAME:-localhost}
       HTTPS_PORT: ${HTTPS_PORT:-8443}
+      TRUSTED_PROXY: ${TRUSTED_PROXY:-127.0.0.1/32}
     volumes:
       - ./gateway/certs:/etc/nginx/certs
     networks: [publica, interna]

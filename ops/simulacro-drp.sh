@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Simulacro DRP — escenario "ransomware en la BD maestra" (docs/04-bcp-drp.md, escenario 1).
 #
-# 1. Toma un respaldo cifrado.
+# 1. Toma un respaldo cifrado completo. Después hay actividad (se registra un cliente) y se
+#    archivan los binlogs, como haría el cron cada 5 min.
 # 2. Incidente: destruye el maestro y la réplica (contenedores + volúmenes), como si el disco
 #    hubiera quedado cifrado por un ransomware.
 # 3. Detección: la API deja de responder.
-# 4. Recuperación: maestro nuevo + restauración del respaldo + réplica nueva que se pone al día sola.
+# 4. Recuperación: maestro nuevo + respaldo completo + binlogs (PITR) + réplica nueva que se pone al día sola.
 # 5. Verificación: mismos conteos que antes, en el maestro y en la réplica; la bitácora (en su
 #    propio volumen) no se tocó y su cadena de hashes sigue íntegra.
 #
@@ -37,16 +38,23 @@ auditoria() {
     curl -sk -H "Authorization: Bearer $t" "$BASE/api/auditoria/integridad" | jq -r '"\(.integra) \(.revisados)"'
 }
 
-echo "== Estado inicial"
+echo "== 1. Respaldo cifrado completo"
+t_respaldo=$(ahora)
+respaldo=$(ops/backup.sh | tail -1)
+t_respaldo_fin=$(ahora)
+
+echo "== Actividad posterior al respaldo"
+posterior="simulacro$(date +%s)@correo.gt"
+curl -sk -o /dev/null -X POST -H 'Content-Type: application/json' \
+    -d "{\"nombre\":\"Cliente posterior al respaldo\",\"email\":\"$posterior\",\"password\":\"Segura123\"}" "$BASE/api/auth/registro"
+echo "   se registró $posterior (no está en el respaldo completo)"
+ops/backup-binlogs.sh | tail -1
+
+echo "== Estado justo antes del incidente"
 antes=$(sql mariadb-master "$CONTEO")
 audit_antes=$(auditoria)
 echo "   usuarios productos stock pedidos líneas pagos: $antes"
 echo "   bitácora (íntegra, registros): $audit_antes"
-
-echo "== 1. Respaldo cifrado"
-t_respaldo=$(ahora)
-respaldo=$(ops/backup.sh | tail -1)
-t_respaldo_fin=$(ahora)
 
 echo "== 2. INCIDENTE: se destruyen maestro y réplica (contenedores y volúmenes)"
 t_incidente=$(ahora)
@@ -74,12 +82,14 @@ t_operativo=$(ahora)
 
 echo "== 5. Verificación"
 despues=$(sql mariadb-master "$CONTEO")
+recuperado=$(sql mariadb-master "SELECT COUNT(*) FROM auth_db.usuarios WHERE email='$posterior'")
 replica=$(sql mariadb-slave "$CONTEO")
 audit_despues=$(auditoria)
 ok=true
 [[ "$antes" == "$despues" ]] || ok=false
 [[ "$antes" == "$replica" ]] || ok=false
 [[ "${audit_despues%% *}" == true ]] || ok=false
+[[ "$recuperado" == 1 ]] || ok=false
 echo "   maestro: $despues · réplica: $replica · bitácora: $audit_despues → $($ok && echo OK || echo DIFERENCIAS)"
 
 mkdir -p docs/simulacros
@@ -94,7 +104,7 @@ Escenario 1 de [docs/04-bcp-drp.md](../04-bcp-drp.md). Ejecutado con \`ops/simul
 | Respaldo cifrado (AES-256) | $(seg "$t_respaldo" "$t_respaldo_fin") s |
 | Incidente → detección (API caída) | $(seg "$t_incidente" "$t_deteccion") s |
 | Maestro nuevo levantado | $(seg "$t_deteccion" "$t_maestro") s |
-| Restauración del respaldo | $(seg "$t_maestro" "$t_restaurado") s |
+| Restauración del respaldo + binlogs (PITR) | $(seg "$t_maestro" "$t_restaurado") s |
 | Réplica nueva sincronizada y API operativa | $(seg "$t_restaurado" "$t_operativo") s |
 | **RTO medido (detección → operativo)** | **$(seg "$t_deteccion" "$t_operativo") s** |
 
@@ -108,13 +118,13 @@ Objetivo de la BIA para la BD maestra: RTO 10 min · RPO 5 min.
 | Maestro restaurado | \`$despues\` |
 | Réplica reconstruida | \`$replica\` |
 
+- Cambio posterior al respaldo completo (registro de \`$posterior\`): **$([[ $recuperado == 1 ]] && echo "recuperado desde los binlogs" || echo "PERDIDO")**.
 - Bitácora antes: \`$audit_antes\` · después: \`$audit_despues\` (íntegra, registros). Al vivir en su propio volumen, el incidente no la alcanzó.
 - Resultado: **$($ok && echo "RECUPERACIÓN COMPLETA, sin pérdida de datos" || echo "HAY DIFERENCIAS: revisar")**.
 - Respaldo usado: \`$respaldo\` (verificado con SHA-256 antes de restaurar).
 
-> En el simulacro el respaldo se toma justo antes del incidente, así que el RPO es 0. En operación normal el
-> respaldo completo es diario y el incremental cada 4 h (docs/04-bcp-drp.md §3). El RPO de 5 min de la BIA se
-> logra conservando los binlogs del maestro en otro volumen o en S3 para recuperación a un punto en el tiempo.
+> RPO: el respaldo completo se complementa con los binlogs archivados (\`ops/backup-binlogs.sh\`, cron cada 5 min).
+> Lo que se pierde en el peor caso es lo escrito desde el último archivado: **≤ 5 min**, como pide la BIA.
 INFORME
 echo "✔ Informe: $informe"
 $ok

@@ -23,7 +23,7 @@
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1 | Fuga de datos de tarjetas | 25,000 | 0.3 | 7,500 | No se almacenan tarjetas: Stripe.js / PayPal (SAQ A) | 0 | 0.01 | 250 | 7,250 | ∞ |
 | 2 | Cuenta de cliente comprometida | 300 | 12 | 3,600 | bcrypt 12, bloqueo 5 intentos/15 min, rate limit, detección multi-IP, JWT 1 h revocable | 0 | 1.5 | 450 | 3,150 | ∞ |
-| 3 | Ransomware en el servidor | 12,000 | 0.3 | 3,600 | Respaldos cifrados en R2 + DRP probado (RTO 12 s en el simulacro) → SLE baja a 300 | 12 | 0.3 | 90 | 3,498 | 29,150 % |
+| 3 | Ransomware en el servidor | 12,000 | 0.3 | 3,600 | Respaldos cifrados en R2 + binlogs cada 5 min + DRP probado (RTO ≈ 13 s en el simulacro) → SLE baja a 300 | 12 | 0.3 | 90 | 3,498 | 29,150 % |
 | 4 | DDoS (4 h sin ventas + horas técnicas) | 250 | 4 | 1,000 | Cloudflare gratuito + rate limit + límites por contenedor → SLE baja a 100 | 0 | 1 | 100 | 900 | ∞ |
 | 5 | Scraping de precios y catálogo | 1,500 | 2 | 3,000 | Caché Redis + rate limit por IP + stock exacto no publicado | 0 | 0.4 | 600 | 2,400 | ∞ |
 | 6 | Webhook de pago falso | 2,000 | 1 | 2,000 | Firma `Stripe-Signature`, tolerancia 5 min, idempotencia, verificación de monto | 0 | 0.01 | 20 | 1,980 | ∞ |
