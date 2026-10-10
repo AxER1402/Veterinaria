@@ -65,6 +65,8 @@ Abrir <https://localhost:8443>. En local el certificado es autofirmado y se gene
 | Admin | `admin@huellitas.gt` | `Admin#2026` |
 | Cliente | `cliente@huellitas.gt` | `Cliente#2026` |
 
+Todos los usuarios (app, BD y Redis) están en [`usuarios.md`](usuarios.md).
+
 ## API (vía gateway)
 
 | Método | Ruta | Acceso |

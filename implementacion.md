@@ -335,6 +335,20 @@ Implementar y documentar (mínimo 5, ideal 7 incluyendo A08). Referenciar en el 
 
 ---
 
+## Dónde nos quedamos (10 de octubre de 2026)
+
+- **Último trabajo:** SAST con Semgrep CE en el CI (job `sast`, 0 hallazgos) y `usuarios.md` con los usuarios de la app y de las BD.
+- **Enunciado:** `instrucciones.docx` es el original del catedrático. Se comparó con este archivo y no trae requisitos nuevos.
+- **Lo siguiente, en este orden:**
+  1. **Despliegue público** (pendiente 1): crear el registro DNS `A huellitas → 31.220.50.103` en `fadeappgt.com` y correr `ops/vps/1-levantar.sh`, `2-nginx-http.sh` y `3-nginx-https.sh` en el VPS.
+  2. **ZAP contra el dominio** (pendiente 2, SEC-4).
+  3. **Claves sandbox** de Stripe, PayPal y EmailJS en el `.env` de producción (pendientes 3–5).
+  4. **Repo privado:** AxER1402 cambia la visibilidad (pendiente 7).
+  5. **Regenerar el PDF SEC-1** (`docs/pdf/construir.mjs`): todavía dice CodeQL en el presupuesto; `docs/05` ya dice Semgrep.
+  6. Ensayar la presentación (pendiente 9).
+- **Para el compañero que jala los cambios:** `ops/generar-env.sh` → `docker compose up -d --build --wait` → `tests/seguridad.sh`. Los usuarios están en `usuarios.md`.
+- **Entrega:** 31 de octubre de 2026 (-1 pt por día de retraso).
+
 ## Pendientes (al 10 de octubre de 2026)
 
 Las 4 semanas del cronograma están implementadas y subidas, más extras: recuperación a un punto en el tiempo con binlogs, vencimiento de pedidos sin pagar, verificación en dos pasos (TOTP) y CI en GitHub Actions. `tests/seguridad.sh` pasa 158 de 158. Falta lo que depende de decisiones o cuentas externas:
