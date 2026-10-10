@@ -6,13 +6,7 @@ Requisitos: un servidor Linux con Docker y Compose v2, un dominio apuntando a su
 
 ```bash
 git clone <repo> /srv/huellitas && cd /srv/huellitas
-cp .env.example .env && chmod 600 .env
-# Generar cada secreto vacío:
-for v in JWT_SECRET SERVICE_JWT_SECRET REDIS_PASSWORD DB_ROOT_PASSWORD DB_REPLICATION_PASSWORD AUTH_DB_PASSWORD \
-         CATALOGO_DB_PASSWORD PEDIDOS_DB_PASSWORD PAGOS_DB_PASSWORD AUDIT_DB_ROOT_PASSWORD AUDIT_DB_PASSWORD \
-         COMPROBANTE_SECRET BACKUP_PASSPHRASE; do
-  sed -i "s|^$v=$|$v=$(openssl rand -base64 48 | tr -d '/+=' | cut -c1-48)|" .env
-done
+ops/generar-env.sh          # .env con todos los secretos aleatorios (permisos 600)
 # Completar a mano: SERVER_NAME, claves de Stripe/PayPal/EmailJS/Cloudinary/Maps y BACKUP_S3_*.
 ```
 

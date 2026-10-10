@@ -1,5 +1,7 @@
 # Huellitas — E-Commerce distribuido con seguridad y auditoría
 
+[![CI](https://github.com/AxER1402/Veterinaria/actions/workflows/ci.yml/badge.svg)](https://github.com/AxER1402/Veterinaria/actions/workflows/ci.yml)
+
 Tienda en línea de productos para mascotas de la veterinaria *Huellitas*. La arquitectura es de microservicios, con controles OWASP Top 10, bitácora de seguridad append-only y Zero Trust entre servicios.
 Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 
@@ -50,7 +52,7 @@ APIs externas: **Stripe**, **PayPal**, **EmailJS**, **Cloudinary** y **Google Ma
 ## Levantar
 
 ```bash
-cp .env.example .env      # rellenar los secretos (el comando para generarlos está dentro del archivo)
+ops/generar-env.sh        # .env con secretos aleatorios; las claves de Stripe/PayPal/EmailJS se agregan a mano
 docker compose up -d --build
 ```
 
@@ -116,6 +118,14 @@ ops/restore.sh backups/<fecha> negocio [--hasta "AAAA-MM-DD HH:MM:SS"]   # compl
 ops/simulacro-drp.sh                  # simulacro de ransomware en el maestro, con informe y RTO medido
 ```
 
+## Integración continua
+
+`.github/workflows/ci.yml` corre en cada push y pull request:
+
+1. **Frontend:** `npm ci`, lint, build y `npm audit` (falla con vulnerabilidades altas o críticas).
+2. **PHP y secretos:** `php -l` de todos los servicios y búsqueda de claves o llaves privadas en archivos versionados.
+3. **Seguridad:** levanta el stack completo con un `.env` efímero (`ops/generar-env.sh`), corre `tests/seguridad.sh` y el simulacro DRP, y sube la evidencia como artefacto.
+
 ## Frontend en desarrollo
 
 ```bash
@@ -141,7 +151,8 @@ services/
 db/master/           usuarios por servicio + esquemas y datos de auth_db, catalogo_db (24 productos), pedidos_db, pagos_db
 db/audit/            audit_db: tabla, triggers append-only, usuario INSERT/SELECT
 docs/                STRIDE/DFD, OWASP, PCI-DSS, BCP/DRP, ALE/ROSI, ISO 27001, despliegue, ZAP, PDF de SEC-1
-ops/                 backup.sh, backup-binlogs.sh, restore.sh, simulacro-drp.sh, evidencia.sh
+ops/                 generar-env.sh, backup.sh, backup-binlogs.sh, restore.sh, simulacro-drp.sh, evidencia.sh
+.github/workflows/   CI: lint, build, npm audit, php -l, secretos, pruebas de seguridad y simulacro DRP
 docker-compose.prod.yml  producción: puertos 80/443 y Let's Encrypt (certbot)
 tests/seguridad.sh   pruebas end-to-end de los controles
 ```

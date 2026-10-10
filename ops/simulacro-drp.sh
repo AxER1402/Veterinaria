@@ -17,9 +17,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 set -a; source .env; set +a
 BASE=${BASE:-https://localhost:${HTTPS_PORT:-8443}}
+PROYECTO=$(docker compose config --format json | jq -r .name)
 
 if [[ "${1:-}" != "--si" ]]; then
-    read -r -p "Esto BORRA los volúmenes del maestro y la réplica (se restauran del respaldo). ¿Seguir? [s/N] " r
+    read -r -p "Esto BORRA los volúmenes ${PROYECTO}_master_data y ${PROYECTO}_slave_data (se restauran del respaldo). ¿Seguir? [s/N] " r
     [[ $r == s || $r == S ]] || exit 1
 fi
 
@@ -60,7 +61,8 @@ echo "== 2. INCIDENTE: se destruyen maestro y réplica (contenedores y volúmene
 t_incidente=$(ahora)
 docker compose stop mariadb-slave mariadb-master >/dev/null 2>&1
 docker compose rm -f mariadb-slave mariadb-master >/dev/null 2>&1
-docker volume rm huellitas_master_data huellitas_slave_data >/dev/null
+# Los volúmenes llevan el nombre del proyecto de Compose (huellitas, o el de COMPOSE_PROJECT_NAME).
+docker volume rm "${PROYECTO}_master_data" "${PROYECTO}_slave_data" >/dev/null
 
 echo "== 3. Detección"
 until ! api_ok; do sleep 1; done

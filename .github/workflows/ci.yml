@@ -1,0 +1,79 @@
+# CI: en cada push y pull request se compila el frontend, se revisa el PHP, se buscan claves
+# filtradas y se levanta el stack completo para correr las pruebas de seguridad y el simulacro DRP.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (lint, build, auditoría npm)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      # A06 (componentes vulnerables): falla con vulnerabilidades altas o críticas en dependencias de producción.
+      - run: npm audit --omit=dev --audit-level=high
+
+  php:
+    name: PHP (sintaxis) y secretos
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sintaxis PHP 8.3
+        run: docker run --rm -v "$PWD/services:/s:ro" php:8.3-cli sh -c 'find /s -name "*.php" -print0 | xargs -0 -n1 php -l > /dev/null'
+      - name: Ninguna clave en el repositorio
+        run: |
+          if git grep -nE 'sk_(test|live)_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|-----BEGIN (RSA |EC )?PRIVATE KEY-----' -- . ':!tests'; then
+            echo "::error::Hay claves o llaves privadas en archivos versionados"; exit 1
+          fi
+          test ! -e .env
+
+  seguridad:
+    name: Stack completo + pruebas de seguridad + simulacro DRP
+    needs: [frontend, php]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: .env con secretos efímeros
+        run: ops/generar-env.sh
+      - name: Levantar el stack
+        run: docker compose up -d --build --wait --wait-timeout 420
+      - name: Pruebas de seguridad (tests/seguridad.sh)
+        run: tests/seguridad.sh
+      - name: Simulacro DRP (ransomware en el maestro)
+        run: ops/simulacro-drp.sh --si
+      - name: Evidencia
+        if: always()
+        run: ops/evidencia.sh || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evidencia-${{ github.sha }}
+          path: |
+            docs/simulacros/
+            docs/evidencia/README.md
+          retention-days: 30
+      - name: Logs de los contenedores
+        if: failure()
+        run: docker compose logs --tail 150
