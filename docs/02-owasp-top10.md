@@ -1,7 +1,7 @@
 # Huellitas — Controles OWASP Top 10 (2021)
 
 Cada control indica **dónde está en el código** y **qué caso de `tests/seguridad.sh` lo comprueba**.
-Estado al cierre de la semana 2: A01, A02, A03, A05, A07 y A09 implementados. A08 (firma del webhook de Stripe) llega con pagos-service en la semana 3.
+Estado al cierre de la semana 3: los 7 controles (A01, A02, A03, A05, A07, A08 y A09) implementados.
 
 | ID | Amenaza | Control | Código | Prueba |
 |---|---|---|---|---|
@@ -10,7 +10,7 @@ Estado al cierre de la semana 2: A01, A02, A03, A05, A07 y A09 implementados. A0
 | A03 | Injection | PDO sin emulación de prepared statements; validación de tipo y rango; WAF en Nginx (URL, cabeceras) y en PHP (cuerpo JSON) | `services/shared/src/Db.php`, `services/shared/src/Validar.php`, `gateway/default.conf.template` (`map $waf_*`) | CP-10, CP-24 |
 | A05 | Security Misconfiguration | Secretos solo en `.env`; BD y Redis sin puertos publicados; contenedores PHP como `www-data`, `read_only`, `cap_drop: ALL`; sin versiones en cabeceras; errores genéricos | `docker-compose.yml`, `services/Dockerfile`, `services/shared/src/Router.php` | CP-03, CP-14 |
 | A07 | Identification & Authentication Failures | 5 intentos → bloqueo 15 min; rate limit en `/login`; JWT de 1 h; logout → lista negra Redis; mismo mensaje y mismo tiempo exista o no el correo | `AuthController::login()`, `Cache::revocar()`, `zone=login` | CP-05, CP-08, CP-09, CP-16 |
-| A08 | Software & Data Integrity Failures | Firma `Stripe-Signature` del webhook (semana 3); cadena de hashes en la bitácora | `AuditController::integridad()` | CP-12 |
+| A08 | Software & Data Integrity Failures | Firma `Stripe-Signature` del webhook (HMAC, tolerancia 5 min, idempotencia) y verificación de monto; cadena de hashes en la bitácora; dependencias fijadas con `package-lock.json` | `services/pagos/src/Stripe.php::firmaValida()`, `AuditController::integridad()` | CP-12, CP-26, CP-27 |
 | A09 | Security Logging & Monitoring Failures | `security-audit-service` con eventos append-only; cada servicio reporta los suyos | `services/audit/src/AuditController.php`, `services/shared/src/Auditoria.php` | CP-12, CP-13 |
 
 ---
@@ -75,3 +75,22 @@ $consulta->execute([(int) $claims['sub']]);
 El navegador manda **solo** `variante_id` y `cantidad`. `pedidos-service` descarta cualquier otro campo (`precio`, `subtotal`, `total`) antes de llamar a `catalogo-service`. El catálogo devuelve el precio vigente desde el **maestro** (no la réplica, para no usar un precio desactualizado) y `Totales::calcular()` hace las cuentas en centavos enteros. El cupón se valida en la BD y el envío se decide en el servidor.
 
 **Evidencia:** CP-18. Se envía `"precio": 0.01, "total": 0.02` y el pedido queda con el precio real del catálogo.
+
+---
+
+## A08 — Software & Data Integrity Failures
+
+**Riesgo:** alguien llama al webhook con un `payment_intent.succeeded` inventado para que un pedido figure como pagado sin pagar, o reenvía un webhook real capturado antes.
+
+**Controles (`services/pagos/src/Stripe.php`, `PagosController::webhookStripe()`):**
+
+1. Sin `Stripe-Signature` válida no se procesa nada. Se calcula `HMAC-SHA256(t + "." + cuerpo_crudo, STRIPE_WEBHOOK_SECRET)` y se compara con `hash_equals` contra cada `v1`.
+2. Si `t` tiene más de 300 s de diferencia con la hora del servidor, se rechaza (anti-replay).
+3. `webhook_eventos.event_id` es la clave primaria: un evento repetido responde 200 sin reprocesarse.
+4. Aunque la firma sea válida, el pago solo se confirma si `amount_received`, `currency` y `metadata.pedido_id` coinciden con lo guardado. Si no coinciden, queda `PAGO_FALLIDO` con resultado `FRAUDE`.
+5. Todo intento rechazado queda en la bitácora: `WEBHOOK_STRIPE_RECIBIDO` con FALLO (sin firma) o FRAUDE (firma falsa).
+
+**Evidencia:** CP-26 cubre sin firma, firma falsa, firma vieja, cuerpo alterado, firma válida y evento repetido. CP-27 cubre el monto manipulado y la tarjeta rechazada.
+
+Ver también [`03-pci-dss-pagos.md`](03-pci-dss-pagos.md).
+

@@ -9,6 +9,8 @@ import { formatPrice } from '../../data/shop'
 import { api } from '../../api'
 import Field from '../../components/Field'
 import Loading from '../../components/Loading'
+import MapEmbed from '../../components/MapEmbed'
+import PaymentPanel from '../../components/shop/PaymentPanel'
 
 function validate(v) {
   const e = {}
@@ -136,6 +138,11 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
                     ))}
                   </select>
                 </Field>
+                {values.sede && (
+                  <div className="field--full">
+                    <MapEmbed query={`${values.sede.split(' · ')[1]}, Ciudad de Guatemala`} title="Mapa de la sede elegida" />
+                  </div>
+                )}
               </div>
             ) : (
               <div className="form-grid">
@@ -196,16 +203,19 @@ function LoginRequired({ from }) {
   )
 }
 
-function OrderConfirmed({ order }) {
+function OrderConfirmed({ order: initial }) {
+  const [order, setOrder] = useState(initial)
+  const paid = order.estado !== 'pendiente_pago'
   return (
     <section className="section">
       <div className="container order-confirmed">
         <CheckCircle2 size={72} />
-        <h1>¡Pedido recibido, {order.contacto.nombre.split(' ')[0]}!</h1>
+        <h1>{paid ? '¡Pago confirmado' : '¡Pedido recibido'}, {order.contacto.nombre.split(' ')[0]}!</h1>
         <p>
-          Tu pedido <strong className="mono">{order.id.slice(0, 8).toUpperCase()}</strong> por <strong>{formatPrice(order.total)}</strong> quedó
-          registrado y está <strong>pendiente de pago</strong>.
+          Tu pedido <strong className="mono">{order.id.slice(0, 8).toUpperCase()}</strong> por <strong>{formatPrice(order.total)}</strong>{' '}
+          {paid ? <>está <strong>pagado</strong>. Te enviamos el comprobante a <strong>{order.contacto.email}</strong>.</> : <>quedó registrado. Solo falta el pago.</>}
         </p>
+        {!paid && <PaymentPanel order={order} onPaid={setOrder} />}
         <p>{order.metodo_entrega === 'retiro' ? `Lo retiras en: ${order.sede}.` : 'Te avisaremos cuando salga a reparto.'}</p>
         <div className="order-confirmed__actions">
           <Link to={`/cuenta/pedidos/${order.id}`} className="btn btn--primary">Ver mi pedido</Link>

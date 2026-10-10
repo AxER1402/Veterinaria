@@ -879,3 +879,5 @@ strong { font-weight: 600; color: var(--navy); }
   .faq__item button { padding: 18px 20px; font-size: 1.05rem; }
   .faq__answer p { padding: 0 20px 20px; }
 }
+
+.map-embed { display: block; width: 100%; border: 0; border-radius: 16px; margin: 12px 0; background: var(--soft); }

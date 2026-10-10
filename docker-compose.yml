@@ -32,7 +32,11 @@ x-php-env: &php-env
 services:
   # ---------- Entrada única ----------
   gateway:
-    build: { context: ., dockerfile: gateway/Dockerfile }
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+      args:
+        VITE_GOOGLE_MAPS_KEY: ${GOOGLE_MAPS_EMBED_KEY:-}
     image: huellitas/gateway:latest
     restart: unless-stopped
     ports:
@@ -48,6 +52,7 @@ services:
       auth-service: { condition: service_healthy }
       catalogo-service: { condition: service_healthy }
       pedidos-service: { condition: service_healthy }
+      pagos-service: { condition: service_healthy }
       security-audit-service: { condition: service_healthy }
     mem_limit: 128m
     cpu_shares: 1024
@@ -103,10 +108,54 @@ services:
       DB_USER: pedidos_user
       DB_PASSWORD: ${PEDIDOS_DB_PASSWORD:?falta PEDIDOS_DB_PASSWORD}
       CATALOGO_URL: http://catalogo-service:8082
+      PAGOS_URL: http://pagos-service:8084
+      NOTIFICACIONES_URL: http://notificaciones-service:8085
     depends_on:
       mariadb-master: { condition: service_healthy }
       redis: { condition: service_healthy }
       catalogo-service: { condition: service_healthy }
+      security-audit-service: { condition: service_healthy }
+
+  # Pagos y notificaciones son los únicos con salida a Internet (Stripe, PayPal, EmailJS).
+  pagos-service:
+    <<: *php
+    networks: [interna, salida]
+    build: { context: ./services, args: { SERVICE: pagos, PORT: 8084 } }
+    image: huellitas/pagos-service:latest
+    environment:
+      <<: *php-env
+      SERVICE_NAME: pagos-service
+      DB_HOST: mariadb-master
+      DB_NAME: pagos_db
+      DB_USER: pagos_user
+      DB_PASSWORD: ${PAGOS_DB_PASSWORD:?falta PAGOS_DB_PASSWORD}
+      PEDIDOS_URL: http://pedidos-service:8083
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:?falta STRIPE_WEBHOOK_SECRET}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_API_BASE: ${PAYPAL_API_BASE:-https://api-m.sandbox.paypal.com}
+    depends_on:
+      mariadb-master: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      security-audit-service: { condition: service_healthy }
+
+  notificaciones-service:
+    <<: *php
+    networks: [interna, salida]
+    build: { context: ./services, args: { SERVICE: notificaciones, PORT: 8085 } }
+    image: huellitas/notificaciones-service:latest
+    environment:
+      <<: *php-env
+      SERVICE_NAME: notificaciones-service
+      COMPROBANTE_SECRET: ${COMPROBANTE_SECRET:?falta COMPROBANTE_SECRET}
+      EMAILJS_SERVICE_ID: ${EMAILJS_SERVICE_ID:-}
+      EMAILJS_TEMPLATE_ID: ${EMAILJS_TEMPLATE_ID:-}
+      EMAILJS_PUBLIC_KEY: ${EMAILJS_PUBLIC_KEY:-}
+      EMAILJS_PRIVATE_KEY: ${EMAILJS_PRIVATE_KEY:-}
+    depends_on:
+      redis: { condition: service_healthy }
       security-audit-service: { condition: service_healthy }
 
   security-audit-service:
@@ -238,6 +287,7 @@ networks:
   publica:
   interna:
     internal: true   # sin salida a Internet ni acceso desde fuera
+  salida:            # solo para pagos y notificaciones (APIs externas)
 
 volumes:
   master_data:

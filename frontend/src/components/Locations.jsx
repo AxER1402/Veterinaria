@@ -2,6 +2,7 @@ import { MapPin, ArrowUpRight } from 'lucide-react'
 import Reveal from './Reveal'
 import SectionTitle from './SectionTitle'
 import { locations } from '../data/content'
+import MapEmbed from './MapEmbed'
 
 export default function Locations() {
   return (
@@ -16,6 +17,7 @@ export default function Locations() {
               </span>
               <h3>{l.title}</h3>
               <p>{l.address}</p>
+              <MapEmbed query={`${l.address}, Ciudad de Guatemala`} title={`Mapa de ${l.title}`} height={180} />
               <a href={l.map} target="_blank" rel="noreferrer">
                 Ver en el mapa <ArrowUpRight size={16} />
               </a>

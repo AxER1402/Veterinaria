@@ -7,6 +7,7 @@ import { useAuth } from '../../context/useAuth'
 import { api } from '../../api'
 import { formatPrice } from '../../data/shop'
 import { STATUS, shortId, formatDate } from './orderStatus'
+import PaymentPanel from '../../components/shop/PaymentPanel'
 
 export default function OrderDetail() {
   const { id } = useParams()
@@ -33,6 +34,7 @@ export default function OrderDetail() {
         <div className="container cart-layout">
           <div>
             <p><span className={`status status--${status.tone}`}>{status.label}</span></p>
+            {order.estado === 'pendiente_pago' && <PaymentPanel order={order} onPaid={setOrder} />}
             <ul className="summary__lines order-items">
               {order.items.map((i) => (
                 <li key={i.variante_id}>

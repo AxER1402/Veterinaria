@@ -8,13 +8,16 @@ WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ .
+# Key pública de Google Maps Embed (restringida por dominio en Google Cloud). Opcional.
+ARG VITE_GOOGLE_MAPS_KEY=
+ENV VITE_GOOGLE_MAPS_KEY=${VITE_GOOGLE_MAPS_KEY}
 RUN npm run build
 
 # ---------- Etapa 2: Nginx ----------
 FROM nginx:1.27-alpine
 RUN apk add --no-cache openssl
 COPY gateway/default.conf.template /etc/nginx/templates/default.conf.template
-COPY gateway/proxy_comun.inc /etc/nginx/conf.d/proxy_comun.inc
+COPY gateway/proxy_comun.inc gateway/cabeceras_seguridad.inc /etc/nginx/conf.d/
 COPY gateway/40-certificado.sh /docker-entrypoint.d/40-certificado.sh
 COPY --from=build /app/dist /usr/share/nginx/html
 RUN chmod +x /docker-entrypoint.d/40-certificado.sh

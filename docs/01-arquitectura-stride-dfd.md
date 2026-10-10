@@ -33,7 +33,8 @@ flowchart LR
     GW --> AUTH & CAT & PED & AUD
     PED -- JWT de servicio --> PAG
     PED -- JWT de servicio --> CAT
-    PAG -- JWT de servicio --> NOT
+    PED -- JWT de servicio --> NOT
+    PAG -- JWT de servicio --> PED
     AUTH & CAT & PED & PAG & NOT -- JWT de servicio --> AUD
     AUTH & CAT & PED & PAG --> M
     CAT -. lecturas .-> S
@@ -54,8 +55,8 @@ flowchart LR
 | Redis | ✅ semana 1 | Redis 7, AOF, contraseña | 6379 interno |
 | catalogo-service | ✅ semana 2 | PHP 8.3 · catalogo_db (lee de la réplica) · Redis · Cloudinary | 8082 interno |
 | pedidos-service | ✅ semana 2 | PHP 8.3 · pedidos_db | 8083 interno |
-| pagos-service | semana 3 | PHP 8.3 · pagos_db · Stripe/PayPal | 8084 interno |
-| notificaciones-service | semana 3 | PHP 8.3 · EmailJS | 8085 interno |
+| pagos-service | ✅ semana 3 | PHP 8.3 · pagos_db · Stripe/PayPal · red `salida` | 8084 interno |
+| notificaciones-service | ✅ semana 3 | PHP 8.3 · EmailJS · red `salida` | 8085 interno |
 
 ### Zero Trust
 
@@ -113,7 +114,8 @@ flowchart TB
     C -- tarjeta directamente a Stripe.js --> ST
     ST -- webhook + Stripe-Signature --> P0 --> P4
     P4 -- payment_intent_id --> D4
-    P4 --> P5 -- email --> C
+    P4 --> P3
+    P3 --> P5 -- email --> C
     ADM -- JWT admin --> P0 --> P6
     P1 & P2 & P3 & P4 & P5 -- eventos --> P6 --> D5
 ```
@@ -134,9 +136,10 @@ flowchart TB
 | **S** Spoofing | Servicio → servicio | Un contenedor comprometido se hace pasar por otro | JWT de servicio con secreto aparte, 60 s, de un solo uso (anti-replay en Redis); lista de servicios permitidos | `services/shared/src/Guard.php::servicio()` | ✅ |
 | **T** Tampering | Carrito → pedido (P3) | Cambiar el precio en `POST /api/pedidos` | Solo se reenvían `variante_id` y `cantidad`; el precio se lee del maestro en `catalogo-service`; descuento y envío se calculan en el servidor, en centavos | `PedidosController::cotizarEnCatalogo()`, `StockController::cotizar()`, `Totales.php` | ✅ |
 | **T** Tampering | Token (P1) | Editar el payload del JWT o usar `alg=none` | Solo HS256; firma comparada en tiempo constante (`hash_equals`) | `services/shared/src/Jwt.php::verificar()` | ✅ |
+| **T** Tampering | Webhook de pago (P4) | Enviar un `payment_intent.succeeded` falso o reenviar uno viejo | Firma `Stripe-Signature` (HMAC, tolerancia 5 min), idempotencia por `event_id`, verificación de monto, moneda y pedido | `Stripe::firmaValida()`, `PagosController::webhookStripe()` | ✅ |
 | **T** Tampering | Bitácora (D5) | Borrar o alterar los rastros | Triggers que prohíben UPDATE/DELETE incluso a root; `audit_user` solo con INSERT/SELECT; cadena de hashes SHA-256 verificable | `db/audit/01-audit_db.sh`, `AuditController::integridad()` | ✅ |
 | **R** Repudiation | Pedido (P3) | El cliente niega haber hecho un pedido | `PEDIDO_CREADO` con cliente, IP, user-agent, líneas y precios; historial de estados con quién los cambió | `PedidosController::crear()`, tabla `historial_estados` | ✅ |
-| **R** Repudiation | Pago (P4) | El cliente niega haber pagado | Evento `PAGO_CONFIRMADO` con `payment_intent_id` inmutable, IP y user-agent; email de confirmación | audit-service ✅ · pagos-service | semana 3 |
+| **R** Repudiation | Pago (P4) | El cliente niega haber pagado | `PAGO_INICIADO` y `PAGO_CONFIRMADO` con el `payment_intent_id` de Stripe (inmutable del lado de Stripe), IP y user-agent; email con código de verificación HMAC | `PagosController`, `NotificacionesController::codigo()` | ✅ |
 | **R** Repudiation | Cualquier acción | Un servicio reporta eventos que no le corresponden | `servicio` se toma del token, no del cuerpo; cada código de evento tiene sus servicios permitidos; la hora la pone el audit-service | `AuditController::EVENTOS` | ✅ |
 | **I** Info Disclosure | Pedidos (D3) | `GET /api/pedidos` de otros clientes, IDs secuenciales | `WHERE id_cliente = <sub del JWT>` en todas las consultas; pedidos con **UUID v4**; 404 también cuando es ajeno, y queda registrado `ACCESO_DENEGADO` | `PedidosController::misPedidos()`, `ver()` | ✅ |
 | **I** Info Disclosure | Errores | Stack traces, versión del servidor | `display_errors=Off`; errores genéricos en JSON; `server_tokens off`; `ServerTokens Prod`; sin `X-Powered-By` | `services/shared/src/Router.php`, `services/Dockerfile` | ✅ |

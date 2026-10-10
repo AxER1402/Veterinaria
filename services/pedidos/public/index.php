@@ -21,6 +21,13 @@ $router->add('POST',  '/api/pedidos/cotizar', fn() => $pedidos->cotizar());
 $router->add('GET',   '/api/pedidos/admin/todos', fn() => $pedidos->listarTodos());
 $router->add('PATCH', '/api/pedidos/admin/{id}/estado', fn($p) => $pedidos->cambiarEstado($p['id']));
 
+// Pago: el cliente dueño lo inicia aquí; pedidos-service habla con pagos-service por la red interna.
+$router->add('POST',  '/api/pedidos/{id}/pago', fn($p) => $pedidos->iniciarPago($p['id']));
+$router->add('POST',  '/api/pedidos/{id}/pago/paypal/capturar', fn($p) => $pedidos->capturarPayPal($p['id']));
+
+// Solo pagos-service: confirma que la pasarela cobró.
+$router->add('POST',  '/internal/pedidos/pagado', fn() => $pedidos->pagadoInterno());
+
 // Cliente autenticado: solo ve y crea sus propios pedidos.
 $router->add('POST',  '/api/pedidos', fn() => $pedidos->crear());
 $router->add('GET',   '/api/pedidos', fn() => $pedidos->misPedidos());

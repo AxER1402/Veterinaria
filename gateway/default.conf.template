@@ -39,10 +39,15 @@ map "$http_referer$http_cookie" $waf_cabeceras {
     "~*(<script|union(\s|\+)+select|javascript:)"                      1;
 }
 
-upstream auth_service     { server auth-service:8081;  keepalive 16; }
-upstream catalogo_service { server catalogo-service:8082; keepalive 16; }
-upstream pedidos_service  { server pedidos-service:8083;  keepalive 16; }
-upstream audit_service    { server security-audit-service:8086; keepalive 8; }
+# Se vuelve a resolver cada 10 s con el DNS de Docker: si un servicio se recrea y cambia de IP,
+# el gateway lo sigue encontrando sin reiniciarse.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+upstream auth_service { zone up_auth 64k; server auth-service:8081 resolve; keepalive 16; }
+upstream catalogo_service { zone up_catalogo 64k; server catalogo-service:8082 resolve; keepalive 16; }
+upstream pedidos_service { zone up_pedidos 64k; server pedidos-service:8083 resolve; keepalive 16; }
+upstream pagos_service { zone up_pagos 64k; server pagos-service:8084 resolve; keepalive 8; }
+upstream audit_service { zone up_audit 64k; server security-audit-service:8086 resolve; keepalive 8; }
 
 # ---------- HTTP → HTTPS ----------
 server {
@@ -68,13 +73,7 @@ server {
     ssl_session_tickets off;
 
     # ---------- Cabeceras de seguridad (A05) ----------
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "DENY" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(self), payment=(self)" always;
-    add_header Cross-Origin-Opener-Policy "same-origin" always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://images.unsplash.com https://res.cloudinary.com; connect-src 'self'; frame-src https://www.google.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+    include /etc/nginx/conf.d/cabeceras_seguridad.inc;
 
     limit_conn conexiones 50;
 
@@ -113,6 +112,13 @@ server {
         proxy_pass http://pedidos_service;
         include /etc/nginx/conf.d/proxy_comun.inc;
     }
+    # De /api/pagos/ solo se publica el webhook de Stripe (autenticado por firma). El resto de
+    # pagos es interno: el navegador paga a través de /api/pedidos/{id}/pago.
+    location = /api/pagos/webhook/stripe {
+        limit_req zone=pedidos burst=30 nodelay;
+        proxy_pass http://pagos_service;
+        include /etc/nginx/conf.d/proxy_comun.inc;
+    }
     location /api/auditoria/ {
         limit_req zone=auditoria burst=30 nodelay;
         proxy_pass http://audit_service;
@@ -131,9 +137,8 @@ server {
         limit_req zone=general burst=100 nodelay;
         expires 1y;
         add_header Cache-Control "public, immutable";
-        # add_header en un location anula los del server: se repiten los imprescindibles.
-        add_header X-Content-Type-Options "nosniff" always;
-        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        # add_header en un location anula los del server: se vuelven a incluir.
+        include /etc/nginx/conf.d/cabeceras_seguridad.inc;
         try_files $uri =404;
     }
     location / {

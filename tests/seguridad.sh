@@ -233,6 +233,80 @@ salida=$(docker compose exec -T mariadb-master mariadb -N -ucatalogo_user -p"$CA
 grep -q "denied" <<<"$salida" && ok "catalogo_user no puede leer pedidos_db" || mal "catalogo_user leyó pedidos_db"
 esperar "el pedido ya está replicado en la réplica" 1 "$(docker compose exec -T mariadb-slave mariadb -N -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM pedidos_db.pedidos WHERE id='$PED2'")"
 
+# ======================= Semana 3: pagos y notificaciones =======================
+# Sin claves de Stripe en local, el pago se simula insertando la fila que habría creado
+# /internal/pagos/iniciar y firmando el webhook con STRIPE_WEBHOOK_SECRET, como hace Stripe.
+nuevo_pedido() { auth_json POST "$T2" /api/pedidos "{\"items\":[{\"variante_id\":$var_id,\"cantidad\":1}],$ENTREGA}" | jq -r '.pedido | "\(.id) \(.total)"'; }
+fixture_pago() { # fixture_pago <pedido> <total> <pi>
+    docker compose exec -T mariadb-master mariadb -uroot -p"$DB_ROOT_PASSWORD" pagos_db -e \
+      "INSERT INTO pagos (id,id_pedido,id_cliente,monto,metodo,payment_intent_id,stripe_status) SELECT UUID(),'$1',id_cliente,total,'stripe','$3','requires_payment_method' FROM pedidos_db.pedidos WHERE id='$1'"
+}
+evento_stripe() { # evento_stripe <tipo> <pi> <centavos> <pedido>
+    jq -cn --arg t "$1" --arg pi "$2" --argjson c "$3" --arg p "$4" --arg e "evt_$RANDOM$RANDOM" \
+      '{id:$e,type:$t,data:{object:{id:$pi,amount_received:$c,currency:"usd",status:"succeeded",metadata:{pedido_id:$p},last_payment_error:{code:"card_declined"}}}}'
+}
+firmar() { printf '%s' "$1.$2" | openssl dgst -sha256 -hmac "$STRIPE_WEBHOOK_SECRET" | awk '{print $2}'; }
+webhook() { "${C[@]}" -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' ${2:+-H "Stripe-Signature: $2"} -d "$1" "$BASE/api/pagos/webhook/stripe"; }
+estado_pedido() { auth_json GET "$T2" "/api/pedidos/$1" | jq -r .pedido.estado; }
+
+caso "CP-26 Webhook de Stripe: firma obligatoria (A08 / PCI-DSS)"
+read -r PAGO_ID PAGO_TOTAL <<<"$(nuevo_pedido)"
+PI="pi_prueba_$SUF$RANDOM"; fixture_pago "$PAGO_ID" "$PAGO_TOTAL" "$PI"
+CENT=$(jq -n "$PAGO_TOTAL*100|round")
+EV=$(evento_stripe payment_intent.succeeded "$PI" "$CENT" "$PAGO_ID"); TS=$(date +%s)
+esperar "sin Stripe-Signature → 400" 400 "$(webhook "$EV")"
+esperar "se registra WEBHOOK_STRIPE_RECIBIDO FALLO (firma ausente)" "FALLO|ausente" "$(evento_ultimo WEBHOOK_STRIPE_RECIBIDO | jq -r '"\(.resultado)|\(.dato_nuevo.firma)"')"
+esperar "firma falsa → 400" 400 "$(webhook "$EV" "t=$TS,v1=$(printf 'x%.0s' {1..64})")"
+esperar "firma falsa queda como FRAUDE" FRAUDE "$(evento_ultimo WEBHOOK_STRIPE_RECIBIDO | jq -r .resultado)"
+VIEJO=$((TS - 600))
+esperar "firma válida pero de hace 10 min (replay) → 400" 400 "$(webhook "$EV" "t=$VIEJO,v1=$(firmar "$VIEJO" "$EV")")"
+esperar "cuerpo alterado después de firmar → 400" 400 "$(webhook "${EV/succeeded/canceled}" "t=$TS,v1=$(firmar "$TS" "$EV")")"
+esperar "el pedido sigue pendiente de pago" pendiente_pago "$(estado_pedido "$PAGO_ID")"
+esperar "firma válida → 200" 200 "$(webhook "$EV" "t=$TS,v1=$(firmar "$TS" "$EV")")"
+esperar "el pedido pasa a pagado" pagado "$(estado_pedido "$PAGO_ID")"
+esperar "PAGO_CONFIRMADO con la referencia del PaymentIntent" "$PAGO_ID|$PI" "$(evento_ultimo PAGO_CONFIRMADO | jq -r '"\(.pedido_id)|\(.dato_nuevo.referencia)"')"
+esperar "PEDIDO_ESTADO_CAMBIADO por pagos-service" "pagado|pagos-service" "$(evento_ultimo PEDIDO_ESTADO_CAMBIADO | jq -r '"\(.dato_nuevo.estado)|\(.dato_nuevo.origen)"')"
+esperar "EMAIL_ENVIADO registrado para el pedido" "$PAGO_ID" "$(evento_ultimo EMAIL_ENVIADO | jq -r .pedido_id)"
+esperar "el mismo evento otra vez no se reprocesa" true "$("${C[@]}" -X POST -H "Stripe-Signature: t=$TS,v1=$(firmar "$TS" "$EV")" -d "$EV" "$BASE/api/pagos/webhook/stripe" | jq .duplicado)"
+esperar "un pedido pagado no se puede volver a pagar → 409" 409 "$(codigo -X POST -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d '{"metodo":"stripe"}' "$BASE/api/pedidos/$PAGO_ID/pago")"
+
+caso "CP-27 Webhook con monto manipulado"
+read -r PED_F TOT_F <<<"$(nuevo_pedido)"
+PI_F="pi_fraude_$SUF$RANDOM"; fixture_pago "$PED_F" "$TOT_F" "$PI_F"
+EV=$(evento_stripe payment_intent.succeeded "$PI_F" 1 "$PED_F"); TS=$(date +%s)
+webhook "$EV" "t=$TS,v1=$(firmar "$TS" "$EV")" >/dev/null
+esperar "cobro de 1 centavo no confirma el pedido" pendiente_pago "$(estado_pedido "$PED_F")"
+esperar "queda PAGO_FALLIDO como FRAUDE" "$PED_F|FRAUDE" "$(evento_ultimo PAGO_FALLIDO | jq -r '"\(.pedido_id)|\(.resultado)"')"
+EV=$(evento_stripe payment_intent.payment_failed "$PI_F" 0 "$PED_F"); TS=$(date +%s)
+webhook "$EV" "t=$TS,v1=$(firmar "$TS" "$EV")" >/dev/null
+esperar "tarjeta rechazada → PAGO_FALLIDO con el código" "FALLO|card_declined" "$(evento_ultimo PAGO_FALLIDO | jq -r '"\(.resultado)|\(.dato_nuevo.motivo)"')"
+
+caso "CP-28 Sin datos de tarjeta en la base (PCI-DSS, SEC-3)"
+cols=$(docker compose exec -T mariadb-master mariadb -N -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA IN ('auth_db','catalogo_db','pedidos_db','pagos_db') AND COLUMN_NAME REGEXP 'card|tarjeta|cvv|cvc|pan$|expir|vencimiento|track'")
+esperar "ninguna columna de tarjeta en las 4 bases" 0 "$cols"
+esperar "pagos guarda la referencia de la pasarela, no la tarjeta" "$PI" "$(docker compose exec -T mariadb-master mariadb -N -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT payment_intent_id FROM pagos_db.pagos WHERE id_pedido='$PAGO_ID'")"
+esperar "pagos_user no puede borrar pagos" 0 "$(docker compose exec -T mariadb-master mariadb -N -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM information_schema.SCHEMA_PRIVILEGES WHERE GRANTEE LIKE '%pagos_user%' AND PRIVILEGE_TYPE='DELETE'")"
+
+caso "CP-29 Rutas de pago solo internas (PCI-DSS)"
+esperar "/internal/pagos/iniciar no se publica" 404 "$(codigo -X POST "$BASE/internal/pagos/iniciar")"
+esperar "/api/pagos/* (fuera del webhook) no se publica" 404 "$(codigo -X POST "$BASE/api/pagos/iniciar")"
+esperar "pagar un pedido ajeno → 404" 404 "$(codigo -X POST -H "Authorization: Bearer $T1" -H 'Content-Type: application/json' -d '{"metodo":"stripe"}' "$BASE/api/pedidos/$PED_F/pago")"
+r=$(docker compose exec -T catalogo-service php -r '
+    const SERVICE_DIR = "/var/www/app"; require "/var/www/shared/bootstrap.php";
+    [$c] = Huellitas\Interno::post("http://pagos-service:8084/internal/pagos/iniciar", ["pedido_id" => Huellitas\Jwt::uuid()]);
+    echo $c;')
+esperar "catalogo-service no puede iniciar pagos → 403" 403 "$r"
+r=$(docker compose exec -T catalogo-service php -r '
+    const SERVICE_DIR = "/var/www/app"; require "/var/www/shared/bootstrap.php";
+    [$c] = Huellitas\Interno::post("http://pedidos-service:8083/internal/pedidos/pagado", ["pedido_id" => Huellitas\Jwt::uuid()]);
+    echo $c;')
+esperar "solo pagos-service puede marcar un pedido como pagado → 403" 403 "$r"
+
+caso "CP-30 Secretos fuera del repositorio (A05, penalización -4)"
+fugas=$(git grep -nE 'sk_(test|live)_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|EMAILJS_PRIVATE_KEY=[^ ]+|PAYPAL_CLIENT_SECRET=[^ ]+|CLOUDINARY_API_SECRET=[^ ]+' -- . ':!tests' | wc -l)
+esperar "ninguna API key en archivos versionados" 0 "$fugas"
+esperar "solo pagos y notificaciones tienen salida a Internet" "000" "$(docker compose exec -T catalogo-service curl -s -o /dev/null -w '%{http_code}' --max-time 3 https://api.stripe.com || true)"
+
 caso "CP-16 Rate limiting en /login (gateway, se corre al final)"
 codigos=$(for i in $(seq 1 15); do codigo -X POST -H 'Content-Type: application/json' -d '{"email":"flood@correo.gt","password":"x"}' "$BASE/api/auth/login"; echo; done)
 grep -q 429 <<<"$codigos" && ok "ráfaga de logins → 429" || mal "ninguna respuesta 429 en la ráfaga"

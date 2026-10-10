@@ -702,3 +702,13 @@
   .orders__row img { width: 48px; height: 48px; }
   .orders__row > .status, .orders__row > strong:last-child { grid-column: 2; justify-self: start; }
 }
+
+/* ---------- Pago ---------- */
+.payment { background: var(--soft); border-radius: 24px; padding: 24px; margin: 24px 0; max-width: 520px; text-align: left; }
+.order-confirmed .payment { margin: 24px auto; }
+.payment h3 { margin: 0 0 16px; }
+.payment__methods { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.payment__form { display: grid; gap: 16px; }
+.payment__paypal { min-height: 50px; }
+.btn--paypal { background: #ffc439; color: #003087; font-weight: 700; }
+.btn--paypal:hover { background: #f2ba36; }

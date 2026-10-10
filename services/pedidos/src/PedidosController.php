@@ -246,6 +246,118 @@ final class PedidosController
         return [200, ['pedido' => $this->detalle($id)]];
     }
 
+    /** Inicia el pago de un pedido propio. Entrada: {metodo: stripe|paypal} */
+    public function iniciarPago(string $id): array
+    {
+        $claims = Guard::usuario(['cliente', 'admin']);
+        $pedido = $this->propio($claims, self::uuid($id));
+        if ($pedido['estado'] !== 'pendiente_pago') {
+            throw new ApiError(409, 'Este pedido ya no está pendiente de pago');
+        }
+        $metodo = Http::body()['metodo'] ?? null;
+        if (!in_array($metodo, ['stripe', 'paypal'], true)) {
+            throw new ApiError(422, 'Elige tarjeta o PayPal', ['campo' => 'metodo']);
+        }
+        // El monto sale de la BD de pedidos, nunca del navegador.
+        $respuesta = Interno::exigir($this->servicio('PAGOS_URL', 'http://pagos-service:8084', '/internal/pagos/iniciar'), [
+            'pedido_id'  => $pedido['id'],
+            'id_cliente' => (int) $pedido['id_cliente'],
+            'monto'      => $pedido['total'],
+            'metodo'     => $metodo,
+            'actor'      => Auditoria::actor($claims),
+        ], 'pagos');
+        return [200, ['pago' => $respuesta]];
+    }
+
+    /** Entrada: {orden_id}. pagos-service captura y verifica el monto; si cuadra, el pedido queda pagado. */
+    public function capturarPayPal(string $id): array
+    {
+        $claims = Guard::usuario(['cliente', 'admin']);
+        $pedido = $this->propio($claims, self::uuid($id));
+        $orden = Http::body()['orden_id'] ?? null;
+        $r = Interno::exigir($this->servicio('PAGOS_URL', 'http://pagos-service:8084', '/internal/pagos/paypal/capturar'), [
+            'pedido_id' => $pedido['id'], 'orden_id' => $orden, 'actor' => Auditoria::actor($claims),
+        ], 'pagos');
+        $this->marcarPagado($pedido['id'], (string) $r['monto'], 'paypal', (string) $r['referencia']);
+        return [200, ['pedido' => $this->detalle($pedido['id'])]];
+    }
+
+    /** Llamado por pagos-service cuando Stripe confirma (webhook con firma válida). */
+    public function pagadoInterno(): array
+    {
+        Guard::servicio(['pagos-service']);
+        $d = Http::body();
+        $id = self::uuid(is_string($d['pedido_id'] ?? null) ? $d['pedido_id'] : '');
+        $metodo = in_array($d['metodo'] ?? null, ['stripe', 'paypal'], true) ? $d['metodo'] : throw new ApiError(422, 'Método inválido');
+        $estado = $this->marcarPagado($id, (string) ($d['monto'] ?? ''), $metodo, (string) ($d['referencia'] ?? ''));
+        return [200, ['pedido_id' => $id, 'estado' => $estado]];
+    }
+
+    /** pendiente_pago → pagado (idempotente), con historial, bitácora y correo de confirmación. */
+    private function marcarPagado(string $id, string $monto, string $metodo, string $referencia): string
+    {
+        $db = Db::escritura();
+        $db->beginTransaction();
+        try {
+            $consulta = $db->prepare('SELECT estado, total, id_cliente FROM pedidos WHERE id = ? FOR UPDATE');
+            $consulta->execute([$id]);
+            $pedido = $consulta->fetch() ?: throw new ApiError(404, 'Pedido no encontrado');
+            if ($pedido['estado'] !== 'pendiente_pago') {
+                $db->rollBack();
+                if ($pedido['estado'] === 'cancelado') {
+                    // Cobrado después de cancelar: queda a la vista para reembolsarlo a mano.
+                    error_log("REEMBOLSO_PENDIENTE pedido=$id referencia=$referencia");
+                }
+                return $pedido['estado'];
+            }
+            if (Totales::centavos($monto) !== Totales::centavos($pedido['total'])) {
+                throw new ApiError(409, 'El monto cobrado no coincide con el total del pedido');
+            }
+            $db->prepare("UPDATE pedidos SET estado = 'pagado' WHERE id = ?")->execute([$id]);
+            $db->prepare('INSERT INTO historial_estados (pedido_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, ?, ?, NULL, ?)')
+                ->execute([$id, 'pendiente_pago', 'pagado', 'Pago confirmado por ' . ($metodo === 'paypal' ? 'PayPal' : 'Stripe') . " ($referencia)"]);
+            $db->commit();
+        } catch (\Throwable $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $e;
+        }
+
+        Auditoria::registrar('PEDIDO_ESTADO_CAMBIADO', 'EXITO', [
+            'usuario_id' => (int) $pedido['id_cliente'], 'rol' => 'cliente', 'pedido_id' => $id,
+            'dato_anterior' => ['estado' => 'pendiente_pago'],
+            'dato_nuevo'    => ['estado' => 'pagado', 'origen' => 'pagos-service', 'metodo' => $metodo, 'referencia' => $referencia],
+        ]);
+
+        // El correo no bloquea: si falla, el pedido igual queda pagado (y la falla queda en la bitácora).
+        Interno::post($this->servicio('NOTIFICACIONES_URL', 'http://notificaciones-service:8085', '/internal/notificaciones/pedido-pagado'),
+            ['pedido' => $this->detalle($id), 'metodo' => $metodo, 'referencia' => $referencia], 12);
+        return 'pagado';
+    }
+
+    /** Pedido del cliente del token (o cualquiera si es admin); 404 si es ajeno, como en ver(). */
+    private function propio(array $claims, string $id): array
+    {
+        $consulta = Db::escritura()->prepare('SELECT id, id_cliente, estado, total FROM pedidos WHERE id = ?');
+        $consulta->execute([$id]);
+        $pedido = $consulta->fetch();
+        if (!$pedido || ($claims['rol'] !== 'admin' && (int) $pedido['id_cliente'] !== (int) $claims['sub'])) {
+            if ($pedido) {
+                Auditoria::registrar('ACCESO_DENEGADO', 'FALLO', Auditoria::actor($claims) + [
+                    'pedido_id' => $id, 'dato_nuevo' => ['recurso' => 'pago de pedido', 'motivo' => 'el pedido pertenece a otro cliente'],
+                ]);
+            }
+            throw new ApiError(404, 'Pedido no encontrado');
+        }
+        return $pedido;
+    }
+
+    private function servicio(string $variable, string $defecto, string $ruta): string
+    {
+        return rtrim(Env::get($variable, $defecto), '/') . $ruta;
+    }
+
     // ---------- Apoyo ----------
 
     private const SQL_RESUMEN = 'SELECT p.id, p.estado, p.metodo_entrega, p.total, p.fecha, p.id_cliente, c.nombre AS cliente,
