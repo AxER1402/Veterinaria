@@ -21,6 +21,7 @@ import Wishlist from './pages/shop/Wishlist'
 import Account from './pages/account/Account'
 import Orders from './pages/account/Orders'
 import OrderDetail from './pages/account/OrderDetail'
+import Security from './pages/account/Security'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminResumen from './pages/admin/AdminResumen'
 import AdminPedidos from './pages/admin/AdminPedidos'
@@ -68,6 +69,7 @@ export default function App() {
               <Route path="cuenta" element={<Account />} />
               <Route path="cuenta/pedidos" element={<Orders />} />
               <Route path="cuenta/pedidos/:id" element={<OrderDetail />} />
+              <Route path="cuenta/seguridad" element={<Security />} />
               <Route path="admin" element={<AdminLayout />}>
                 <Route index element={<AdminResumen />} />
                 <Route path="pedidos" element={<AdminPedidos />} />

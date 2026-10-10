@@ -73,4 +73,4 @@ Cada dólar del presupuesto de seguridad evita unos USD 137 de pérdidas esperad
 |---|---|---|
 | Scraping (600) | Turnstile de Cloudflare en búsquedas masivas | 0 |
 | Cuentas de cliente (450) | Aviso por correo ante un login desde un dispositivo nuevo | 0 (EmailJS) |
-| Admin comprometido (400) | MFA TOTP para el rol admin | 0 (librería) + 8 h de desarrollo |
+| Admin comprometido (400) | ✅ **Implementado:** MFA TOTP disponible para todas las cuentas, con aviso en el panel admin. Con MFA activo, el ARO estimado baja de 0.05 a 0.01 (ALE ≈ 80) | 0 |

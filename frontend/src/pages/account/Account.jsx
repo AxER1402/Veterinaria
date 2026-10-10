@@ -35,9 +35,11 @@ export default function Account() {
 }
 
 function LoginForm({ from }) {
-  const { login } = useAuth()
+  const { login, verifyMfa } = useAuth()
   const navigate = useNavigate()
   const [values, setValues] = useState({ email: '', password: '' })
+  const [desafio, setDesafio] = useState(null)
+  const [codigo, setCodigo] = useState('')
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
   const set = (f) => (e) => setValues((v) => ({ ...v, [f]: e.target.value }))
@@ -47,13 +49,38 @@ function LoginForm({ from }) {
     setSending(true)
     setError('')
     try {
-      await login(values.email, values.password)
+      if (desafio) {
+        await verifyMfa(desafio, codigo)
+        return navigate(from, { replace: true })
+      }
+      const r = await login(values.email, values.password)
+      if (r.mfa) {
+        setDesafio(r.desafio)
+        return
+      }
       navigate(from, { replace: true })
     } catch (err) {
       setError(err.message)
+      // El desafío dura 5 min: si venció, se vuelve a pedir la contraseña.
+      if (desafio && err.status === 401 && /Token|Desafío/i.test(err.message)) setDesafio(null)
     } finally {
       setSending(false)
     }
+  }
+
+  if (desafio) {
+    return (
+      <form className="account__form" onSubmit={submit}>
+        <p>Tu cuenta tiene verificación en dos pasos. Escribe el código de 6 dígitos de tu app de autenticación.</p>
+        <Field label="Código de verificación">
+          <input value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric"
+            autoComplete="one-time-code" pattern="\d{6}" required autoFocus />
+        </Field>
+        {error && <p className="form-alert" role="alert">{error}</p>}
+        <button className="btn btn--primary btn--block" disabled={sending || codigo.length !== 6}>{sending ? 'Verificando…' : 'Verificar'}</button>
+        <button type="button" className="link-btn" onClick={() => { setDesafio(null); setCodigo(''); setError('') }}>Volver</button>
+      </form>
+    )
   }
 
   return (

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Navigate, NavLink, Outlet } from 'react-router-dom'
+import { Link, Navigate, NavLink, Outlet } from 'react-router-dom'
 import { LayoutDashboard, Package, Tags, ShieldCheck, Users } from 'lucide-react'
 import Loading from '../../components/Loading'
 import { useAuth } from '../../context/useAuth'
@@ -41,6 +41,11 @@ export default function AdminLayout() {
           <h1>Panel de administración</h1>
           <span>{user.email}</span>
         </header>
+        {!user.mfa && (
+          <p className="form-alert admin__mfa">
+            Tu cuenta de administrador no tiene verificación en dos pasos. <Link to="/cuenta/seguridad">Actívala ahora</Link>: si te roban la contraseña, sin el código del teléfono no podrán entrar.
+          </p>
+        )}
         <nav className="admin__tabs" aria-label="Secciones del panel">
           {tabs.map(({ to, label, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end}>

@@ -27,6 +27,7 @@ final class AuditController
         'ACCESO_ADMIN_PANEL'      => ['auth-service'],
         'TOKEN_REVOCADO'          => ['auth-service'],
         'EXPORTACION_CLIENTES'    => ['auth-service'],
+        'MFA_CONFIGURADO'         => ['auth-service'],
         'PEDIDO_CREADO'           => ['pedidos-service'],
         'PEDIDO_ESTADO_CAMBIADO'  => ['pedidos-service'],
         'PAGO_INICIADO'           => ['pagos-service'],

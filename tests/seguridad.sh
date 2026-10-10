@@ -31,6 +31,16 @@ intento_login() { # intento_login <email> <password> → "cuerpo<LF>código", re
     done
     printf '%s' "$r"
 }
+mfa_intento() { # mfa_intento <desafio> <codigo> → "cuerpo<LF>código", reintentando en 429 (comparte cupo con /login)
+    local r i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        r=$("${C[@]}" -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"desafio\":\"$1\",\"codigo\":\"$2\"}" "$BASE/api/auth/login/mfa")
+        [[ "${r##*$'\n'}" != 429 ]] && break
+        sleep 3
+    done
+    printf '%s' "$r"
+}
+mfa_codigo() { local r; r=$(mfa_intento "$1" "$2"); echo "${r##*$'\n'}"; }
 login()        { local r; r=$(intento_login "$1" "$2"); jq -r '.token // empty' <<<"${r%$'\n'*}" 2>/dev/null; }
 login_codigo() { local r; r=$(intento_login "$1" "$2"); echo "${r##*$'\n'}"; }
 login_error()  { local r; r=$(intento_login "$1" "$2"); jq -r '.error // empty' <<<"${r%$'\n'*}" 2>/dev/null; }
@@ -184,6 +194,9 @@ ENTREGA='"nombre":"Compradora Prueba","telefono":"5555-1234","metodo_entrega":"d
 caso "CP-18 El precio lo pone el servidor (T de STRIDE)"
 precio_real=$(jq '.productos[] | select(.slug=="alimento-seco-pollo-arroz") | .variantes[0].precio' <<<"$cat_json")
 var_id=$(jq '.productos[] | select(.slug=="alimento-seco-pollo-arroz") | .variantes[0].id' <<<"$cat_json")
+# Cada corrida compra unidades de esta variante: se repone el stock para que la suite se pueda repetir
+# indefinidamente (el ajuste queda en la bitácora como cualquier cambio del admin).
+auth_json PATCH "$ADMIN" "/api/catalogo/admin/variantes/$var_id" '{"stock":500}' >/dev/null
 cot=$(post /api/pedidos/cotizar "{\"items\":[{\"variante_id\":$var_id,\"cantidad\":3,\"precio\":0.01}],\"metodo_entrega\":\"retiro\"}")
 esperar "cotizar ignora el precio del navegador" "$(jq -n "$precio_real*3*100|round/100")" "$(jq '.totales.total' <<<"$cot")"
 p=$(auth_json POST "$T2" /api/pedidos "{\"items\":[{\"variante_id\":$var_id,\"cantidad\":2,\"precio\":0.01,\"subtotal\":0.02}],\"total\":0.02,$ENTREGA}")
@@ -365,6 +378,44 @@ esperar "PEDIDO_ESTADO_CAMBIADO con origen vencimiento automático" "$PED_V|venc
 esperar "un pedido reciente no se toca" "[]" "$(docker compose exec -T pedidos-vencimientos php /var/www/app/bin/vencer.php | jq -c .vencidos)"
 # bin/ está fuera del DocumentRoot (public/): ni siquiera desde la red interna se puede ejecutar por HTTP.
 esperar "el script no se puede llamar por HTTP (ni desde la red interna)" 404 "$(docker compose exec -T auth-service curl -s -o /dev/null -w '%{http_code}' http://pedidos-service:8083/bin/vencer.php)"
+
+caso "CP-34 Verificación en dos pasos (TOTP, A07)"
+totp() { # totp <secreto base32> [desfase de pasos]
+    docker compose exec -T auth-service php -r 'const SERVICE_DIR = "/var/www/app"; require "/var/www/shared/bootstrap.php";
+        $b32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"; $bits = "";
+        foreach (str_split($argv[1]) as $c) $bits .= str_pad(decbin(strpos($b32, $c)), 5, "0", STR_PAD_LEFT);
+        $k = ""; foreach (str_split($bits, 8) as $o) if (strlen($o) === 8) $k .= chr(bindec($o));
+        echo App\Totp::codigo($k, intdiv(time(), 30) + (int) ($argv[2] ?? 0));' "$1" "${2:-0}"
+}
+CLIENTE3="mfa$SUF@correo.gt"
+post /api/auth/registro "{\"nombre\":\"Usuario MFA\",\"email\":\"$CLIENTE3\",\"password\":\"Segura123\"}" >/dev/null
+T3=$(login "$CLIENTE3" Segura123)
+conf=$(auth_json POST "$T3" /api/auth/mfa/configurar)
+SECRETO=$(jq -r .secreto <<<"$conf")
+[[ "$SECRETO" =~ ^[A-Z2-7]{32}$ ]] && ok "secreto TOTP de 160 bits en base32" || mal "secreto inválido: $SECRETO"
+[[ "$(jq -r .uri <<<"$conf")" == otpauth://totp/Huellitas* ]] && ok "URI otpauth:// para el QR" || mal "URI inválida"
+guardado=$(docker compose exec -T -e MYSQL_PWD="$DB_ROOT_PASSWORD" mariadb-master mariadb -N -uroot -e "SELECT HEX(mfa_secreto) FROM auth_db.usuarios WHERE email='$CLIENTE3'")
+[[ -n "$guardado" && "$guardado" != *"$(printf '%s' "$SECRETO" | xxd -p | tr -d '\n' | tr a-f A-F)"* ]] && ok "el secreto se guarda cifrado (AES-256-GCM), no en claro" || mal "el secreto está en claro en la BD"
+esperar "activar con un código incorrecto → 422" 422 "$(codigo -X POST -H "Authorization: Bearer $T3" -H 'Content-Type: application/json' -d '{"codigo":"000000"}' "$BASE/api/auth/mfa/activar")"
+esperar "activar con el código de la app → MFA activo" true "$(auth_json POST "$T3" /api/auth/mfa/activar "{\"codigo\":\"$(totp "$SECRETO")\"}" | jq .mfa)"
+esperar "MFA_CONFIGURADO en la bitácora" "$CLIENTE3|activado" "$(evento_ultimo MFA_CONFIGURADO | jq -r '"\(.usuario_email)|\(.dato_nuevo.mfa)"')"
+r=$(intento_login "$CLIENTE3" Segura123); paso1=${r%$'\n'*}
+esperar "con MFA, la contraseña sola no entrega token" "true|" "$(jq -r '"\(.mfa_requerido)|\(.token // "")"' <<<"$paso1")"
+DESAFIO=$(jq -r .desafio <<<"$paso1")
+esperar "el desafío no sirve como token de acceso" 401 "$(codigo -H "Authorization: Bearer $DESAFIO" "$BASE/api/auth/me")"
+esperar "código incorrecto → 401" 401 "$(mfa_codigo "$DESAFIO" 123456)"
+esperar "el código fallido se registra como LOGIN_CLIENTE_FALLIDO" "código MFA incorrecto (1/5)" "$(evento_ultimo LOGIN_CLIENTE_FALLIDO | jq -r .dato_nuevo.motivo)"
+# El código del paso de la activación ya se usó: se espera al siguiente paso de 30 s para no reutilizarlo.
+until (( $(date +%s) % 30 < 25 )); do sleep 1; done
+CODIGO=$(totp "$SECRETO" 1)
+r=$(mfa_intento "$DESAFIO" "$CODIGO"); r=${r%$'\n'*}
+T3=$(jq -r '.token // empty' <<<"$r" 2>/dev/null)
+[[ -n "$T3" ]] && ok "código correcto → JWT" || mal "no entregó token: $r"
+esperar "LOGIN_CLIENTE_EXITOSO marca mfa=true" "$CLIENTE3|true" "$(evento_ultimo LOGIN_CLIENTE_EXITOSO | jq -r '"\(.usuario_email)|\(.dato_nuevo.mfa)"')"
+esperar "el mismo desafío no se puede reutilizar" 401 "$(mfa_codigo "$DESAFIO" "$CODIGO")"
+r=$(intento_login "$CLIENTE3" Segura123); D2=$(jq -r .desafio <<<"${r%$'\n'*}")
+esperar "el mismo código con otro desafío tampoco (anti-replay)" 401 "$(mfa_codigo "$D2" "$CODIGO")"
+esperar "desactivar sin el código correcto → 401" 401 "$(codigo -X POST -H "Authorization: Bearer $T3" -H 'Content-Type: application/json' -d '{"password":"Segura123","codigo":"000000"}' "$BASE/api/auth/mfa/desactivar")"
 
 caso "CP-16 Rate limiting en /login (gateway, se corre al final)"
 codigos=$(for i in $(seq 1 15); do codigo -X POST -H 'Content-Type: application/json' -d '{"email":"flood@correo.gt","password":"x"}' "$BASE/api/auth/login"; echo; done)

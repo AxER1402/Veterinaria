@@ -22,8 +22,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -38,7 +38,7 @@ jobs:
     name: PHP (sintaxis) y secretos
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Sintaxis PHP 8.3
         run: docker run --rm -v "$PWD/services:/s:ro" php:8.3-cli sh -c 'find /s -name "*.php" -print0 | xargs -0 -n1 php -l > /dev/null'
       - name: Ninguna clave en el repositorio
@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: .env con secretos efímeros
         run: ops/generar-env.sh
       - name: Levantar el stack
@@ -66,7 +66,7 @@ jobs:
       - name: Evidencia
         if: always()
         run: ops/evidencia.sh || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: evidencia-${{ github.sha }}

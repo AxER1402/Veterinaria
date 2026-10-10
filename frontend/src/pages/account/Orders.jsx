@@ -28,7 +28,10 @@ export default function Orders() {
         <div className="container">
           <div className="account__bar">
             <span>{user.email}</span>
-            <button className="btn btn--dark btn--sm" onClick={logout}>Cerrar sesión</button>
+            <span className="account__links">
+              <Link to="/cuenta/seguridad">Seguridad {user.mfa ? '· 2 pasos activa' : '· activar 2 pasos'}</Link>
+              <button className="btn btn--dark btn--sm" onClick={logout}>Cerrar sesión</button>
+            </span>
           </div>
           {error && <p className="form-alert">{error}</p>}
           {!orders && !error && <Loading />}

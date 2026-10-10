@@ -71,6 +71,7 @@ services:
       DB_NAME: auth_db
       DB_USER: auth_user
       DB_PASSWORD: ${AUTH_DB_PASSWORD:?falta AUTH_DB_PASSWORD}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?falta MFA_ENCRYPTION_KEY}
     depends_on:
       mariadb-master: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -120,6 +121,9 @@ services:
   # Tarea periódica: cancela los pedidos que siguen sin pagar tras PEDIDO_VENCE_HORAS y devuelve el stock.
   pedidos-vencimientos:
     <<: *php
+    # Misma imagen que pedidos-service. Necesita su propio build: en una máquina limpia (CI) la
+    # imagen no existe en ningún registro y Compose intentaría descargarla.
+    build: { context: ./services, args: { SERVICE: pedidos, PORT: 8083 } }
     image: huellitas/pedidos-service:latest
     command: ["sh", "-c", "while :; do php /var/www/app/bin/vencer.php; sleep ${PEDIDO_VENCIMIENTO_CADA_SEG:-900}; done"]
     healthcheck: { disable: true }

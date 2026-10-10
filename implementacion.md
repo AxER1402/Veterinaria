@@ -337,7 +337,7 @@ Implementar y documentar (mínimo 5, ideal 7 incluyendo A08). Referenciar en el 
 
 ## Pendientes (al 10 de octubre de 2026)
 
-Las 4 semanas del cronograma están implementadas y subidas, más extras: recuperación a un punto en el tiempo con binlogs, vencimiento de pedidos sin pagar y CI en GitHub Actions. `tests/seguridad.sh` pasa 141 de 141. Falta lo que depende de decisiones o cuentas externas:
+Las 4 semanas del cronograma están implementadas y subidas, más extras: recuperación a un punto en el tiempo con binlogs, vencimiento de pedidos sin pagar, verificación en dos pasos (TOTP) y CI en GitHub Actions. `tests/seguridad.sh` pasa 158 de 158. Falta lo que depende de decisiones o cuentas externas:
 
 | # | Pendiente | Qué hace falta | Afecta |
 |---|---|---|---|
@@ -350,8 +350,9 @@ Las 4 semanas del cronograma están implementadas y subidas, más extras: recupe
 | 7 | **Repositorio privado** | AxER1402 debe cambiar la visibilidad de `AxER1402/Veterinaria` (Settings → Danger Zone). La cuenta Hugoda23 solo tiene permiso de escritura | Penalización «sin repo privado» |
 | 8 | **Mapas en un navegador real** | Abrir `/contacto` y confirmar que se dibujan los mapas (en Chromium headless solo carga el marco) | Detalle visual |
 | 9 | **Presentación de 10 min** | Ensayar con el guion de `docs/08-guion-presentacion.md` (ya escrito). Sin claves de Stripe, el pago se demuestra con el webhook firmado (CP-26) | Presentación |
-| 10 | **CI en GitHub** | Revisar en la pestaña *Actions* de `AxER1402/Veterinaria` que el primer run de `.github/workflows/ci.yml` salga en verde (Actions debe estar habilitado en el repo) | Evidencia de DevSecOps |
+| 10 | **CI en GitHub** | El primer run falló porque `pedidos-vencimientos` no tenía `build` y en una máquina limpia Compose intentaba descargar la imagen. Ya corregido; confirmar que el siguiente run salga en verde | Evidencia de DevSecOps |
 | 11 | **SAST (opcional)** | Agregar Semgrep al CI (`semgrep scan --config p/php --config p/javascript --config p/secrets`). No se corrió en local por el peso de la imagen. CodeQL no analiza PHP | Riesgo residual A06/A03 |
+| 12 | **Activar MFA en el admin** | Entrar con `admin@huellitas.gt` → aviso del panel → *Activar ahora* y escanear el QR. Hacerlo en producción, no en el seed de desarrollo, porque las pruebas automáticas usan el admin sin MFA | Riesgo «credenciales admin comprometidas» |
 
 Al desplegar: secretos nuevos (no los de desarrollo), cambiar la contraseña de `admin@huellitas.gt`, instalar el cron de respaldos (`docs/04-bcp-drp.md` §3) y correr `tests/seguridad.sh` contra el dominio.
 

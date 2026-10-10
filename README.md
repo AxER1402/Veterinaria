@@ -36,7 +36,7 @@ Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 | Servicio | Qué hace | Puerto |
 |---|---|---|
 | `gateway` | Nginx: única entrada. Usa TLS 1.3, WAF y rate limiting, y sirve el frontend React | host 8088 (HTTP→HTTPS) y 8443 |
-| `auth-service` | Registro, login, JWT (1 h), logout con lista negra en Redis, bloqueo tras 5 intentos | 8081 (interno) |
+| `auth-service` | Registro, login, verificación en dos pasos (TOTP), JWT (1 h), logout con lista negra en Redis, bloqueo tras 5 intentos | 8081 (interno) |
 | `catalogo-service` | 24 productos con variantes, precio y stock. Lecturas en la réplica con caché Redis; imágenes por Cloudinary | 8082 (interno) |
 | `pedidos-service` | Pedidos con UUID, total calculado en el servidor, cupones, estados con historial | 8083 (interno) |
 | `pedidos-vencimientos` | Tarea periódica (cada 15 min): cancela los pedidos sin pagar tras `PEDIDO_VENCE_HORAS` (24 h) y devuelve el stock | — |
@@ -71,6 +71,8 @@ Abrir <https://localhost:8443>. En local el certificado es autofirmado y se gene
 |---|---|---|
 | POST | `/api/auth/registro` | público. Crea siempre rol `cliente` |
 | POST | `/api/auth/login` | público, con rate limit |
+| POST | `/api/auth/login/mfa` `{desafio, codigo}` | segundo paso del login cuando la cuenta tiene MFA |
+| POST | `/api/auth/mfa/configurar` · `/activar` · `/desactivar` | usuario. Verificación en dos pasos TOTP |
 | POST | `/api/auth/logout` | usuario. Revoca el JWT |
 | GET | `/api/auth/me` | usuario |
 | POST | `/api/auth/admin/acceso` | admin. Registra `ACCESO_ADMIN_PANEL` |
@@ -95,7 +97,7 @@ Abrir <https://localhost:8443>. En local el certificado es autofirmado y se gene
 tests/seguridad.sh
 ```
 
-Corre los casos CP-01 a CP-33 contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto manipulado), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2 y vencimiento de pedidos sin pagar.
+Corre los casos CP-01 a CP-34 contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto manipulado), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2 vencimiento de pedidos sin pagar y verificación en dos pasos.
 
 > La ráfaga del CP-16 agota el cupo de `/login` del gateway. Si se repite la prueba enseguida, la suite espera sola a que se recupere (hasta ~1 min).
 

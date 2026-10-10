@@ -7,6 +7,7 @@ use Huellitas\ApiError;
 use Huellitas\Auditoria;
 use Huellitas\Cache;
 use Huellitas\Db;
+use Huellitas\Env;
 use Huellitas\Guard;
 use Huellitas\Http;
 use Huellitas\Jwt;
@@ -18,7 +19,8 @@ final class AuthController
     private const MAX_INTENTOS = 5;               // A07: 5 intentos fallidos…
     private const BLOQUEO_SEG = 15 * 60;          // …bloquean la cuenta 15 min
     private const MAX_LOGIN_POR_IP = 50;          // por IP en 15 min (holgado: varios clientes pueden compartir IP)
-    private const IPS_SOSPECHOSAS = 3;            // S (STRIDE): misma cuenta atacada desde ≥3 IPs
+    private const IPS_SOSPECHOSAS = 3;
+    private const DESAFIO_MFA_SEG = 300;          // el segundo paso del login vence en 5 min            // S (STRIDE): misma cuenta atacada desde ≥3 IPs
 
     // Hash fijo para gastar el mismo tiempo cuando el correo no existe (evita enumerar usuarios).
     private const HASH_SENUELO = '$2y$12$RXrg6QrXzZtqAI8PEr/DF.dE62D.UFMHnAiqbjjKjdZCGHwxoG47a';
@@ -64,7 +66,7 @@ final class AuthController
         }
 
         $db = Db::escritura();
-        $consulta = $db->prepare('SELECT id, nombre, email, password_hash, rol, activo, intentos_fallidos, bloqueado_hasta
+        $consulta = $db->prepare('SELECT id, nombre, email, password_hash, rol, activo, intentos_fallidos, bloqueado_hasta, mfa_activo
                                     FROM usuarios WHERE email = ?');
         $consulta->execute([$email]);
         $usuario = $consulta->fetch() ?: null;
@@ -77,42 +79,152 @@ final class AuthController
         $valida = password_verify($password, $usuario['password_hash'] ?? self::HASH_SENUELO);
         if (!$usuario || !$valida || !$usuario['activo']) {
             if ($usuario) {
-                $intentos = (int) $usuario['intentos_fallidos'] + 1;
-                $bloquear = $intentos >= self::MAX_INTENTOS;
-                $db->prepare('UPDATE usuarios SET intentos_fallidos = ?, bloqueado_hasta = ? WHERE id = ?')->execute([
-                    $bloquear ? 0 : $intentos,
-                    $bloquear ? date('Y-m-d H:i:s', time() + self::BLOQUEO_SEG) : null,
-                    $usuario['id'],
-                ]);
-                $this->fallo($email, $usuario, $bloquear ? 'contraseña incorrecta; cuenta bloqueada 15 min' : "contraseña incorrecta ($intentos/" . self::MAX_INTENTOS . ')');
-                if ($bloquear) {
-                    throw new ApiError(423, 'Cuenta bloqueada temporalmente por intentos fallidos. Intenta más tarde.');
-                }
+                $this->intentoFallido($usuario, 'contraseña incorrecta');
             } else {
                 $this->fallo($email, null, 'correo no registrado');
             }
             throw new ApiError(401, 'Credenciales inválidas');
         }
 
-        if ((int) $usuario['intentos_fallidos'] > 0 || $usuario['bloqueado_hasta'] !== null) {
-            $db->prepare('UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = ?')->execute([$usuario['id']]);
-        }
         if (password_needs_rehash($usuario['password_hash'], PASSWORD_BCRYPT, self::BCRYPT)) {
             $db->prepare('UPDATE usuarios SET password_hash = ? WHERE id = ?')
                 ->execute([password_hash($password, PASSWORD_BCRYPT, self::BCRYPT), $usuario['id']]);
         }
 
+        // Con MFA activo, la contraseña sola no basta: se entrega un desafío de 5 min, de un solo uso,
+        // que no sirve como token de acceso (typ "mfa"; Guard solo acepta typ "user").
+        if ($usuario['mfa_activo']) {
+            $ahora = time();
+            $desafio = Jwt::firmar([
+                'iss' => 'huellitas-auth', 'typ' => 'mfa', 'sub' => (int) $usuario['id'], 'jti' => Jwt::uuid(),
+                'iat' => $ahora, 'exp' => $ahora + self::DESAFIO_MFA_SEG,
+            ], Env::required('JWT_SECRET'));
+            return [200, ['mfa_requerido' => true, 'desafio' => $desafio, 'expira_en' => self::DESAFIO_MFA_SEG]];
+        }
+
+        return [200, $this->sesion($usuario, false)];
+    }
+
+    /** Segundo paso del login. Entrada: {desafio, codigo} */
+    public function verificarMfa(): array
+    {
+        $datos = Http::body();
+        $desafio = is_string($datos['desafio'] ?? null) ? $datos['desafio'] : throw new ApiError(422, 'Falta el desafío');
+        $codigo = is_string($datos['codigo'] ?? null) ? trim($datos['codigo']) : '';
+        $claims = Jwt::verificar($desafio, Env::required('JWT_SECRET'), 'mfa');
+
+        $usuario = $this->usuarioPorId((int) $claims['sub']);
+        if ($usuario['bloqueado_hasta'] !== null && strtotime($usuario['bloqueado_hasta']) > time()) {
+            $this->fallo($usuario['email'], $usuario, 'cuenta bloqueada (MFA)');
+            throw new ApiError(423, 'Cuenta bloqueada temporalmente por intentos fallidos. Intenta más tarde.');
+        }
+        if (!$usuario['mfa_activo'] || !$usuario['activo']) {
+            throw new ApiError(401, 'Desafío inválido');
+        }
+
+        $paso = Totp::verificar(Totp::descifrar($usuario['mfa_secreto']), $codigo,
+            $usuario['mfa_ultimo_paso'] === null ? null : (int) $usuario['mfa_ultimo_paso']);
+        if ($paso === null) {
+            // Cuenta como intento fallido: 5 códigos malos también bloquean la cuenta 15 min.
+            $this->intentoFallido($usuario, 'código MFA incorrecto');
+            throw new ApiError(401, 'Código de verificación incorrecto');
+        }
+        // El desafío es de un solo uso.
+        if (!Cache::redis()->set("mfa:desafio:{$claims['jti']}", '1', ['nx', 'ex' => self::DESAFIO_MFA_SEG + 30])) {
+            throw new ApiError(401, 'Desafío ya utilizado');
+        }
+        Db::escritura()->prepare('UPDATE usuarios SET mfa_ultimo_paso = ? WHERE id = ?')->execute([$paso, $usuario['id']]);
+        return [200, $this->sesion($usuario, true)];
+    }
+
+    /** Paso 1 de la activación: genera el secreto (todavía inactivo) y la URI para el QR. */
+    public function configurarMfa(): array
+    {
+        $claims = Guard::usuario();
+        $usuario = $this->usuarioPorId((int) $claims['sub']);
+        if ($usuario['mfa_activo']) {
+            throw new ApiError(409, 'La verificación en dos pasos ya está activa');
+        }
+        $secreto = Totp::nuevoSecreto();
+        Db::escritura()->prepare('UPDATE usuarios SET mfa_secreto = ?, mfa_ultimo_paso = NULL WHERE id = ?')
+            ->execute([Totp::cifrar($secreto), $usuario['id']]);
+        return [200, ['secreto' => $secreto, 'uri' => Totp::uri($secreto, $usuario['email'])]];
+    }
+
+    /** Paso 2: el usuario demuestra que su app genera códigos correctos. Entrada: {codigo} */
+    public function activarMfa(): array
+    {
+        $claims = Guard::usuario();
+        $usuario = $this->usuarioPorId((int) $claims['sub']);
+        if ($usuario['mfa_activo'] || $usuario['mfa_secreto'] === null) {
+            throw new ApiError(409, $usuario['mfa_activo'] ? 'La verificación en dos pasos ya está activa' : 'Primero genera el código QR');
+        }
+        $paso = Totp::verificar(Totp::descifrar($usuario['mfa_secreto']), trim((string) (Http::body()['codigo'] ?? '')), null);
+        if ($paso === null) {
+            throw new ApiError(422, 'El código no coincide. Revisa la hora del teléfono e intenta de nuevo.', ['campo' => 'codigo']);
+        }
+        Db::escritura()->prepare('UPDATE usuarios SET mfa_activo = 1, mfa_ultimo_paso = ? WHERE id = ?')->execute([$paso, $usuario['id']]);
+        Auditoria::registrar('MFA_CONFIGURADO', 'EXITO', Auditoria::actor($claims) + ['dato_nuevo' => ['mfa' => 'activado']]);
+        return [200, ['mfa' => true]];
+    }
+
+    /** Desactivar exige la contraseña y un código vigente. Entrada: {password, codigo} */
+    public function desactivarMfa(): array
+    {
+        $claims = Guard::usuario();
+        $usuario = $this->usuarioPorId((int) $claims['sub']);
+        $datos = Http::body();
+        if (!$usuario['mfa_activo']) {
+            throw new ApiError(409, 'La verificación en dos pasos no está activa');
+        }
+        $passwordOk = password_verify(is_string($datos['password'] ?? null) ? $datos['password'] : '', $usuario['password_hash']);
+        $paso = Totp::verificar(Totp::descifrar($usuario['mfa_secreto']), trim((string) ($datos['codigo'] ?? '')),
+            $usuario['mfa_ultimo_paso'] === null ? null : (int) $usuario['mfa_ultimo_paso']);
+        if (!$passwordOk || $paso === null) {
+            Auditoria::registrar('MFA_CONFIGURADO', 'FALLO', Auditoria::actor($claims) + ['dato_nuevo' => ['mfa' => 'intento de desactivar', 'motivo' => 'contraseña o código incorrectos']]);
+            throw new ApiError(401, 'Contraseña o código incorrectos');
+        }
+        Db::escritura()->prepare('UPDATE usuarios SET mfa_activo = 0, mfa_secreto = NULL, mfa_ultimo_paso = NULL WHERE id = ?')->execute([$usuario['id']]);
+        Auditoria::registrar('MFA_CONFIGURADO', 'EXITO', Auditoria::actor($claims) + ['dato_nuevo' => ['mfa' => 'desactivado']]);
+        return [200, ['mfa' => false]];
+    }
+
+    /** Emite el JWT después de un login correcto (con o sin segundo factor). */
+    private function sesion(array $usuario, bool $conMfa): array
+    {
+        if ((int) $usuario['intentos_fallidos'] > 0 || $usuario['bloqueado_hasta'] !== null) {
+            Db::escritura()->prepare('UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = ?')->execute([$usuario['id']]);
+        }
         [$token, $claims] = Jwt::tokenUsuario($usuario);
         Auditoria::registrar('LOGIN_CLIENTE_EXITOSO', 'EXITO', [
             'usuario_id' => (int) $usuario['id'], 'usuario_email' => $usuario['email'], 'rol' => $usuario['rol'],
-            'dato_nuevo' => ['jti' => $claims['jti'], 'expira' => date('c', $claims['exp'])],
+            'dato_nuevo' => ['jti' => $claims['jti'], 'expira' => date('c', $claims['exp']), 'mfa' => $conMfa],
         ]);
+        return ['token' => $token, 'expira_en' => Jwt::TTL_USUARIO, 'usuario' => $this->publico($usuario)];
+    }
 
-        return [200, [
-            'token'     => $token,
-            'expira_en' => Jwt::TTL_USUARIO,
-            'usuario'   => $this->publico($usuario),
-        ]];
+    /** Suma un intento fallido (contraseña o código MFA) y bloquea la cuenta al llegar a 5. */
+    private function intentoFallido(array $usuario, string $motivo): void
+    {
+        $intentos = (int) $usuario['intentos_fallidos'] + 1;
+        $bloquear = $intentos >= self::MAX_INTENTOS;
+        Db::escritura()->prepare('UPDATE usuarios SET intentos_fallidos = ?, bloqueado_hasta = ? WHERE id = ?')->execute([
+            $bloquear ? 0 : $intentos,
+            $bloquear ? date('Y-m-d H:i:s', time() + self::BLOQUEO_SEG) : null,
+            $usuario['id'],
+        ]);
+        $this->fallo($usuario['email'], $usuario, $bloquear ? "$motivo; cuenta bloqueada 15 min" : "$motivo ($intentos/" . self::MAX_INTENTOS . ')');
+        if ($bloquear) {
+            throw new ApiError(423, 'Cuenta bloqueada temporalmente por intentos fallidos. Intenta más tarde.');
+        }
+    }
+
+    private function usuarioPorId(int $id): array
+    {
+        $consulta = Db::escritura()->prepare('SELECT id, nombre, email, password_hash, rol, activo, intentos_fallidos, bloqueado_hasta,
+                                                     mfa_activo, mfa_secreto, mfa_ultimo_paso FROM usuarios WHERE id = ?');
+        $consulta->execute([$id]);
+        return $consulta->fetch() ?: throw new ApiError(401, 'Cuenta no disponible');
     }
 
     public function logout(): array
@@ -130,7 +242,7 @@ final class AuthController
     public function me(): array
     {
         $claims = Guard::usuario();
-        $consulta = Db::lectura()->prepare('SELECT id, nombre, email, rol, activo FROM usuarios WHERE id = ?');
+        $consulta = Db::lectura()->prepare('SELECT id, nombre, email, rol, activo, mfa_activo FROM usuarios WHERE id = ?');
         $consulta->execute([$claims['sub']]);
         $usuario = $consulta->fetch();
         if (!$usuario || !$usuario['activo']) {
@@ -215,6 +327,6 @@ final class AuthController
 
     private function publico(array $u): array
     {
-        return ['id' => (int) $u['id'], 'nombre' => $u['nombre'], 'email' => $u['email'], 'rol' => $u['rol']];
+        return ['id' => (int) $u['id'], 'nombre' => $u['nombre'], 'email' => $u['email'], 'rol' => $u['rol'], 'mfa' => (bool) ($u['mfa_activo'] ?? false)];
     }
 }
