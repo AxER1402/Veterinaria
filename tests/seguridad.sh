@@ -419,8 +419,12 @@ esperar "desactivar sin el código correcto → 401" 401 "$(codigo -X POST -H "A
 
 caso "CP-35 La IP del cliente no se puede falsificar con cabeceras"
 correo_ip="ip$SUF@correo.gt"
-"${C[@]}" -o /dev/null -X POST -H 'X-Forwarded-For: 6.6.6.6' -H 'X-Real-IP: 7.7.7.7' -H 'Content-Type: application/json' \
-    -d "{\"email\":\"$correo_ip\",\"password\":\"x\"}" "$BASE/api/auth/login"
+for i in 1 2 3 4 5 6 7 8 9 10; do   # mismo reintento ante el 429 de /login que el resto de la suite
+    r=$(codigo -X POST -H 'X-Forwarded-For: 6.6.6.6' -H 'X-Real-IP: 7.7.7.7' -H 'Content-Type: application/json' \
+        -d "{\"email\":\"$correo_ip\",\"password\":\"x\"}" "$BASE/api/auth/login")
+    [[ $r != 429 ]] && break
+    sleep 3
+done
 ip=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auditoria/eventos?usuario_email=$correo_ip&limite=1" | jq -r '.eventos[0].ip_origen')
 [[ -n "$ip" && "$ip" != null && "$ip" != 6.6.6.6 && "$ip" != 7.7.7.7 ]] && ok "la bitácora registra la IP real de la conexión ($ip), no la inventada" || mal "se aceptó una IP falsificada: $ip"
 
