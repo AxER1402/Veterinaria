@@ -337,7 +337,7 @@ Implementar y documentar (mínimo 5, ideal 7 incluyendo A08). Referenciar en el 
 
 ## Dónde nos quedamos (16 de octubre de 2026)
 
-- **Último trabajo:** PDF SEC-1 regenerado (ya dice Semgrep CE) y clima en el panel admin (OpenWeatherMap, con Open-Meteo de respaldo sin clave; CP-36). `tests/seguridad.sh` en verde.
+- **Último trabajo:** PDF SEC-1 regenerado (ya dice Semgrep CE), clima en el panel admin (OpenWeatherMap, con Open-Meteo de respaldo sin clave; CP-36) y gráfica de ventas con Chart.js, como pide la rúbrica (criterio 6). `tests/seguridad.sh` en verde.
 - **Enunciado:** `instrucciones.docx` es el original del catedrático. Se comparó con este archivo y no trae requisitos nuevos.
 - **Lo siguiente, en este orden:**
   1. **Claves sandbox** de Stripe, PayPal y EmailJS en el `.env` (pendientes 3–5). Se pueden probar en local antes de desplegar.

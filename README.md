@@ -108,7 +108,7 @@ Corre los casos CP-01 a CP-35 contra el stack levantado: TLS 1.3, cabeceras, JWT
 
 `/admin` (solo rol admin; cada ingreso queda como `ACCESO_ADMIN_PANEL`):
 
-- **Resumen:** ventas cobradas, pedidos pendientes, eventos de auditoría, integridad de la bitácora y ventas por día.
+- **Resumen:** ventas cobradas, pedidos pendientes, eventos de auditoría, integridad de la bitácora, clima de la ciudad y gráfica de ventas por día con Chart.js (con vista de tabla).
 - **Pedidos:** filtro por estado y cambio de estado según las transiciones permitidas.
 - **Catálogo:** precio, precio anterior, stock, activo y destacado. Los cambios generan `PRECIO_MODIFICADO` y `PRODUCTO_AGOTADO`.
 - **Bitácora:** filtros, detalle con antes y después, y botón «Verificar integridad».

@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { BarController, BarElement, CategoryScale, Chart, LinearScale, Tooltip } from 'chart.js'
 import Loading from '../../components/Loading'
 import { api } from '../../api'
 import { formatPrice } from '../../data/shop'
 import { STATUS } from '../account/orderStatus'
+
+// Solo los módulos que usa la gráfica de barras: el resto de Chart.js no entra en el bundle.
+Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip)
+Chart.defaults.font.family = '"Readex Pro", system-ui, sans-serif'
 
 export default function AdminResumen() {
   const [data, setData] = useState(null)
@@ -69,17 +74,53 @@ function Stat({ label, value, note, tone }) {
   )
 }
 
-// Ventas cobradas por día (últimos 14 días). Una sola serie: sin leyenda, el título la nombra.
+// Ventas cobradas por día (últimos 14 días), con Chart.js. Una sola serie: sin leyenda, el título la nombra.
 function SalesChart({ days }) {
-  const [hover, setHover] = useState(null)
   const [asTable, setAsTable] = useState(false)
+  const canvas = useRef(null)
   const series = lastDays(14).map((dia) => days.find((d) => d.dia === dia) ?? { dia, pedidos: 0, monto: 0 })
-  const max = Math.max(1, ...series.map((d) => d.monto))
-  const W = 560, H = 200, pad = { l: 44, r: 8, t: 12, b: 26 }
-  const band = (W - pad.l - pad.r) / series.length
-  const bar = Math.min(24, band - 2)
-  const y = (v) => pad.t + (H - pad.t - pad.b) * (1 - v / max)
-  const ticks = [0, max / 2, max]
+  const clave = JSON.stringify(series)
+
+  useEffect(() => {
+    if (asTable || !canvas.current) return
+    const datos = JSON.parse(clave)
+    const chart = new Chart(canvas.current, {
+      type: 'bar',
+      data: {
+        labels: datos.map((d) => `${d.dia.slice(8)}/${d.dia.slice(5, 7)}`),
+        datasets: [{
+          data: datos.map((d) => d.monto),
+          backgroundColor: '#2a78d6', hoverBackgroundColor: '#1c5fae',
+          borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'bottom', maxBarThickness: 24,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#002842', padding: 10, cornerRadius: 10, displayColors: false,
+            callbacks: {
+              title: (items) => datos[items[0].dataIndex].dia,
+              label: (item) => {
+                const d = datos[item.dataIndex]
+                return `${formatPrice(d.monto)} · ${d.pedidos} ${d.pedidos === 1 ? 'pedido' : 'pedidos'}`
+              },
+            },
+          },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: '#59606d', font: { size: 11 }, maxRotation: 0, autoSkip: true } },
+          y: {
+            beginAtZero: true, border: { display: false }, grid: { color: '#e8e8e6' },
+            ticks: { color: '#59606d', font: { size: 11 }, maxTicksLimit: 4, callback: (v) => `$${v}` },
+          },
+        },
+      },
+    })
+    return () => chart.destroy()
+  }, [clave, asTable])
 
   return (
     <div className="admin-card">
@@ -94,45 +135,11 @@ function SalesChart({ days }) {
         </table>
       ) : (
         <div className="chart">
-          <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Ventas cobradas por día en los últimos 14 días">
-            {ticks.map((t) => (
-              <g key={t}>
-                <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} className="chart__grid" />
-                <text x={pad.l - 6} y={y(t) + 4} className="chart__tick" textAnchor="end">${Math.round(t)}</text>
-              </g>
-            ))}
-            {series.map((d, i) => {
-              const x = pad.l + i * band + (band - bar) / 2
-              const h = H - pad.b - y(d.monto)
-              return (
-                <g key={d.dia} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
-                  {/* zona de hover más grande que la barra */}
-                  <rect x={pad.l + i * band} y={pad.t} width={band} height={H - pad.t - pad.b} fill="transparent" />
-                  {d.monto > 0 && <path d={roundedTop(x, H - pad.b - h, bar, h)} className={`chart__bar ${hover === i ? 'is-hover' : ''}`} />}
-                  {i % 2 === 0 && <text x={x + bar / 2} y={H - 8} className="chart__tick" textAnchor="middle">{d.dia.slice(8)}/{d.dia.slice(5, 7)}</text>}
-                </g>
-              )
-            })}
-            <line x1={pad.l} x2={W - pad.r} y1={H - pad.b} y2={H - pad.b} className="chart__axis" />
-          </svg>
-          {hover !== null && (
-            <div className="chart__tooltip" style={tooltipPos((pad.l + hover * band + band / 2) / W)}>
-              <strong>{series[hover].dia}</strong>
-              <span>{formatPrice(series[hover].monto)} · {series[hover].pedidos} {series[hover].pedidos === 1 ? 'pedido' : 'pedidos'}</span>
-            </div>
-          )}
+          <canvas ref={canvas} role="img" aria-label="Ventas cobradas por día en los últimos 14 días" />
         </div>
       )}
     </div>
   )
-}
-
-// Cerca de los bordes el tooltip se ancla a un lado para no salirse de la tarjeta.
-function tooltipPos(f) {
-  const left = `${f * 100}%`
-  if (f > 0.75) return { left, transform: 'translateX(-100%)' }
-  if (f < 0.25) return { left, transform: 'none' }
-  return { left }
 }
 
 function lastDays(n) {
@@ -143,10 +150,4 @@ function lastDays(n) {
     out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
   }
   return out
-}
-
-// Barra con 4px de radio en el extremo de datos y esquinas rectas en la base.
-function roundedTop(x, y, w, h) {
-  const r = Math.min(4, h, w / 2)
-  return `M${x},${y + h} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h} Z`
 }

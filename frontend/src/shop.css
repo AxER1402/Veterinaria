@@ -760,16 +760,7 @@
 .stat-tile--bad strong { color: #a12622; }
 
 /* Gráfico de barras (una serie) */
-.chart { position: relative; }
-.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
-.chart__grid, .chart__axis { stroke: #e8e8e6; stroke-width: 1; }
-.chart__tick { fill: var(--gray); font-size: 11px; font-variant-numeric: tabular-nums; }
-.chart__bar { fill: #2a78d6; }
-.chart__bar.is-hover { fill: #1c5fae; }
-.chart__tooltip {
-  position: absolute; top: 0; transform: translateX(-50%); pointer-events: none; white-space: nowrap;
-  background: var(--navy); color: var(--white); border-radius: 10px; padding: 8px 12px; font-size: 0.82rem; display: grid; gap: 2px;
-}
+.chart { position: relative; height: 220px; }
 @media (max-width: 900px) { .admin-grid { grid-template-columns: 1fr; } }
 
 /* Acceso al panel: ícono en escritorio; en teléfonos va dentro del menú para no desbordar el encabezado. */

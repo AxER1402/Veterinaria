@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Outlet, useLocation } from 'react-router-dom'
 import { ShopProvider } from './context/ShopContext'
 import { AuthProvider } from './context/AuthContext'
@@ -23,11 +24,14 @@ import Orders from './pages/account/Orders'
 import OrderDetail from './pages/account/OrderDetail'
 import Security from './pages/account/Security'
 import AdminLayout from './pages/admin/AdminLayout'
-import AdminResumen from './pages/admin/AdminResumen'
 import AdminPedidos from './pages/admin/AdminPedidos'
 import AdminCatalogo from './pages/admin/AdminCatalogo'
 import AdminBitacora from './pages/admin/AdminBitacora'
 import AdminClientes from './pages/admin/AdminClientes'
+import Loading from './components/Loading'
+
+// El resumen trae Chart.js: se descarga solo al abrir el panel, no en la tienda.
+const AdminResumen = lazy(() => import('./pages/admin/AdminResumen'))
 
 // En el flujo de compra el banner de reservas distrae, así que se oculta.
 const NO_CTA = ['/carrito', '/checkout', '/cuenta', '/admin']
@@ -71,7 +75,7 @@ export default function App() {
               <Route path="cuenta/pedidos/:id" element={<OrderDetail />} />
               <Route path="cuenta/seguridad" element={<Security />} />
               <Route path="admin" element={<AdminLayout />}>
-                <Route index element={<AdminResumen />} />
+                <Route index element={<Suspense fallback={<Loading />}><AdminResumen /></Suspense>} />
                 <Route path="pedidos" element={<AdminPedidos />} />
                 <Route path="catalogo" element={<AdminCatalogo />} />
                 <Route path="bitacora" element={<AdminBitacora />} />
