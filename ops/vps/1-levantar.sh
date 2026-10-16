@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Paso 1 en el VPS (como root): clona o actualiza Huellitas y lo levanta detrás del Nginx del SGA.
 # No toca el SGA ni FadeApp.
-#   DOMINIO=huellitas.fadeappgt.com bash ops/vps/1-levantar.sh
+#   DOMINIO=huellitas.ejemplo.com bash ops/vps/1-levantar.sh
 set -euo pipefail
-DOMINIO=${DOMINIO:?define DOMINIO, p. ej. DOMINIO=huellitas.fadeappgt.com}
+DOMINIO=${DOMINIO:?define DOMINIO, p. ej. DOMINIO=huellitas.ejemplo.com}
 REPO=${REPO:-https://github.com/AxER1402/Veterinaria.git}
 DIR=${DIR:-/root/Huellitas}
 RED=${RED:-sga_sga_network}

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Paso 3 en el VPS: agrega el bloque 443 del dominio, que pasa el tráfico al gateway de Huellitas.
-#   DOMINIO=huellitas.fadeappgt.com bash ops/vps/3-nginx-https.sh
+#   DOMINIO=huellitas.ejemplo.com bash ops/vps/3-nginx-https.sh
 set -euo pipefail
 DOMINIO=${DOMINIO:?define DOMINIO}
 CONF=${CONF:-/root/SGA/docker/nginx/prod.conf}

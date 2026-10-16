@@ -3,7 +3,7 @@
 # redirección a https) y saca el certificado con el certbot del SGA.
 # Va en dos pasos a propósito: un bloque 443 que apunta a un certificado inexistente tumbaría el
 # `nginx -t` y, con él, al SGA.
-#   DOMINIO=huellitas.fadeappgt.com EMAIL=tu@correo bash ops/vps/2-nginx-http.sh
+#   DOMINIO=huellitas.ejemplo.com EMAIL=tu@correo bash ops/vps/2-nginx-http.sh
 set -euo pipefail
 DOMINIO=${DOMINIO:?define DOMINIO}
 EMAIL=${EMAIL:?define EMAIL para Let\'s Encrypt}

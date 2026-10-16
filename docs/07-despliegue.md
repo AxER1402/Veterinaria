@@ -60,10 +60,10 @@ server { listen 80; server_name tienda.ejemplo.com; return 301 https://$host$req
 El Nginx del SGA (`sga_nginx_prod`) ya tiene 80/443. Huellitas no publica puertos: se une a la red `sga_sga_network` con el alias `huellitas-web` (`docker-compose.proxy.yml`). Son tres scripts para pegar como root, en orden; cada uno dice cuál sigue:
 
 ```bash
-# 0. DNS: registro A de huellitas.fadeappgt.com (o el dominio elegido) → 31.220.50.103
-DOMINIO=huellitas.fadeappgt.com bash ops/vps/1-levantar.sh                 # clona, genera .env y levanta (no toca el SGA)
-DOMINIO=huellitas.fadeappgt.com EMAIL=tu@correo bash ops/vps/2-nginx-http.sh   # bloque :80 + certificado
-DOMINIO=huellitas.fadeappgt.com bash ops/vps/3-nginx-https.sh               # bloque :443 → huellitas-web
+# 0. DNS: registro A del dominio elegido (huellitas.ejemplo.com es solo un ejemplo) → IP del servidor
+DOMINIO=huellitas.ejemplo.com bash ops/vps/1-levantar.sh                 # clona, genera .env y levanta (no toca el SGA)
+DOMINIO=huellitas.ejemplo.com EMAIL=tu@correo bash ops/vps/2-nginx-http.sh   # bloque :80 + certificado
+DOMINIO=huellitas.ejemplo.com bash ops/vps/3-nginx-https.sh               # bloque :443 → huellitas-web
 ```
 
 - Los pasos 2 y 3 respaldan `prod.conf` antes de tocarlo, agregan con `>>` (es un bind mount de archivo suelto: nunca `sed -i`) y solo recargan si `nginx -t` pasa.
