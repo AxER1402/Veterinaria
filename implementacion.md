@@ -210,7 +210,7 @@ Implementar y documentar (mínimo 5, ideal 7 incluyendo A08). Referenciar en el 
 | Cache/tokens | Redis (Docker/Railway) | 0 – 60 |
 | Hosting HTTPS | Render/Railway free | 0 – 120 |
 | Scanner vulns | OWASP ZAP | 0 |
-| SAST | GitHub CodeQL | 0 |
+| SAST | Semgrep CE (GitHub Actions) | 0 |
 | Contingencia (10%) | — | 23 – 35 |
 | **TOTAL** | | **USD 23 – 265 / año** |
 
@@ -344,7 +344,7 @@ Implementar y documentar (mínimo 5, ideal 7 incluyendo A08). Referenciar en el 
   2. **ZAP contra el dominio** (pendiente 2, SEC-4).
   3. **Claves sandbox** de Stripe, PayPal y EmailJS en el `.env` de producción (pendientes 3–5).
   4. **Repo privado:** AxER1402 cambia la visibilidad (pendiente 7).
-  5. **Regenerar el PDF SEC-1** (`docs/pdf/construir.mjs`): todavía dice CodeQL en el presupuesto; `docs/05` ya dice Semgrep.
+  5. ~~**Regenerar el PDF SEC-1**~~ ✅ (16 de octubre): ya dice Semgrep CE en el presupuesto. Volver a generarlo después del ZAP contra el dominio, para que la sección ZAP lleve ese resultado.
   6. Ensayar la presentación (pendiente 9).
 - **Para el compañero que jala los cambios:** `ops/generar-env.sh` → `docker compose up -d --build --wait` → `tests/seguridad.sh`. Los usuarios están en `usuarios.md`.
 - **Entrega:** 31 de octubre de 2026 (-1 pt por día de retraso).
