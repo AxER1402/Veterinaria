@@ -7,11 +7,14 @@ import { STATUS } from '../account/orderStatus'
 export default function AdminResumen() {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
+  const [clima, setClima] = useState(null)
 
   useEffect(() => {
     Promise.all([api('/api/pedidos/admin/resumen'), api('/api/auditoria/resumen'), api('/api/auditoria/integridad')])
       .then(([ventas, auditoria, integridad]) => setData({ ventas, auditoria, integridad }))
       .catch((e) => setError(e.message))
+    // Aparte: si el proveedor del clima falla, el resto del panel se muestra igual.
+    api('/api/pedidos/admin/clima').then(setClima).catch(() => setClima(false))
   }, [])
 
   if (error) return <p className="form-alert">{error}</p>
@@ -29,6 +32,9 @@ export default function AdminResumen() {
         <Stat label="Eventos de auditoría" value={auditoria.total} note={`${auditoria.tipos_de_evento} tipos · ${fraudes} marcados como fraude`} />
         <Stat label="Integridad de la bitácora" value={integridad.integra ? 'Íntegra' : 'ALTERADA'} tone={integridad.integra ? 'ok' : 'bad'}
           note={integridad.integra ? `${integridad.revisados} registros verificados` : `Primer registro alterado: #${integridad.primer_registro_alterado}`} />
+        <Stat label="Clima en Ciudad de Guatemala"
+          value={clima ? `${Math.round(clima.temperatura)} °C` : clima === false ? 'No disponible' : '…'}
+          note={clima ? `${clima.descripcion} · humedad ${clima.humedad}\u00a0% · viento ${clima.viento_kmh}\u00a0km/h · ${clima.proveedor}` : 'Para planificar las entregas'} />
       </div>
 
       <div className="admin-grid">

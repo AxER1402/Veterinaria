@@ -56,7 +56,7 @@ flowchart LR
 | catalogo-service | ✅ semana 2 | PHP 8.3 · catalogo_db (lee de la réplica) · Redis · Cloudinary | 8082 interno |
 | pedidos-service | ✅ semana 2 | PHP 8.3 · pedidos_db | 8083 interno |
 | pagos-service | ✅ semana 3 | PHP 8.3 · pagos_db · Stripe/PayPal · red `salida` | 8084 interno |
-| notificaciones-service | ✅ semana 3 | PHP 8.3 · EmailJS · red `salida` | 8085 interno |
+| notificaciones-service | ✅ semana 3 | PHP 8.3 · EmailJS · OpenWeatherMap/Open-Meteo · red `salida` | 8085 interno |
 
 ### Zero Trust
 

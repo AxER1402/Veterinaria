@@ -41,13 +41,13 @@ Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 | `pedidos-service` | Pedidos con UUID, total calculado en el servidor, cupones, estados con historial | 8083 (interno) |
 | `pedidos-vencimientos` | Tarea periódica (cada 15 min): cancela los pedidos sin pagar tras `PEDIDO_VENCE_HORAS` (24 h) y devuelve el stock | — |
 | `pagos-service` | Stripe (PaymentIntent + webhook firmado) y PayPal (Orders v2, captura en servidor). Sin datos de tarjeta | 8084 (interno; solo el webhook es público) |
-| `notificaciones-service` | Correo de confirmación por EmailJS con código de verificación HMAC | 8085 (interno) |
+| `notificaciones-service` | Correo de confirmación por EmailJS con código de verificación HMAC. Clima del panel admin (OpenWeatherMap u Open-Meteo) | 8085 (interno) |
 | `security-audit-service` | Bitácora `security_audit_logs`: append-only, con cadena de hashes | 8086 (interno) |
 | `mariadb-master` / `mariadb-slave` | BD de negocio (una por servicio) con réplica de solo lectura | interno |
 | `mariadb-audit` | `audit_db` en una instancia y un volumen aparte | interno |
 | `redis` | JWT revocados, contadores de rate limit y caché | interno |
 
-APIs externas: **Stripe**, **PayPal**, **EmailJS**, **Cloudinary** y **Google Maps Embed**. Sus claves van en `.env`. Sin ellas, cada pasarela responde «no habilitado en este entorno» y el resto de la tienda funciona igual.
+APIs externas: **Stripe**, **PayPal**, **EmailJS**, **Cloudinary**, **Google Maps Embed** y **OpenWeatherMap**. Sus claves van en `.env`. Sin ellas, cada pasarela responde «no habilitado en este entorno» y el resto de la tienda funciona igual. El clima del panel admin usa Open-Meteo, que no pide clave, mientras no haya `OPENWEATHER_API_KEY`.
 
 ## Levantar
 
@@ -87,6 +87,7 @@ Todos los usuarios (app, BD y Redis) están en [`usuarios.md`](usuarios.md).
 | POST | `/api/pedidos/{uuid}/pago` `{metodo: stripe\|paypal}` · `/api/pedidos/{uuid}/pago/paypal/capturar` | cliente dueño del pedido |
 | POST | `/api/pagos/webhook/stripe` | Stripe. Requiere `Stripe-Signature` válida |
 | GET | `/api/pedidos/admin/todos` · `PATCH /api/pedidos/admin/{uuid}/estado` | admin |
+| GET | `/api/pedidos/admin/clima` | admin. Clima de Ciudad de Guatemala, en caché 10 min |
 | GET | `/api/auditoria/eventos?accion=&resultado=&servicio=&usuario_email=&desde=&hasta=&limite=&pagina=` | admin |
 | GET | `/api/auditoria/resumen` | admin |
 | GET | `/api/auditoria/integridad` | admin. Verifica la cadena de hashes |
@@ -151,7 +152,7 @@ services/
   catalogo/          catalogo-service (catálogo, stock, Cloudinary)
   pedidos/           pedidos-service (pedidos, cupones, totales)
   pagos/             pagos-service (Stripe, PayPal, webhook)
-  notificaciones/    notificaciones-service (EmailJS)
+  notificaciones/    notificaciones-service (EmailJS, clima)
   audit/             security-audit-service
 db/master/           usuarios por servicio + esquemas y datos de auth_db, catalogo_db (24 productos), pedidos_db, pagos_db
 db/audit/            audit_db: tabla, triggers append-only, usuario INSERT/SELECT

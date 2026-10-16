@@ -194,6 +194,13 @@ final class PedidosController
     }
 
     /** Indicadores del panel: pedidos por estado, ventas cobradas y ventas por día (14 días). */
+    /** Clima de la ciudad para planificar entregas. Lo trae notificaciones-service (el que tiene salida a Internet). */
+    public function clima(): array
+    {
+        Guard::usuario(['admin']);
+        return [200, Interno::exigir($this->servicio('NOTIFICACIONES_URL', 'http://notificaciones-service:8085', '/internal/notificaciones/clima'), [], 'clima')];
+    }
+
     public function resumen(): array
     {
         Guard::usuario(['admin']);

@@ -428,6 +428,13 @@ done
 ip=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auditoria/eventos?usuario_email=$correo_ip&limite=1" | jq -r '.eventos[0].ip_origen')
 [[ -n "$ip" && "$ip" != null && "$ip" != 6.6.6.6 && "$ip" != 7.7.7.7 ]] && ok "la bitácora registra la IP real de la conexión ($ip), no la inventada" || mal "se aceptó una IP falsificada: $ip"
 
+caso "CP-36 Clima del panel admin (API externa: OpenWeatherMap u Open-Meteo)"
+esperar "un cliente no puede pedir el clima → 403" 403 "$(codigo -H "Authorization: Bearer $T2" "$BASE/api/pedidos/admin/clima")"
+esperar "la ruta interna no se publica en el gateway" 404 "$(codigo -X POST "$BASE/internal/notificaciones/clima")"
+clima=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/pedidos/admin/clima")
+jq -e '(.temperatura | type) == "number" and (.descripcion | length) > 0' <<<"$clima" >/dev/null \
+    && ok "el admin ve el clima: $(jq -r '"\(.temperatura) °C, \(.descripcion) (\(.proveedor))"' <<<"$clima")" || mal "sin clima: $clima"
+
 caso "CP-16 Rate limiting en /login (gateway, se corre al final)"
 codigos=$(for i in $(seq 1 15); do codigo -X POST -H 'Content-Type: application/json' -d '{"email":"flood@correo.gt","password":"x"}' "$BASE/api/auth/login"; echo; done)
 grep -q 429 <<<"$codigos" && ok "ráfaga de logins → 429" || mal "ninguna respuesta 429 en la ráfaga"

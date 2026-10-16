@@ -227,7 +227,7 @@ Implementar y documentar (mínimo 5, ideal 7 incluyendo A08). Referenciar en el 
 | Google Maps Embed | Mapa de ubicación/delivery | Restricción de dominio |
 | EmailJS | Email de confirmación | Service ID/Template en `.env`; registrar envío en audit |
 | Cloudinary | CDN imágenes optimizadas | API Key/Secret en `.env`; upload firmado |
-| OpenWeatherMap | Clima en dashboard admin | API key en `.env`; máx 1000 req/día |
+| OpenWeatherMap | Clima en dashboard admin | API key en `.env`; máx 1000 req/día. Hecho (16 oct): sin clave usa Open-Meteo; caché de 10 min en Redis (CP-36) |
 
 ---
 
@@ -335,23 +335,25 @@ Implementar y documentar (mínimo 5, ideal 7 incluyendo A08). Referenciar en el 
 
 ---
 
-## Dónde nos quedamos (10 de octubre de 2026)
+## Dónde nos quedamos (16 de octubre de 2026)
 
-- **Último trabajo:** SAST con Semgrep CE en el CI (job `sast`, 0 hallazgos) y `usuarios.md` con los usuarios de la app y de las BD.
+- **Último trabajo:** PDF SEC-1 regenerado (ya dice Semgrep CE) y clima en el panel admin (OpenWeatherMap, con Open-Meteo de respaldo sin clave; CP-36). `tests/seguridad.sh` en verde.
 - **Enunciado:** `instrucciones.docx` es el original del catedrático. Se comparó con este archivo y no trae requisitos nuevos.
 - **Lo siguiente, en este orden:**
-  1. **Despliegue público** (pendiente 1): elegir el dominio (todavía no está decidido), crear su registro DNS `A` hacia el servidor y correr `ops/vps/1-levantar.sh`, `2-nginx-http.sh` y `3-nginx-https.sh` en el VPS.
-  2. **ZAP contra el dominio** (pendiente 2, SEC-4).
-  3. **Claves sandbox** de Stripe, PayPal y EmailJS en el `.env` de producción (pendientes 3–5).
-  4. **Repo privado:** AxER1402 cambia la visibilidad (pendiente 7).
-  5. ~~**Regenerar el PDF SEC-1**~~ ✅ (16 de octubre): ya dice Semgrep CE en el presupuesto. Volver a generarlo después del ZAP contra el dominio, para que la sección ZAP lleve ese resultado.
-  6. Ensayar la presentación (pendiente 9).
+  1. **Claves sandbox** de Stripe, PayPal y EmailJS en el `.env` (pendientes 3–5). Se pueden probar en local antes de desplegar.
+  2. **Repo privado:** AxER1402 cambia la visibilidad (pendiente 7). Si pasa antes del despliegue, `ops/vps/1-levantar.sh` necesita `REPO=git@github.com:AxER1402/Veterinaria.git` y una deploy key de solo lectura en el servidor.
+  3. Ensayar la presentación (pendiente 9).
+  4. **Al final, cuando se decida el dominio** (todavía no está decidido):
+     1. Despliegue público (pendiente 1): registro DNS `A` hacia el servidor y `ops/vps/1-levantar.sh`, `2-nginx-http.sh` y `3-nginx-https.sh` con `DOMINIO=<el elegido>`.
+     2. ZAP contra el dominio (pendiente 2, SEC-4).
+     3. Volver a generar el PDF SEC-1 (`docs/pdf/construir.mjs`) para que lleve el ZAP del dominio.
+     4. En producción: MFA del admin (pendiente 12), contraseña nueva de `admin@huellitas.gt` y cron de respaldos.
 - **Para el compañero que jala los cambios:** `ops/generar-env.sh` → `docker compose up -d --build --wait` → `tests/seguridad.sh`. Los usuarios están en `usuarios.md`.
 - **Entrega:** 31 de octubre de 2026 (-1 pt por día de retraso).
 
 ## Pendientes (al 10 de octubre de 2026)
 
-Las 4 semanas del cronograma están implementadas y subidas, más extras: recuperación a un punto en el tiempo con binlogs, vencimiento de pedidos sin pagar, verificación en dos pasos (TOTP) y CI en GitHub Actions. `tests/seguridad.sh` pasa 158 de 158. Falta lo que depende de decisiones o cuentas externas:
+Las 4 semanas del cronograma están implementadas y subidas, más extras: recuperación a un punto en el tiempo con binlogs, vencimiento de pedidos sin pagar, verificación en dos pasos (TOTP) y CI en GitHub Actions. `tests/seguridad.sh` pasa 162 de 162 (16 de octubre). Falta lo que depende de decisiones o cuentas externas:
 
 | # | Pendiente | Qué hace falta | Afecta |
 |---|---|---|---|

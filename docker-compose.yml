@@ -185,6 +185,7 @@ services:
       EMAILJS_TEMPLATE_ID: ${EMAILJS_TEMPLATE_ID:-}
       EMAILJS_PUBLIC_KEY: ${EMAILJS_PUBLIC_KEY:-}
       EMAILJS_PRIVATE_KEY: ${EMAILJS_PRIVATE_KEY:-}
+      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
     depends_on:
       redis: { condition: service_healthy }
       security-audit-service: { condition: service_healthy }

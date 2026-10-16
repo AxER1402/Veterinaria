@@ -20,6 +20,7 @@ $router->add('POST',  '/api/pedidos/cotizar', fn() => $pedidos->cotizar());
 // Administración.
 $router->add('GET',   '/api/pedidos/admin/todos', fn() => $pedidos->listarTodos());
 $router->add('GET',   '/api/pedidos/admin/resumen', fn() => $pedidos->resumen());
+$router->add('GET',   '/api/pedidos/admin/clima', fn() => $pedidos->clima());
 $router->add('PATCH', '/api/pedidos/admin/{id}/estado', fn($p) => $pedidos->cambiarEstado($p['id']));
 
 // Pago: el cliente dueño lo inicia aquí; pedidos-service habla con pagos-service por la red interna.
