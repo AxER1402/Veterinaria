@@ -23,6 +23,8 @@ import Account from './pages/account/Account'
 import Orders from './pages/account/Orders'
 import OrderDetail from './pages/account/OrderDetail'
 import Security from './pages/account/Security'
+import Appointments from './pages/account/Appointments'
+import Pets from './pages/account/Pets'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminPedidos from './pages/admin/AdminPedidos'
 import AdminCatalogo from './pages/admin/AdminCatalogo'
@@ -74,6 +76,8 @@ export default function App() {
               <Route path="cuenta/pedidos" element={<Orders />} />
               <Route path="cuenta/pedidos/:id" element={<OrderDetail />} />
               <Route path="cuenta/seguridad" element={<Security />} />
+              <Route path="cuenta/citas" element={<Appointments />} />
+              <Route path="cuenta/mascotas" element={<Pets />} />
               <Route path="admin" element={<AdminLayout />}>
                 <Route index element={<Suspense fallback={<Loading />}><AdminResumen /></Suspense>} />
                 <Route path="pedidos" element={<AdminPedidos />} />

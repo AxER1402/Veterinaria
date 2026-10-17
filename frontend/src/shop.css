@@ -776,3 +776,80 @@
 .account__links { display: inline-flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .account__links a { color: var(--navy); text-decoration: underline; }
 .admin__mfa a { color: inherit; font-weight: 600; }
+.account__links a.active { font-weight: 500; text-decoration-thickness: 2px; }
+
+/* ---------- Reserva de citas (FASE 15) ---------- */
+.booking__steps { display: grid; gap: 22px; }
+.booking__steps .form-grid { margin-bottom: 0; }
+.booking__steps form { display: grid; gap: 22px; }
+.booking__sede { display: flex; align-items: flex-start; gap: 8px; margin: -8px 0 0; color: var(--gray); font-size: 0.92rem; }
+.booking__sede svg { color: var(--navy); flex: none; margin-top: 2px; }
+.booking__group { border: 0; padding: 0; margin: 0; min-width: 0; }
+.booking__group legend { font-weight: 500; color: var(--navy); margin-bottom: 12px; padding: 0; font-size: 0.95rem; }
+.booking__group legend::first-letter { text-transform: uppercase; }
+.booking__muted { color: var(--gray); font-size: 0.9rem; margin: 0; }
+.booking__empty { display: flex; align-items: center; gap: 10px; margin: 0; padding: 14px 18px; border-radius: 16px; background: var(--soft); color: var(--navy); }
+.booking__login { display: grid; gap: 14px; padding-top: 6px; border-top: 1px solid var(--line); }
+.booking__login p { margin: 12px 0 0; color: var(--navy); }
+.booking__login .booking__muted { margin: 0; text-align: center; }
+.booking__newpet { display: grid; gap: 12px; margin-top: 14px; padding: 18px; border-radius: 20px; background: var(--soft); }
+.booking__newpet .pet-picker { margin-bottom: 16px; }
+.booking__newpet .field input, .booking__newpet .field textarea { background: var(--white); }
+.booking__newpet .form-grid { margin-bottom: 14px; }
+.booking__success-actions { display: flex; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap; margin-top: 8px; }
+.booking__success p { color: var(--navy); line-height: 1.7; }
+.inline-icon { vertical-align: -2px; }
+.field-error { display: block; color: #c62828; font-size: 0.82rem; margin-top: 6px; }
+.btn--muted { opacity: 0.7; }
+
+.day-picker { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+.day-chip {
+  flex: none; font: inherit; font-size: 0.88rem; color: var(--navy); background: var(--white);
+  border: 2px solid var(--line); border-radius: 14px; padding: 10px 14px; cursor: pointer; white-space: nowrap; transition: all 0.2s;
+}
+.day-chip::first-letter { text-transform: uppercase; }
+.day-chip:hover { border-color: var(--navy); }
+.day-chip.active { background: var(--navy); border-color: var(--navy); color: var(--white); }
+.day-chip--input { position: relative; display: inline-flex; align-items: center; }
+.day-chip--input input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.day-chip--input:has(input:focus-visible), .day-chip:focus-visible, .slot:focus-visible { outline: 3px solid var(--yellow-dark); outline-offset: 2px; }
+
+.slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.slot {
+  font: inherit; font-weight: 500; color: var(--navy); background: var(--soft); border: 2px solid transparent;
+  border-radius: 14px; padding: 10px 6px; cursor: pointer; display: grid; gap: 2px; transition: all 0.2s;
+}
+.slot small { font-size: 0.7rem; font-weight: 400; color: #8a5a00; }
+.slot:hover { border-color: var(--navy); }
+.slot.active { background: var(--yellow); border-color: var(--navy); }
+
+.pet-picker--list { margin: 0; }
+.pet-picker__add {
+  display: inline-flex; align-items: center; gap: 6px; font: inherit; color: var(--navy); background: none;
+  border: 2px dashed var(--line); border-radius: 999px; padding: 12px 20px; cursor: pointer;
+}
+.pet-picker__add:hover { border-color: var(--navy); }
+.pet-form__actions { display: flex; align-items: center; gap: 16px; }
+
+/* Mis citas y mis mascotas */
+.citas__head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+.citas__head h2, .citas__title { font-size: 1.4rem; margin: 0; color: var(--navy); }
+.citas__title { margin: 36px 0 14px; }
+.citas, .pets { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.cita, .pet { display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 16px; padding: 14px 18px; border: 1px solid var(--line); border-radius: 18px; color: var(--navy); }
+.citas--past .cita { opacity: 0.75; }
+.cita__icon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--sky); color: var(--navy); }
+.cita__main { display: grid; gap: 2px; min-width: 0; }
+.cita__main small { color: var(--gray); display: flex; align-items: center; gap: 4px; }
+.cita__side { display: grid; justify-items: end; gap: 8px; }
+.cita__confirm { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; font-size: 0.9rem; }
+.pet__notes { font-style: italic; }
+.pet--editing { display: block; padding: 22px; }
+.pet--editing h3 { margin: 0 0 16px; }
+.pets__add { margin-top: 18px; display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 640px) {
+  .cita, .pet { grid-template-columns: 44px 1fr; }
+  .cita__icon { width: 44px; height: 44px; }
+  .cita__side { grid-column: 2; justify-items: start; }
+  .cita__confirm { justify-content: flex-start; }
+}

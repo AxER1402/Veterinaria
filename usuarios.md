@@ -7,7 +7,7 @@ Se crean con el seed `db/master/02-auth_db.sql` cada vez que se levanta el stack
 | Rol | Correo | Contraseña | Dónde entra |
 |---|---|---|---|
 | Admin | `admin@huellitas.gt` | `Admin#2026` | `/admin` (panel) y la tienda |
-| Cliente | `cliente@huellitas.gt` | `Cliente#2026` | `/tienda`, carrito, checkout y `/cuenta/pedidos` |
+| Cliente | `cliente@huellitas.gt` | `Cliente#2026` | `/tienda`, carrito, checkout, `/cuenta/pedidos`, `/cuenta/citas` y `/cuenta/mascotas` (reservar desde `/contacto`) |
 
 - **Clientes nuevos:** cualquiera puede registrarse en `/cuenta` (pestaña de registro; API `POST /api/auth/registro`). El registro siempre crea el rol `cliente`; un admin solo se crea desde la BD.
 - **Bloqueo:** 5 contraseñas incorrectas bloquean la cuenta 15 min (A07). Si te bloqueas probando, espera o reinicia con volúmenes nuevos.

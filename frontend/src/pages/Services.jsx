@@ -28,7 +28,7 @@ export default function Services() {
                   <p>{s.description}</p>
                   <div className="service-row__footer">
                     <span className="price">{s.price}</span>
-                    <Link to="/contacto#reservar" className="btn btn--primary btn--sm">
+                    <Link to={`/contacto?servicio=${s.slug}#reservar`} className="btn btn--primary btn--sm">
                       Reservar
                     </Link>
                   </div>

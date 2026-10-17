@@ -3,13 +3,14 @@ import { Link, Navigate } from 'react-router-dom'
 import { Package } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import Loading from '../../components/Loading'
+import AccountBar from '../../components/AccountBar'
 import { useAuth } from '../../context/useAuth'
 import { api } from '../../api'
 import { formatPrice } from '../../data/shop'
 import { STATUS, shortId, formatDate } from './orderStatus'
 
 export default function Orders() {
-  const { user, checking, logout } = useAuth()
+  const { user, checking } = useAuth()
   const [orders, setOrders] = useState(null)
   const [error, setError] = useState('')
 
@@ -26,13 +27,7 @@ export default function Orders() {
       <PageHeader title="Mis pedidos" text={`Hola, ${user.nombre.split(' ')[0]}. Aquí ves el estado de tus compras.`} />
       <section className="section">
         <div className="container">
-          <div className="account__bar">
-            <span>{user.email}</span>
-            <span className="account__links">
-              <Link to="/cuenta/seguridad">Seguridad {user.mfa ? '· 2 pasos activa' : '· activar 2 pasos'}</Link>
-              <button className="btn btn--dark btn--sm" onClick={logout}>Cerrar sesión</button>
-            </span>
-          </div>
+          <AccountBar />
           {error && <p className="form-alert">{error}</p>}
           {!orders && !error && <Loading />}
           {orders && orders.length === 0 && (
