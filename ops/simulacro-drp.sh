@@ -30,7 +30,9 @@ sql() { docker compose exec -T -e MYSQL_PWD="$DB_ROOT_PASSWORD" "$1" mariadb -N 
 CONTEO="SELECT CONCAT_WS(' ',
   (SELECT COUNT(*) FROM auth_db.usuarios), (SELECT COUNT(*) FROM catalogo_db.productos),
   (SELECT SUM(stock) FROM catalogo_db.producto_variantes), (SELECT COUNT(*) FROM pedidos_db.pedidos),
-  (SELECT COUNT(*) FROM pedidos_db.detalle_pedidos), (SELECT COUNT(*) FROM pagos_db.pagos))"
+  (SELECT COUNT(*) FROM pedidos_db.detalle_pedidos), (SELECT COUNT(*) FROM pagos_db.pagos),
+  (SELECT COUNT(*) FROM citas_db.mascotas), (SELECT COUNT(*) FROM citas_db.citas),
+  (SELECT COUNT(*) FROM citas_db.historial_clinico), (SELECT COUNT(*) FROM citas_db.vacunas))"
 esperar_sano() { until docker compose ps "$1" --format '{{.Status}}' | grep -q '(healthy)'; do sleep 1; done; }
 api_ok() { [[ "$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "$BASE/api/pedidos/cupones/HUELLITAS10")" == 200 ]]; }
 auditoria() {
@@ -54,7 +56,7 @@ ops/backup-binlogs.sh | tail -1
 echo "== Estado justo antes del incidente"
 antes=$(sql mariadb-master "$CONTEO")
 audit_antes=$(auditoria)
-echo "   usuarios productos stock pedidos líneas pagos: $antes"
+echo "   usuarios productos stock pedidos líneas pagos mascotas citas consultas vacunas: $antes"
 echo "   bitácora (íntegra, registros): $audit_antes"
 
 echo "== 2. INCIDENTE: se destruyen maestro y réplica (contenedores y volúmenes)"
@@ -114,7 +116,7 @@ Objetivo de la BIA para la BD maestra: RTO 10 min · RPO 5 min.
 
 ## Verificación
 
-| | usuarios · productos · stock · pedidos · líneas · pagos |
+| | usuarios · productos · stock · pedidos · líneas · pagos · mascotas · citas · consultas · vacunas |
 |---|---|
 | Antes del incidente | \`$antes\` |
 | Maestro restaurado | \`$despues\` |

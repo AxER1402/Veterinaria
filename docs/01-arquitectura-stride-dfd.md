@@ -5,6 +5,8 @@ Es distinto del Proyecto 1 (POS de librería y papelería escolar).
 
 **Flujo de compra:** catálogo → carrito → checkout → pago (Stripe / PayPal sandbox) → confirmación por email (EmailJS) → entrega (domicilio o retiro en sede).
 
+**Flujo de citas (FASE 15):** servicio (la sede sale del servicio) → día → turno libre → mascota → reserva → correo con código de verificación → confirmación del admin → consulta con historial clínico y carné de vacunas → recordatorios. Las citas se pagan en la sede, así que este flujo no toca PCI-DSS.
+
 ---
 
 ## 1. Arquitectura de microservicios
@@ -24,23 +26,26 @@ flowchart LR
         PAG[pagos-service :8084]
         NOT[notificaciones-service :8085]
         AUD[security-audit-service :8086]
-        M[(MariaDB master<br>auth · catalogo · pedidos · pagos)]
+        CIT[citas-service :8087]
+        REC[citas-recordatorios<br>tarea cada 15 min]
+        M[(MariaDB master<br>auth · catalogo · pedidos · pagos · citas)]
         S[(MariaDB slave<br>solo lectura)]
         A[(MariaDB audit<br>audit_db · volumen propio)]
         R[(Redis<br>JWT revocados · rate limit · caché)]
     end
 
-    GW --> AUTH & CAT & PED & AUD
+    GW --> AUTH & CAT & PED & AUD & CIT
+    CIT & REC -- JWT de servicio --> NOT
     PED -- JWT de servicio --> PAG
     PED -- JWT de servicio --> CAT
     PED -- JWT de servicio --> NOT
     PAG -- JWT de servicio --> PED
-    AUTH & CAT & PED & PAG & NOT -- JWT de servicio --> AUD
-    AUTH & CAT & PED & PAG --> M
-    CAT -. lecturas .-> S
+    AUTH & CAT & PED & PAG & NOT & CIT -- JWT de servicio --> AUD
+    AUTH & CAT & PED & PAG & CIT & REC --> M
+    CAT & CIT -. lecturas .-> S
     M -- replicación binlog --> S
     AUD --> A
-    AUTH & CAT & PED & PAG & AUD --> R
+    AUTH & CAT & PED & PAG & AUD & CIT --> R
     PAG -- HTTPS --> STRIPE[(Stripe / PayPal)]
     STRIPE -- webhook firmado --> GW
 ```
@@ -57,6 +62,10 @@ flowchart LR
 | pedidos-service | ✅ semana 2 | PHP 8.3 · pedidos_db | 8083 interno |
 | pagos-service | ✅ semana 3 | PHP 8.3 · pagos_db · Stripe/PayPal · red `salida` | 8084 interno |
 | notificaciones-service | ✅ semana 3 | PHP 8.3 · EmailJS · OpenWeatherMap/Open-Meteo · red `salida` | 8085 interno |
+| citas-service | ✅ FASE 15 | PHP 8.3 · citas_db (disponibilidad desde la réplica) · Redis · sin salida a Internet | 8087 interno |
+| citas-recordatorios | ✅ FASE 15 | Misma imagen que citas-service; tarea periódica sin puerto | — |
+
+Con `citas-service` la arquitectura queda en **7 microservicios** (auth, catálogo, pedidos, pagos, notificaciones, auditoría y citas), más dos tareas periódicas (`pedidos-vencimientos` y `citas-recordatorios`).
 
 ### Zero Trust
 
@@ -126,6 +135,53 @@ flowchart TB
 2. **El cliente manda IDs de producto y cantidades, no precios.** `pedidos-service` consulta el precio a `catalogo-service` en el servidor.
 3. Los servicios se identifican entre sí con un JWT de servicio de un solo uso, porque la red interna no se considera confiable.
 
+### 2.1 DFD del flujo de citas
+
+```mermaid
+flowchart TB
+    subgraph TB0 [" Frontera 0 · Internet (no confiable) "]
+        C((Cliente))
+        ADM((Admin / veterinario))
+    end
+
+    subgraph TB1 [" Frontera 1 · Gateway "]
+        P0[0. Gateway<br>TLS 1.3 · WAF · zone=citas 10 r/s]
+    end
+
+    subgraph TB2 [" Frontera 2 · Servicios (verifican JWT) "]
+        P7[7. Disponibilidad<br>pública, desde la réplica]
+        P8[8. Mascotas y citas<br>dueño = sub del JWT]
+        P9[9. Agenda, bloqueos<br>e historial · solo admin]
+        P10[10. Recordatorios<br>tarea cada 15 min]
+        P5[5. Notificar]
+        P6[6. Auditar]
+    end
+
+    subgraph TB3 [" Frontera 3 · Datos "]
+        D7[(D7 citas_db<br>mascotas · citas · bloqueos)]
+        D8[(D8 historial clínico<br>y vacunas · datos de salud)]
+        D5[(D5 security_audit_logs)]
+    end
+
+    C -- servicio + fecha --> P0 --> P7 --> D7
+    C -- mascota, turno + JWT --> P0 --> P8
+    P8 -- INSERT con UNIQUE sede+inicio+cupo --> D7
+    ADM -- JWT admin --> P0 --> P9
+    P9 --> D7
+    P9 -- diagnóstico, vacunas --> D8
+    C -- carné (solo lectura) --> P0 --> P8 -- solo vacunas --> D8
+    P10 --> D7 & D8
+    P8 & P9 & P10 -- JWT servicio --> P5 -- email + código HMAC --> C
+    P8 & P9 & P10 -- eventos sin diagnóstico --> P6 --> D5
+```
+
+**Puntos clave del flujo de citas**
+
+1. **El dueño sale del token.** Mascotas, citas y carné se filtran por `id_cliente = sub`. Si el recurso es de otro cliente se responde 404, igual que si no existiera, y queda `ACCESO_DENEGADO`.
+2. **La base decide quién se queda el turno.** El índice `UNIQUE (sede, inicio, cupo)` impide la doble reserva aunque lleguen varias peticiones a la vez. No depende de que el código lea la disponibilidad antes.
+3. **Datos de salud separados.** El diagnóstico y el tratamiento solo los ve el admin, y cada lectura se audita. El cliente ve el carné de vacunas sin diagnósticos. La bitácora guarda qué se registró (vacunas, peso), no el diagnóstico.
+4. **La tarea de recordatorios no tiene puerto.** El script está fuera de `public/`, así que nadie lo puede llamar por HTTP.
+
 ---
 
 ## 3. Modelo STRIDE
@@ -145,6 +201,14 @@ flowchart TB
 | **I** Info Disclosure | Errores | Stack traces, versión del servidor | `display_errors=Off`; errores genéricos en JSON; `server_tokens off`; `ServerTokens Prod`; sin `X-Powered-By` | `services/shared/src/Router.php`, `services/Dockerfile` | ✅ |
 | **I** Info Disclosure | Tránsito | Sniffing | Solo TLS 1.3, HSTS, HTTP → 301 a HTTPS | `gateway/default.conf.template` | ✅ |
 | **D** DoS | Catálogo (P2) | Scraping masivo o inundación | Rate limit por IP y por servicio, `limit_conn`, catálogo servido desde Redis y leído de la réplica, CDN de Cloudinary, `mem_limit`/`cpu_shares` por contenedor; el stock exacto no se publica | `gateway/default.conf.template`, `CatalogoController::listar()` | ✅ |
+| **S** Spoofing | Correo de la cita | Correo falso que dice venir de Huellitas, o un cliente que niega haber reservado | Código HMAC `cita\|id\|inicio` con `COMPROBANTE_SECRET` en el correo y en «Mis citas»; solo `citas-service` puede pedir correos de citas a notificaciones | `CitasController::notificar()`, `NotificacionesController` | ✅ CP-42 |
+| **T** Tampering | Reserva (P8) | Reservar dos veces el mismo cupo enviando peticiones a la vez | `UNIQUE (sede, inicio, cupo)` y `UNIQUE (mascota_id, inicio)` en la BD; se prueba cada cupo dentro de una transacción y el índice decide | `CitasController::crear()`, `db/master/07-citas_db.sql` | ✅ CP-39 |
+| **T** Tampering | Bloqueo de turnos (P9) | Una reserva que entra mientras el admin bloquea el turno | `bloquear()` toma el rango con `FOR UPDATE` y la reserva vuelve a leer los bloqueos antes de confirmar; no se bloquea un rango con citas activas | `CitasController::bloquear()`, `crear()` | ✅ CP-43 |
+| **R** Repudiation | Citas y consultas | El cliente niega haber reservado o cancelado; el admin niega un cambio de estado o un diagnóstico | `CITA_CREADA`, `CITA_CANCELADA` y `CITA_ESTADO_CAMBIADO` con estado anterior y nuevo; tabla `historial_citas` con quién hizo cada cambio; `HISTORIAL_REGISTRADO` con autor, vacunas y peso | `CitasController::moverEstado()`, `registrarHistorial()` | ✅ CP-40, CP-44 |
+| **I** Info Disclosure | Mascotas, citas y carné (D7) | Ver las mascotas, el teléfono o las vacunas de otro cliente cambiando el ID | Filtro por `sub` del JWT, IDs UUID v4, 404 cuando es ajeno y `ACCESO_DENEGADO` en la bitácora | `mascotaPropia()`, `citaPropia()`, `carne()` | ✅ CP-37, CP-45 |
+| **I** Info Disclosure | Historial clínico (D8) | Un cliente lee diagnósticos, o la bitácora se vuelve una copia de los datos de salud | Historial solo con `Guard::usuario(['admin'])` y cada lectura auditada (`HISTORIAL_CONSULTADO`); el carné no trae diagnóstico ni tratamiento; la bitácora no los copia (minimización, A.5.34) | `historialAdmin()`, `carne()`, `registrarHistorial()` | ✅ CP-44, CP-45 |
+| **D** DoS | Agenda (P8) | Un cliente reserva todos los turnos para bloquear la agenda | Máximo 5 citas próximas por cliente; `zone=citas` (10 r/s, ráfaga 40) en el gateway; reservas hasta 60 días adelante y con 1 h de anticipación | `CitasController::MAX_ACTIVAS`, `gateway/default.conf.template` | ✅ CP-41 |
+| **E** Elevation of Privilege | Agenda, bloqueos e historial | Un cliente cambia estados, bloquea turnos o registra consultas | Todas las rutas `/api/citas/admin/*` exigen `Guard::usuario(['admin'])`; las transiciones de estado salen de una tabla fija | `CitasController::TRANSICIONES`, `cambiarEstado()` | ✅ CP-40, CP-43 |
 | **E** Elevation of Privilege | Panel admin | Manipular el JWT o enviar `rol=admin` al registrarse | El rol solo sale del token firmado; el registro público siempre crea `cliente`; `Guard::usuario(['admin'])` en cada ruta administrativa; intento de cliente en el panel → `ACCESO_ADMIN_PANEL FALLO` | `AuthController::registro()`, `accesoAdmin()`, `Guard.php` | ✅ |
 
 ### Riesgo residual que se acepta
@@ -156,7 +220,7 @@ flowchart TB
 
 ## 4. Evidencia automática
 
-`tests/seguridad.sh` verifica contra el stack levantado los controles marcados con ✅: TLS, cabeceras, JWT, bloqueo, WAF, Zero Trust, bitácora append-only, hardening Docker y replicación.
+`tests/seguridad.sh` verifica contra el stack levantado los controles marcados con ✅: TLS, cabeceras, JWT, bloqueo, WAF, Zero Trust, bitácora append-only, hardening Docker, replicación y el módulo de citas (CP-37 a CP-46).
 
 ```bash
 docker compose up -d --build

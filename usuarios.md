@@ -18,6 +18,8 @@ Se crean con el seed `db/master/02-auth_db.sql` cada vez que se levanta el stack
 
 `tests/seguridad.sh` usa estos correos para los casos de ataque (no son cuentas para la demo): `debil@correo.gt`, `flood@correo.gt`, `noexiste@correo.gt`, `sqli@correo.gt`, `xss@correo.gt`.
 
+Además, cada corrida crea cuentas con un sufijo al azar: `compras<n>@correo.gt` (pedidos y la mayoría de las citas) y `citas<n>@correo.gt` (el segundo cliente de las pruebas de citas, CP-37 a CP-46). `ops/simulacro-drp.sh` registra `simulacro<n>@correo.gt` para comprobar que un cambio posterior al respaldo se recupera.
+
 ## Base de datos y Redis (internos)
 
 Ninguno es accesible desde fuera de la red Docker. Las contraseñas **no** están en el repo: `ops/generar-env.sh` las genera al azar en `.env` (permisos 600, en `.gitignore`).

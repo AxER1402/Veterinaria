@@ -1,17 +1,17 @@
 # Huellitas — Controles OWASP Top 10 (2021)
 
 Cada control indica **dónde está en el código** y **qué caso de `tests/seguridad.sh` lo comprueba**.
-Estado al cierre de la semana 3: los 7 controles (A01, A02, A03, A05, A07, A08 y A09) implementados.
+Estado al cierre de la semana 3: los 7 controles (A01, A02, A03, A05, A07, A08 y A09) implementados. En la FASE 15 se aplicaron los mismos controles al módulo de citas (`citas-service`), con las pruebas CP-37 a CP-46.
 
 | ID | Amenaza | Control | Código | Prueba |
 |---|---|---|---|---|
-| A01 | Broken Access Control | `id_cliente` del JWT en cada consulta de pedidos; 404 idéntico para "no existe" y "es de otro"; rutas admin con `Guard::usuario(['admin'])` | `services/pedidos/src/PedidosController.php` (`misPedidos`, `ver`), `services/shared/src/Guard.php` | CP-07, CP-20 |
+| A01 | Broken Access Control | `id_cliente` del JWT en cada consulta de pedidos, mascotas, citas y carné; 404 idéntico para "no existe" y "es de otro"; rutas admin (incluida la agenda y el historial clínico) con `Guard::usuario(['admin'])` | `services/pedidos/src/PedidosController.php` (`misPedidos`, `ver`), `services/citas/src/CitasController.php` (`mascotaPropia`, `citaPropia`), `services/shared/src/Guard.php` | CP-07, CP-20, CP-37, CP-40, CP-45 |
 | A02 | Cryptographic Failures | bcrypt cost 12; solo TLS 1.3 + HSTS; sin datos de tarjeta en ninguna BD; JWT HS256 con secretos de 48 caracteres en `.env` | `services/auth/src/AuthController.php` (`BCRYPT`), `gateway/default.conf.template` (`ssl_protocols`), `db/master/*.sql` | CP-01, CP-02, CP-05 |
-| A03 | Injection | PDO sin emulación de prepared statements; validación de tipo y rango; WAF en Nginx (URL, cabeceras) y en PHP (cuerpo JSON) | `services/shared/src/Db.php`, `services/shared/src/Validar.php`, `gateway/default.conf.template` (`map $waf_*`) | CP-10, CP-24 |
+| A03 | Injection | PDO sin emulación de prepared statements; validación de tipo y rango; WAF en Nginx (URL, cabeceras) y en PHP (cuerpo JSON, también en mascotas, citas y diagnósticos) | `services/shared/src/Db.php`, `services/shared/src/Validar.php`, `gateway/default.conf.template` (`map $waf_*`) | CP-10, CP-24, CP-37, CP-44 |
 | A05 | Security Misconfiguration | Secretos solo en `.env`; BD y Redis sin puertos publicados; contenedores PHP como `www-data`, `read_only`, `cap_drop: ALL`; sin versiones en cabeceras; errores genéricos | `docker-compose.yml`, `services/Dockerfile`, `services/shared/src/Router.php` | CP-03, CP-14 |
 | A07 | Identification & Authentication Failures | 5 intentos → bloqueo 15 min; rate limit en `/login`; JWT de 1 h; logout → lista negra Redis; mismo mensaje y mismo tiempo exista o no el correo; **verificación en dos pasos TOTP** (secreto cifrado AES-256-GCM, desafío de 5 min y un solo uso, códigos no reutilizables, los códigos fallidos cuentan para el bloqueo) | `AuthController::login()`, `verificarMfa()`, `Totp.php`, `Cache::revocar()`, `zone=login` | CP-05, CP-08, CP-09, CP-16, CP-34 |
 | A08 | Software & Data Integrity Failures | Firma `Stripe-Signature` del webhook (HMAC, tolerancia 5 min, idempotencia) y verificación de monto; cadena de hashes en la bitácora; dependencias fijadas con `package-lock.json` | `services/pagos/src/Stripe.php::firmaValida()`, `AuditController::integridad()` | CP-12, CP-26, CP-27 |
-| A09 | Security Logging & Monitoring Failures | `security-audit-service` con eventos append-only; cada servicio reporta los suyos | `services/audit/src/AuditController.php`, `services/shared/src/Auditoria.php` | CP-12, CP-13 |
+| A09 | Security Logging & Monitoring Failures | `security-audit-service` con eventos append-only; cada servicio reporta los suyos (27 tipos: los 14 obligatorios y 13 extra, 10 de ellos del módulo de citas) | `services/audit/src/AuditController.php`, `services/shared/src/Auditoria.php` | CP-12, CP-13, CP-40, CP-46 |
 
 ---
 
@@ -34,6 +34,17 @@ $consulta->execute([(int) $claims['sub']]);
 ```
 
 **Evidencia:** CP-20. El cliente B pide el pedido del cliente A y recibe 404, y la bitácora registra `ACCESO_DENEGADO` con el ID del pedido y el correo de B.
+
+### A01 en el módulo de citas
+
+Las mascotas, las citas y el carné de vacunas siguen la misma regla que los pedidos:
+
+- **Dueño desde el token.** `misCitas()` y `mascotas()` filtran por `id_cliente = sub`. `mascotaPropia()` y `citaPropia()` responden 404 si el recurso es de otro cliente y registran `ACCESO_DENEGADO` con el recurso (`mascota`, `cita` o `carné de vacunas`).
+- **No se reserva con la mascota de otro.** `crear()` valida la mascota con `mascotaPropia()` antes de tocar la agenda.
+- **Rutas del veterinario.** La agenda, el cambio de estado, los bloqueos de turnos y el historial clínico están bajo `/api/citas/admin/*` y exigen `Guard::usuario(['admin'])`. El historial clínico es dato de salud: cada lectura queda como `HISTORIAL_CONSULTADO`.
+- **Solo transiciones válidas.** El estado de una cita solo avanza según la tabla `TRANSICIONES` (`pendiente → confirmada → atendida`, `no_asistio` o `cancelada`). Un estado final no se puede cambiar.
+
+**Evidencia:** CP-37 (editar una mascota ajena → 404 + `ACCESO_DENEGADO`), CP-38 (reservar con la mascota de otro → 404), CP-40 (un cliente no ve la agenda ni cambia estados → 403) y CP-45 (carné ajeno → 404; historial clínico desde una cuenta de cliente → 403).
 
 ---
 
@@ -75,6 +86,21 @@ $consulta->execute([(int) $claims['sub']]);
 El navegador manda **solo** `variante_id` y `cantidad`. `pedidos-service` descarta cualquier otro campo (`precio`, `subtotal`, `total`) antes de llamar a `catalogo-service`. El catálogo devuelve el precio vigente desde el **maestro** (no la réplica, para no usar un precio desactualizado) y `Totales::calcular()` hace las cuentas en centavos enteros. El cupón se valida en la BD y el envío se decide en el servidor.
 
 **Evidencia:** CP-18. Se envía `"precio": 0.01, "total": 0.02` y el pedido queda con el precio real del catálogo.
+
+---
+
+## Doble reserva y acaparamiento de la agenda (A04 Insecure Design)
+
+**Riesgo:** dos clientes reservan el último cupo al mismo tiempo y los dos reciben la cita, o un cliente reserva todos los turnos de una sede.
+
+**Controles (`CitasController::crear()`, `db/master/07-citas_db.sql`):**
+
+1. **El índice único decide, no el código.** La tabla `citas` tiene `UNIQUE (sede, inicio, cupo)`. La reserva prueba el cupo 1 y luego el 2 dentro de una transacción; si los dos ya están ocupados, el motor rechaza el INSERT y el cliente recibe 409. Leer la disponibilidad antes de reservar no basta, porque dos peticiones pueden leer «1 libre» a la vez.
+2. **Una mascota, una cita por hora:** `UNIQUE (mascota_id, inicio)`.
+3. **Bloqueos sin carreras.** `bloquear()` toma el rango con `SELECT … FOR UPDATE`. Una reserva que llega mientras tanto espera, vuelve a leer los bloqueos y se deshace si el turno quedó bloqueado.
+4. **Límite por cliente:** máximo 5 citas próximas, reservas hasta 60 días adelante y al menos 1 h antes del turno. En el gateway, `zone=citas` permite 10 peticiones por segundo por IP (ráfaga de 40).
+
+**Evidencia:** CP-39 manda 3 reservas simultáneas para 2 cupos: entran 2, la tercera recibe 409 y en la BD hay exactamente 2 citas. CP-41 comprueba que la 6.ª cita próxima de un cliente se rechaza. CP-43 comprueba que no se reserva en un turno bloqueado.
 
 ---
 

@@ -1,6 +1,6 @@
 # Huellitas — Plan de continuidad (BCP) y recuperación ante desastres (DRP)
 
-**Objetivo:** que la tienda vuelva a vender en **menos de 60 minutos** ante cualquiera de los escenarios de este plan, sin perder pagos ni la trazabilidad de la bitácora.
+**Objetivo:** que la tienda vuelva a vender y la clínica a recibir citas en **menos de 60 minutos** ante cualquiera de los escenarios de este plan, sin perder pagos, citas ni la trazabilidad de la bitácora.
 
 **Responsables:** Administrador del sistema (titular) · Desarrollador de guardia (suplente) · Dueño del negocio (comunicación con clientes y decisión de activar el sitio B).
 
@@ -13,8 +13,10 @@
 | pagos-service | CRÍTICA | 10 min | 0 | maestro, Redis, Stripe/PayPal | Sin él no hay ventas. Los pagos viven también en Stripe/PayPal, así que se reconcilian desde la pasarela (RPO 0) |
 | auth-service | CRÍTICA | 10 min | 0 | maestro, Redis | Sin login no se puede comprar ni administrar |
 | catalogo-service | CRÍTICA | 15 min | 5 min | réplica (o maestro), Redis | Es la vitrina. Mientras tanto la caché de Redis sigue sirviendo el catálogo |
-| BD maestra | CRÍTICA | 10 min | 5 min | volumen `master_data` | Guarda usuarios, catálogo, pedidos y pagos |
+| BD maestra | CRÍTICA | 10 min | 5 min | volumen `master_data` | Guarda usuarios, catálogo, pedidos, pagos, citas e historial clínico |
 | pedidos-service | ALTA | 20 min | 5 min | maestro, catálogo, pagos | Los pedidos se pueden rehacer con la información de Stripe y del correo |
+| citas-service | ALTA | 30 min | 5 min | maestro, réplica, Redis, auditoría | Sin él no se reservan citas en línea y el veterinario no ve la agenda. Mientras tanto se atiende por teléfono; las citas del día ya llegaron por correo con su código. El historial clínico no se puede rehacer de otra fuente, por eso el RPO es el de los binlogs (5 min) |
+| citas-recordatorios | MEDIA | 60 min | — | citas-service, notificaciones | Al volver se ponen al día solos: cada aviso se marca al enviarse (`recordatorio_at`, `aviso_at`) y no se repite |
 | Redis | ALTA | 15 min | 0 (se recalcula) | volumen `redis_data` (AOF) | La lista negra de JWT persiste con AOF. La caché se reconstruye sola |
 | security-audit-service | ALTA | 30 min | 15 min | BD de auditoría | Mientras no responde, los eventos quedan en el log del contenedor (`AUDITORIA_PENDIENTE`) y se reingresan |
 | notificaciones-service | MEDIA | 60 min | 30 min | EmailJS | El correo se puede reenviar. El pedido no depende de él |
@@ -42,12 +44,12 @@
 
 ### Escenario 3 — Fuga de datos de clientes · Prob. **baja** · Impacto **crítico**
 
-- **Alcance limitado por diseño:** no hay tarjetas (PCI), las contraseñas son bcrypt de costo 12 y la exportación es de datos mínimos.
+- **Alcance limitado por diseño:** no hay tarjetas (PCI), las contraseñas son bcrypt de costo 12 y la exportación es de datos mínimos. Los datos de salud de las mascotas (diagnóstico y tratamiento) solo están en `citas_db`, solo los lee el admin y la bitácora no los copia.
 - **Respuesta:**
   1. Aislar el servicio comprometido (se le quita la red `interna`).
   2. Rotar `JWT_SECRET`. Eso invalida **todas** las sesiones.
   3. Rotar las contraseñas de BD y las claves de API.
-  4. Revisar la bitácora: `EXPORTACION_CLIENTES`, `ACCESO_DENEGADO`, `ACCESO_ADMIN_PANEL` y `LOGIN_CLIENTE_FALLIDO` con resultado `FRAUDE`.
+  4. Revisar la bitácora: `EXPORTACION_CLIENTES`, `ACCESO_DENEGADO`, `ACCESO_ADMIN_PANEL`, `HISTORIAL_CONSULTADO` y `LOGIN_CLIENTE_FALLIDO` con resultado `FRAUDE`.
   5. Verificar `/api/auditoria/integridad`.
 - **Notificación:** a los afectados y a la autoridad en **menos de 72 h** (buena práctica, alineada con el GDPR), con qué datos salieron y qué hacer (cambiar la contraseña).
 
@@ -68,11 +70,11 @@
 
 ### Escenario 6 — Credenciales de administrador comprometidas · Prob. **media** · Impacto **crítico**
 
-- **Detección:** `LOGIN_CLIENTE_FALLIDO` marcado `FRAUDE` (la misma cuenta desde 3 o más IPs), `ACCESO_ADMIN_PANEL` desde una IP o un navegador desconocido, `PRECIO_MODIFICADO` o `EXPORTACION_CLIENTES` fuera de horario.
+- **Detección:** `LOGIN_CLIENTE_FALLIDO` marcado `FRAUDE` (la misma cuenta desde 3 o más IPs), `ACCESO_ADMIN_PANEL` desde una IP o un navegador desconocido, `PRECIO_MODIFICADO`, `EXPORTACION_CLIENTES`, `TURNO_BLOQUEADO` o muchas `HISTORIAL_CONSULTADO` seguidas fuera de horario.
 - **Respuesta:**
   1. Revocar los JWT activos. El JWT de 1 h más la lista negra en Redis cortan el acceso; si hace falta cortarlo ya mismo, se rota `JWT_SECRET`.
   2. Desactivar la cuenta (`usuarios.activo = 0`) y forzar el cambio de contraseña.
-  3. Revisar en la bitácora todo lo que hizo la cuenta desde el primer acceso sospechoso: precios con `dato_anterior`, estados de pedidos y exportaciones.
+  3. Revisar en la bitácora todo lo que hizo la cuenta desde el primer acceso sospechoso: precios con `dato_anterior`, estados de pedidos y de citas, bloqueos de turnos, historiales consultados y exportaciones.
   4. Revertir los cambios.
 - **RTO objetivo:** 30 min.
 
@@ -82,7 +84,7 @@
 
 | Componente | Tipo | Frecuencia | Retención | Dónde | Cómo |
 |---|---|---|---|---|---|
-| BD de negocio (maestro) | Completo `mariadb-dump --single-transaction --master-data=2` | Diario 03:00 + cada 4 h | 30 días | Local cifrado + Cloudflare R2 | `ops/backup.sh` (cron), AES-256-CBC + PBKDF2, SHA-256 |
+| BD de negocio (maestro): `auth_db`, `catalogo_db`, `pedidos_db`, `pagos_db` y `citas_db` | Completo `mariadb-dump --single-transaction --master-data=2` | Diario 03:00 + cada 4 h | 30 días | Local cifrado + Cloudflare R2 | `ops/backup.sh` (cron), AES-256-CBC + PBKDF2, SHA-256 |
 | Binlogs del maestro (incremental) | Archivado de binlogs cerrados, por instancia del maestro | **Cada 5 min** | 7 días | Local cifrado + R2 | `ops/backup-binlogs.sh` → recuperación a un punto en el tiempo con `ops/restore.sh … --hasta "AAAA-MM-DD HH:MM:SS"` |
 | Bitácora (`audit_db`) | Completo | Cada hora | 2 años | R2 con **Object Lock** (WORM) | `ops/backup.sh` · nadie puede borrar ni sobrescribir |
 | Imágenes de productos | CDN redundante | Continuo | Indefinido | Cloudinary | Original en Cloudinary + URL en `catalogo_db` |

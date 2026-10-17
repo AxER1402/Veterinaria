@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/AxER1402/Veterinaria/actions/workflows/ci.yml/badge.svg)](https://github.com/AxER1402/Veterinaria/actions/workflows/ci.yml)
 
-Tienda en línea de productos para mascotas de la veterinaria *Huellitas*. La arquitectura es de microservicios, con controles OWASP Top 10, bitácora de seguridad append-only y Zero Trust entre servicios.
+Tienda en línea de productos para mascotas y sistema de citas de la veterinaria *Huellitas* (consultas, vacunas, peluquería, guardería, hospedaje, paseos y entrenamiento). La arquitectura es de microservicios, con controles OWASP Top 10, bitácora de seguridad append-only y Zero Trust entre servicios.
 Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 
 - Arquitectura, DFD y STRIDE: [`docs/01-arquitectura-stride-dfd.md`](docs/01-arquitectura-stride-dfd.md)
@@ -21,10 +21,11 @@ Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 |---|---|
 | Tienda pública (catálogo sin registro) | `https://<dominio>/tienda` (local: <https://localhost:8443/tienda>) |
 | Panel de administración | `/admin` con `admin@huellitas.gt` / `Admin#2026` |
-| Microservicios + compose + README | este repositorio (8 servicios propios + 3 BD + Redis) |
+| Reserva de citas | `/servicios` → «Reservar», o «Reservar cita» en el encabezado; el cliente ve `/cuenta/citas` y `/cuenta/mascotas` |
+| Microservicios + compose + README | este repositorio (7 microservicios + gateway + 2 tareas periódicas + 3 BD + Redis) |
 | Scripts SQL con ≥ 20 productos | `db/master/*.sql` (24 productos, 40 variantes), `db/audit/` |
 | **SEC-1** PDF de seguridad | `docs/pdf/SEC-1-Huellitas-Seguridad.pdf` (se regenera con `docs/pdf/construir.mjs`) |
-| **SEC-2** ≥ 30 registros, ≥ 8 tipos | `/admin/bitacora` o `GET /api/auditoria/resumen` (CP-32 lo comprueba: los 14 eventos obligatorios + 2 extra) |
+| **SEC-2** ≥ 30 registros, ≥ 8 tipos | `/admin/bitacora` o `GET /api/auditoria/resumen` (CP-32 lo comprueba: los 14 eventos obligatorios; hay 27 tipos en total, 10 del módulo de citas) |
 | **SEC-3** sin datos de tarjeta | `SELECT * FROM pagos_db.pagos;` → solo `payment_intent_id` (CP-28) |
 | **SEC-4** reporte OWASP ZAP | `docs/zap/zap-baseline-2.html` (0 FAIL, 0 alertas medias o altas) |
 | **SEC-5** hardening Docker | `docker ps` → ningún `0.0.0.0:3306` ni `0.0.0.0:6379` (CP-14) |
@@ -43,7 +44,7 @@ Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 | `citas-recordatorios` | Tarea periódica (cada 15 min): recordatorio de la cita un día antes, aviso 7 días antes de que venza una vacuna y cierre como «no asistió» de las citas que pasaron sin atenderse | — |
 | `pagos-service` | Stripe (PaymentIntent + webhook firmado) y PayPal (Orders v2, captura en servidor). Sin datos de tarjeta | 8084 (interno; solo el webhook es público) |
 | `notificaciones-service` | Correo de confirmación por EmailJS con código de verificación HMAC. Clima del panel admin (OpenWeatherMap u Open-Meteo) | 8085 (interno) |
-| `citas-service` | Mascotas de cada cliente y citas por sede en turnos de 30 min (2 cupos). La BD impide la doble reserva; máx. 5 citas próximas por cliente | 8087 (interno) |
+| `citas-service` | Mascotas de cada cliente y citas por sede en turnos de 30 min (2 cupos). La BD impide la doble reserva; máx. 5 citas próximas por cliente. Agenda del admin, bloqueo de turnos, historial clínico y carné de vacunas | 8087 (interno) |
 | `security-audit-service` | Bitácora `security_audit_logs`: append-only, con cadena de hashes | 8086 (interno) |
 | `mariadb-master` / `mariadb-slave` | BD de negocio (una por servicio) con réplica de solo lectura | interno |
 | `mariadb-audit` | `audit_db` en una instancia y un volumen aparte | interno |
@@ -94,8 +95,11 @@ Todos los usuarios (app, BD y Redis) están en [`usuarios.md`](usuarios.md).
 | GET | `/api/pedidos/admin/clima` | admin. Clima de Ciudad de Guatemala, en caché 10 min |
 | GET | `/api/citas/servicios` · `/api/citas/disponibilidad?servicio=&fecha=` | público |
 | GET/POST | `/api/citas/mascotas` · `PATCH`/`DELETE /api/citas/mascotas/{uuid}` | cliente. Solo sus mascotas |
+| GET | `/api/citas/mascotas/{uuid}/carne` | cliente dueño. Carné de vacunas, sin diagnósticos |
 | GET/POST | `/api/citas` · `POST /api/citas/{uuid}/cancelar` | cliente. Solo sus citas; cancela hasta 2 h antes |
 | GET | `/api/citas/admin/agenda?fecha=&sede=` · `PATCH /api/citas/admin/{uuid}/estado` | admin |
+| GET/POST | `/api/citas/admin/bloqueos` · `DELETE /api/citas/admin/bloqueos/{id}` | admin. Feriados y mantenimiento; no se bloquea un turno con citas activas |
+| POST | `/api/citas/admin/{uuid}/historial` · `GET /api/citas/admin/mascotas/{uuid}/historial` | admin. Consulta con peso, diagnóstico, tratamiento y vacunas; cada lectura se audita |
 | GET | `/api/auditoria/eventos?accion=&resultado=&servicio=&usuario_email=&desde=&hasta=&limite=&pagina=` | admin |
 | GET | `/api/auditoria/resumen` | admin |
 | GET | `/api/auditoria/integridad` | admin. Verifica la cadena de hashes |
@@ -108,7 +112,7 @@ Todos los usuarios (app, BD y Redis) están en [`usuarios.md`](usuarios.md).
 tests/seguridad.sh
 ```
 
-Corre los casos CP-01 a CP-35 contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto manipulado), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2, vencimiento de pedidos sin pagar, verificación en dos pasos e IP del cliente no falsificable.
+Corre los casos CP-01 a CP-46 (263 comprobaciones) contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto manipulado), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2, vencimiento de pedidos sin pagar, verificación en dos pasos, IP del cliente no falsificable, clima del panel y el módulo de citas (mascotas y citas ajenas, doble reserva simultánea, agenda y estados, correo con código HMAC, bloqueos de turnos, historial clínico, carné de vacunas, recordatorios y límite de citas por cliente).
 
 > La ráfaga del CP-16 agota el cupo de `/login` del gateway. Si se repite la prueba enseguida, la suite espera sola a que se recupere (hasta ~1 min).
 
@@ -118,6 +122,7 @@ Corre los casos CP-01 a CP-35 contra el stack levantado: TLS 1.3, cabeceras, JWT
 
 - **Resumen:** ventas cobradas, pedidos pendientes, eventos de auditoría, integridad de la bitácora, clima de la ciudad y gráfica de ventas por día con Chart.js (con vista de tabla).
 - **Pedidos:** filtro por estado y cambio de estado según las transiciones permitidas.
+- **Agenda:** citas del día por sede, cambio de estado, bloqueo de turnos, *Registrar consulta* (peso, diagnóstico, tratamiento y vacunas) e historial de cada mascota. El resumen muestra la tarjeta «Citas de hoy».
 - **Catálogo:** precio, precio anterior, stock, activo y destacado. Los cambios generan `PRECIO_MODIFICADO` y `PRODUCTO_AGOTADO`.
 - **Bitácora:** filtros, detalle con antes y después, y botón «Verificar integridad».
 - **Clientes:** listado y exportación a CSV (`EXPORTACION_CLIENTES`).
@@ -128,7 +133,7 @@ Corre los casos CP-01 a CP-35 contra el stack levantado: TLS 1.3, cabeceras, JWT
 ops/backup.sh                         # respaldo AES-256 de todas las bases → backups/<fecha>/
 ops/backup-binlogs.sh                 # archiva los binlogs del maestro (cron cada 5 min → RPO ≤ 5 min)
 ops/restore.sh backups/<fecha> negocio [--hasta "AAAA-MM-DD HH:MM:SS"]   # completo + binlogs (PITR)
-ops/simulacro-drp.sh                  # simulacro de ransomware en el maestro, con informe y RTO medido
+ops/simulacro-drp.sh                  # simulacro de ransomware en el maestro, con informe y RTO medido (compara también citas e historial)
 ```
 
 ## Integración continua
