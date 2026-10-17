@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { BarController, BarElement, CategoryScale, Chart, LinearScale, Tooltip } from 'chart.js'
 import Loading from '../../components/Loading'
 import { api } from '../../api'
 import { formatPrice } from '../../data/shop'
 import { STATUS } from '../account/orderStatus'
+import { ymd } from '../account/citas'
 
 // Solo los módulos que usa la gráfica de barras: el resto de Chart.js no entra en el bundle.
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip)
@@ -13,6 +15,7 @@ export default function AdminResumen() {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [clima, setClima] = useState(null)
+  const [citas, setCitas] = useState(null)
 
   useEffect(() => {
     Promise.all([api('/api/pedidos/admin/resumen'), api('/api/auditoria/resumen'), api('/api/auditoria/integridad')])
@@ -20,17 +23,23 @@ export default function AdminResumen() {
       .catch((e) => setError(e.message))
     // Aparte: si el proveedor del clima falla, el resto del panel se muestra igual.
     api('/api/pedidos/admin/clima').then(setClima).catch(() => setClima(false))
+    api(`/api/citas/admin/agenda?fecha=${ymd(new Date())}`).then((d) => setCitas(d.citas)).catch(() => setCitas(false))
   }, [])
 
   if (error) return <p className="form-alert">{error}</p>
   if (!data) return <Loading />
   const { ventas, auditoria, integridad } = data
   const pendientes = ventas.por_estado.find((e) => e.estado === 'pendiente_pago')?.pedidos ?? 0
+  const hoy = citas ? citas.filter((c) => c.estado !== 'cancelada') : []
+  const porEstado = (e) => hoy.filter((c) => c.estado === e).length
   const fraudes = auditoria.por_evento.filter((e) => e.resultado === 'FRAUDE').reduce((n, e) => n + Number(e.total), 0)
 
   return (
     <>
       <div className="stat-tiles">
+        <Stat label="Citas de hoy" to="/admin/agenda"
+          value={citas ? hoy.length : citas === false ? 'No disponible' : '…'}
+          note={citas ? `${porEstado('pendiente')} por confirmar · ${porEstado('confirmada')} confirmadas · ${porEstado('atendida')} atendidas` : 'Ver la agenda'} />
         <Stat label="Ventas cobradas" value={formatPrice(ventas.ventas)} />
         <Stat label="Pedidos pendientes de pago" value={pendientes} />
         <Stat label="Clientes con pedidos" value={ventas.clientes_con_pedidos} />
@@ -64,13 +73,14 @@ export default function AdminResumen() {
   )
 }
 
-function Stat({ label, value, note, tone }) {
+function Stat({ label, value, note, tone, to }) {
+  const Tag = to ? Link : 'div'
   return (
-    <div className={`stat-tile ${tone ? `stat-tile--${tone}` : ''}`}>
+    <Tag {...(to ? { to } : {})} className={`stat-tile ${tone ? `stat-tile--${tone}` : ''} ${to ? 'stat-tile--link' : ''}`}>
       <span>{label}</span>
       <strong>{value}</strong>
       {note && <small>{note}</small>}
-    </div>
+    </Tag>
   )
 }
 

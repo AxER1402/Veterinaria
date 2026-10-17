@@ -24,6 +24,9 @@ $router->add('DELETE', '/api/citas/mascotas/{id}', fn($p) => $citas->desactivarM
 
 // Administración.
 $router->add('GET',    '/api/citas/admin/agenda', fn() => $citas->agenda());
+$router->add('GET',    '/api/citas/admin/bloqueos', fn() => $citas->bloqueos());
+$router->add('POST',   '/api/citas/admin/bloqueos', fn() => $citas->bloquear());
+$router->add('DELETE', '/api/citas/admin/bloqueos/{id}', fn($p) => $citas->desbloquear($p['id']));
 $router->add('PATCH',  '/api/citas/admin/{id}/estado', fn($p) => $citas->cambiarEstado($p['id']));
 
 // Citas del cliente.

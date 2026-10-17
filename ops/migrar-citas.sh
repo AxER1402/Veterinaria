@@ -21,6 +21,6 @@ docker compose up -d --wait mariadb-master mariadb-slave
     echo "CREATE USER IF NOT EXISTS 'citas_user'@'%' IDENTIFIED BY '${CITAS_DB_PASSWORD}';"
     echo "ALTER USER 'citas_user'@'%' IDENTIFIED BY '${CITAS_DB_PASSWORD}';"
     echo "GRANT SELECT, INSERT, UPDATE ON citas_db.* TO 'citas_user'@'%';"
-    cat db/master/07-citas_db.sql
+    cat db/master/07-citas_db.sql db/master/08-citas-agenda.sql
 } | docker compose exec -T mariadb-master mariadb -uroot -p"$DB_ROOT_PASSWORD"
 echo "✔ citas_db lista. Siguiente: docker compose up -d --build --wait"

@@ -162,6 +162,7 @@ services:
       DB_USER: citas_user
       DB_PASSWORD: ${CITAS_DB_PASSWORD:?falta CITAS_DB_PASSWORD}
       CITAS_CUPOS: ${CITAS_CUPOS:-2}
+      NOTIFICACIONES_URL: http://notificaciones-service:8085
     depends_on:
       mariadb-master: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -203,6 +204,7 @@ services:
       COMPROBANTE_SECRET: ${COMPROBANTE_SECRET:?falta COMPROBANTE_SECRET}
       EMAILJS_SERVICE_ID: ${EMAILJS_SERVICE_ID:-}
       EMAILJS_TEMPLATE_ID: ${EMAILJS_TEMPLATE_ID:-}
+      EMAILJS_TEMPLATE_CITA_ID: ${EMAILJS_TEMPLATE_CITA_ID:-}
       EMAILJS_PUBLIC_KEY: ${EMAILJS_PUBLIC_KEY:-}
       EMAILJS_PRIVATE_KEY: ${EMAILJS_PRIVATE_KEY:-}
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}

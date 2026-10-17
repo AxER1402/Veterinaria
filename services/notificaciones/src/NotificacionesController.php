@@ -53,9 +53,64 @@ final class NotificacionesController
             'dato_nuevo'    => ['plantilla' => 'pedido_pagado', 'proveedor' => 'EmailJS', 'codigo_verificacion' => $codigo],
         ];
 
-        if (!self::configurado()) {
+        $enviado = self::enviar('EMAILJS_TEMPLATE_ID', $parametros, $datosAuditoria);
+        return [200, ['enviado' => $enviado, 'codigo_verificacion' => $codigo]];
+    }
+
+    private const CITA_TIPOS = [
+        'reservada'  => ['titulo' => 'Recibimos tu cita', 'mensaje' => 'Tu cita quedó reservada. Te avisaremos cuando la confirmemos.'],
+        'confirmada' => ['titulo' => 'Tu cita está confirmada', 'mensaje' => 'Te esperamos. Si no puedes venir, cancélala desde «Mis citas» hasta 2 horas antes.'],
+        'cancelada'  => ['titulo' => 'Tu cita fue cancelada', 'mensaje' => 'La clínica canceló tu cita. Puedes reservar otro horario en la página.'],
+    ];
+
+    /**
+     * Correo de una cita (citas-service). Entrada: {tipo, cita: {id, inicio "Y-m-d H:i", servicio, sede,
+     * mascota, cliente_nombre, cliente_email}, comentario?}. Devuelve el código HMAC aunque el correo falle.
+     */
+    public function cita(): array
+    {
+        Guard::servicio(['citas-service']);
+        $d = Http::body();
+        $tipo = is_string($d['tipo'] ?? null) && isset(self::CITA_TIPOS[$d['tipo']]) ? $d['tipo'] : throw new ApiError(422, 'Tipo de correo no válido');
+        $c = $d['cita'] ?? null;
+        foreach (['id', 'inicio', 'servicio', 'sede', 'mascota', 'cliente_nombre', 'cliente_email'] as $campo) {
+            if (!is_array($c) || !is_string($c[$campo] ?? null) || $c[$campo] === '') {
+                throw new ApiError(422, 'Datos de la cita incompletos');
+            }
+        }
+        $email = filter_var($c['cliente_email'], FILTER_VALIDATE_EMAIL) ?: throw new ApiError(422, 'Correo inválido');
+        $inicio = \DateTimeImmutable::createFromFormat('!Y-m-d H:i', $c['inicio']) ?: throw new ApiError(422, 'Fecha de la cita inválida');
+        $codigo = self::codigoCita($c['id'], $c['inicio']);
+
+        $comentario = is_string($d['comentario'] ?? null) ? mb_substr($d['comentario'], 0, 200) : '';
+        $parametros = [
+            'to_email'            => $email,
+            'to_name'             => $c['cliente_nombre'],
+            'titulo'              => self::CITA_TIPOS[$tipo]['titulo'],
+            'mensaje'             => self::CITA_TIPOS[$tipo]['mensaje'] . ($comentario !== '' ? " Motivo: $comentario" : ''),
+            'estado'              => $tipo,
+            'cita'                => strtoupper(substr($c['id'], 0, 8)),
+            'servicio'            => $c['servicio'],
+            'mascota'             => $c['mascota'],
+            'sede'                => $c['sede'],
+            'fecha'               => self::fechaLarga($inicio),
+            'hora'                => $inicio->format('H:i'),
+            'codigo_verificacion' => $codigo,
+        ];
+        $enviado = self::enviar('EMAILJS_TEMPLATE_CITA_ID', $parametros, [
+            'usuario_email' => $email,
+            'rol'           => 'cliente',
+            'dato_nuevo'    => ['plantilla' => "cita_$tipo", 'proveedor' => 'EmailJS', 'cita_id' => $c['id'], 'codigo_verificacion' => $codigo],
+        ]);
+        return [200, ['enviado' => $enviado, 'codigo_verificacion' => $codigo]];
+    }
+
+    /** Envía con EmailJS y deja EMAIL_ENVIADO en la bitácora (FALLO si no está configurado o falla). */
+    private static function enviar(string $plantilla, array $parametros, array $datosAuditoria): bool
+    {
+        if (!self::configurado($plantilla)) {
             Auditoria::registrar('EMAIL_ENVIADO', 'FALLO', array_merge_recursive($datosAuditoria, ['dato_nuevo' => ['motivo' => 'EmailJS no configurado']]));
-            return [200, ['enviado' => false, 'motivo' => 'EmailJS no configurado', 'codigo_verificacion' => $codigo]];
+            return false;
         }
 
         $ch = curl_init(self::EMAILJS_URL);
@@ -63,7 +118,7 @@ final class NotificacionesController
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => json_encode([
                 'service_id'      => Env::required('EMAILJS_SERVICE_ID'),
-                'template_id'     => Env::required('EMAILJS_TEMPLATE_ID'),
+                'template_id'     => Env::required($plantilla),
                 'user_id'         => Env::required('EMAILJS_PUBLIC_KEY'),
                 'accessToken'     => Env::required('EMAILJS_PRIVATE_KEY'),
                 'template_params' => $parametros,
@@ -83,7 +138,7 @@ final class NotificacionesController
         if (!$enviado) {
             error_log("EmailJS respondió $http: " . substr((string) $respuesta, 0, 200));
         }
-        return [200, ['enviado' => $enviado, 'codigo_verificacion' => $codigo]];
+        return $enviado;
     }
 
     /** Comprueba un código de comprobante (lo usa el panel admin ante un reclamo). */
@@ -105,9 +160,24 @@ final class NotificacionesController
         return strtoupper(implode('-', str_split(substr($hmac, 0, 16), 4)));
     }
 
-    private static function configurado(): bool
+    /** «martes 20 de octubre de 2026» (la imagen no trae la extensión intl). */
+    private static function fechaLarga(\DateTimeImmutable $f): string
     {
-        foreach (['EMAILJS_SERVICE_ID', 'EMAILJS_TEMPLATE_ID', 'EMAILJS_PUBLIC_KEY', 'EMAILJS_PRIVATE_KEY'] as $v) {
+        $dias = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+        $meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        return sprintf('%s %d de %s de %d', $dias[(int) $f->format('N') - 1], (int) $f->format('j'), $meses[(int) $f->format('n') - 1], (int) $f->format('Y'));
+    }
+
+    /** Distinto prefijo que el del pedido: un código de pedido nunca sirve como código de cita. */
+    private static function codigoCita(string $citaId, string $inicio): string
+    {
+        $hmac = hash_hmac('sha256', "cita|$citaId|$inicio", Env::required('COMPROBANTE_SECRET'));
+        return strtoupper(implode('-', str_split(substr($hmac, 0, 16), 4)));
+    }
+
+    private static function configurado(string $plantilla): bool
+    {
+        foreach (['EMAILJS_SERVICE_ID', $plantilla, 'EMAILJS_PUBLIC_KEY', 'EMAILJS_PRIVATE_KEY'] as $v) {
             if (Env::get($v) === null) {
                 return false;
             }

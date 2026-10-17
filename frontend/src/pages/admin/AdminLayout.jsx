@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, Package, Tags, ShieldCheck, Users } from 'lucide-react'
+import { LayoutDashboard, Package, Tags, ShieldCheck, Users, CalendarDays } from 'lucide-react'
 import Loading from '../../components/Loading'
 import { useAuth } from '../../context/useAuth'
 import { api } from '../../api'
 
 const tabs = [
   { to: '/admin', label: 'Resumen', icon: LayoutDashboard, end: true },
+  { to: '/admin/agenda', label: 'Agenda', icon: CalendarDays },
   { to: '/admin/pedidos', label: 'Pedidos', icon: Package },
   { to: '/admin/catalogo', label: 'Catálogo', icon: Tags },
   { to: '/admin/bitacora', label: 'Bitácora', icon: ShieldCheck },

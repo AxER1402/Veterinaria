@@ -96,6 +96,7 @@ function CitaRow({ cita, onChange }) {
         <strong>{cita.servicio.nombre} · {cita.mascota.nombre}</strong>
         <small>{formatCita(cita.inicio)}</small>
         <small><MapPin size={14} /> {cita.sede.nombre}</small>
+        {cita.codigo_verificacion && <small>Código de verificación: <span className="mono">{cita.codigo_verificacion}</span></small>}
         {error && <small className="field-error">{error}</small>}
       </span>
       <span className="cita__side">

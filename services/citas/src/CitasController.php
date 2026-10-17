@@ -9,6 +9,7 @@ use Huellitas\Db;
 use Huellitas\Env;
 use Huellitas\Guard;
 use Huellitas\Http;
+use Huellitas\Interno;
 use Huellitas\Jwt;
 use Huellitas\Validar;
 
@@ -172,31 +173,44 @@ final class CitasController
         $id = Jwt::uuid();
         $insertar = $db->prepare('INSERT INTO citas (id, id_cliente, mascota_id, servicio, sede, inicio, cupo, cliente_nombre, cliente_email, telefono, notas)
                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        $guardada = false;
-        for ($cupo = 1; $cupo <= self::cupos() && !$guardada; $cupo++) {
-            try {
-                $insertar->execute([$id, (int) $claims['sub'], $mascota['id'], $servicio['slug'], $servicio['sede'], $inicio, $cupo,
-                    $nombre, $claims['email'], $telefono, $notas]);
-                $guardada = true;
-            } catch (\PDOException $e) {
-                if (($e->errorInfo[1] ?? null) !== 1062) {
-                    throw $e;
-                }
-                if (str_contains($e->getMessage(), 'uq_citas_mascota')) {
-                    throw new ApiError(409, "{$mascota['nombre']} ya tiene una cita a esa hora");
+        $db->beginTransaction();
+        try {
+            $guardada = false;
+            for ($cupo = 1; $cupo <= self::cupos() && !$guardada; $cupo++) {
+                try {
+                    $insertar->execute([$id, (int) $claims['sub'], $mascota['id'], $servicio['slug'], $servicio['sede'], $inicio, $cupo,
+                        $nombre, $claims['email'], $telefono, $notas]);
+                    $guardada = true;
+                } catch (\PDOException $e) {
+                    if (($e->errorInfo[1] ?? null) !== 1062) {
+                        throw $e;
+                    }
+                    if (str_contains($e->getMessage(), 'uq_citas_mascota')) {
+                        throw new ApiError(409, "{$mascota['nombre']} ya tiene una cita a esa hora");
+                    }
                 }
             }
+            if (!$guardada) {
+                throw new ApiError(409, 'Ese turno se acaba de llenar. Elige otro');
+            }
+            // Si el admin bloqueó el turno mientras tanto, bloquear() tenía el rango y este INSERT esperó a
+            // que terminara: la lectura con bloqueo ya ve el bloqueo confirmado y la reserva se deshace.
+            if ($this->bloqueado($db, $servicio['sede'], $fecha->format('Y-m-d'), $hora)) {
+                throw new ApiError(422, 'Ese turno no está disponible', ['campo' => 'hora']);
+            }
+            $db->prepare('INSERT INTO historial_citas (cita_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, NULL, ?, ?, ?)')
+                ->execute([$id, 'pendiente', (int) $claims['sub'], 'Cita reservada por el cliente']);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
         }
-        if (!$guardada) {
-            throw new ApiError(409, 'Ese turno se acaba de llenar. Elige otro');
-        }
-        $db->prepare('INSERT INTO historial_citas (cita_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, NULL, ?, ?, ?)')
-            ->execute([$id, 'pendiente', (int) $claims['sub'], 'Cita reservada por el cliente']);
 
         Auditoria::registrar('CITA_CREADA', 'EXITO', Auditoria::actor($claims) + [
             'dato_nuevo' => ['cita_id' => $id, 'servicio' => $servicio['slug'], 'sede' => $servicio['sede'], 'inicio' => $inicio,
                              'mascota_id' => $mascota['id']],
         ]);
+        $this->notificar('reservada', $this->citaPorId($id));
         return [201, ['cita' => self::citaJson($this->citaPorId($id))]];
     }
 
@@ -240,7 +254,88 @@ final class CitasController
         }
         $q = Db::escritura()->prepare($sql . ' ORDER BY c.inicio, c.sede, c.cupo');
         $q->execute($params);
-        return [200, ['fecha' => $fecha->format('Y-m-d'), 'citas' => array_map(fn($c) => self::citaJson($c, true), $q->fetchAll())]];
+        $citas = array_map(fn($c) => self::citaJson($c, true), $q->fetchAll());
+
+        $b = Db::escritura()->prepare('SELECT * FROM turnos_bloqueados WHERE activo = 1 AND fecha = ?' . ($sede ? ' AND sede = ?' : '') . ' ORDER BY sede, hora_inicio');
+        $b->execute($sede ? [$fecha->format('Y-m-d'), $sede] : [$fecha->format('Y-m-d')]);
+        return [200, ['fecha' => $fecha->format('Y-m-d'), 'citas' => $citas, 'bloqueos' => array_map(fn($x) => self::bloqueoJson($x), $b->fetchAll())]];
+    }
+
+    /** Próximos bloqueos (feriados, mantenimiento). */
+    public function bloqueos(): array
+    {
+        Guard::usuario(['admin']);
+        $q = Db::escritura()->query('SELECT * FROM turnos_bloqueados WHERE activo = 1 AND fecha >= CURDATE() ORDER BY fecha, sede, hora_inicio LIMIT 100');
+        return [200, ['bloqueos' => array_map(fn($x) => self::bloqueoJson($x), $q->fetchAll())]];
+    }
+
+    /**
+     * Bloquea un día entero o un rango de turnos de una sede. Si ya hay citas activas en ese rango se
+     * rechaza (409): primero se cancelan en la agenda, y así cada cliente recibe su aviso.
+     */
+    public function bloquear(): array
+    {
+        $claims = Guard::usuario(['admin']);
+        $d = Http::body();
+        Validar::sinAtaques($d);
+        $sede = is_string($d['sede'] ?? null) && isset(self::SEDES[$d['sede']]) ? $d['sede'] : throw new ApiError(422, 'Sede no válida', ['campo' => 'sede']);
+        $fecha = self::fecha($d['fecha'] ?? null);
+        $dia = $fecha->format('Y-m-d');
+        $todoElDia = ($d['hora_inicio'] ?? '') === '' && ($d['hora_fin'] ?? '') === '';
+        $ini = $fin = null;
+        if (!$todoElDia) {
+            $ini = self::horaTurno($d['hora_inicio'] ?? null, 'hora_inicio');
+            $fin = self::horaTurno($d['hora_fin'] ?? null, 'hora_fin');
+            if ($fin <= $ini) {
+                throw new ApiError(422, 'La hora final debe ser posterior a la inicial', ['campo' => 'hora_fin']);
+            }
+        }
+        $motivo = Validar::texto($d, 'motivo', 3, 120);
+        $desde = $todoElDia ? "$dia 00:00:00" : "$dia $ini:00";
+        $hasta = $todoElDia ? $fecha->modify('+1 day')->format('Y-m-d 00:00:00') : "$dia $fin:00";
+
+        $db = Db::escritura();
+        $db->beginTransaction();
+        try {
+            // FOR UPDATE toma el rango del índice: una reserva en ese rango espera a que esto termine.
+            $q = $db->prepare("SELECT COUNT(*) FROM citas WHERE inicio >= ? AND inicio < ? AND sede = ? AND estado IN ('pendiente','confirmada') FOR UPDATE");
+            $q->execute([$desde, $hasta, $sede]);
+            $activas = (int) $q->fetchColumn();
+            if ($activas > 0) {
+                throw new ApiError(409, $activas === 1 ? 'Hay 1 cita en ese horario. Cancélala primero en la agenda'
+                    : "Hay $activas citas en ese horario. Cancélalas primero en la agenda", ['citas' => $activas]);
+            }
+            $db->prepare('INSERT INTO turnos_bloqueados (sede, fecha, hora_inicio, hora_fin, motivo, creado_por) VALUES (?, ?, ?, ?, ?, ?)')
+                ->execute([$sede, $dia, $ini ? "$ini:00" : null, $fin ? "$fin:00" : null, $motivo, (int) $claims['sub']]);
+            $id = (int) $db->lastInsertId();
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+        $bloqueo = self::bloqueoJson($this->bloqueoPorId($id));
+        Auditoria::registrar('TURNO_BLOQUEADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_nuevo' => ['bloqueo_id' => $id, 'sede' => $sede, 'fecha' => $dia, 'hora_inicio' => $ini, 'hora_fin' => $fin, 'motivo' => $motivo],
+        ]);
+        return [201, ['bloqueo' => $bloqueo]];
+    }
+
+    public function desbloquear(string $id): array
+    {
+        $claims = Guard::usuario(['admin']);
+        $b = ctype_digit($id) ? $this->bloqueoPorId((int) $id) : null;
+        if (!$b || !(int) $b['activo']) {
+            throw new ApiError(404, 'Bloqueo no encontrado');
+        }
+        Db::escritura()->prepare('UPDATE turnos_bloqueados SET activo = 0, quitado_por = ?, quitado_at = NOW() WHERE id = ? AND activo = 1')
+            ->execute([(int) $claims['sub'], (int) $id]);
+        $antes = self::bloqueoJson($b);
+        Auditoria::registrar('TURNO_DESBLOQUEADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_anterior' => ['bloqueo_id' => (int) $id, 'sede' => $b['sede'], 'fecha' => $b['fecha'], 'hora_inicio' => $antes['hora_inicio'],
+                                'hora_fin' => $antes['hora_fin'], 'motivo' => $b['motivo'], 'activo' => true],
+            'dato_nuevo'    => ['bloqueo_id' => (int) $id, 'activo' => false],
+        ]);
+        return [200, ['ok' => true]];
     }
 
     public function cambiarEstado(string $id): array
@@ -258,6 +353,9 @@ final class CitasController
         }
         $comentario = isset($datos['comentario']) && $datos['comentario'] !== '' ? Validar::texto($datos, 'comentario', 1, 200) : null;
         $this->moverEstado($cita, $nuevo, $claims, $comentario, 'CITA_ESTADO_CAMBIADO');
+        if (in_array($nuevo, ['confirmada', 'cancelada'], true) && $cita['inicio'] > date('Y-m-d H:i:s')) {
+            $this->notificar($nuevo, $this->citaPorId($id), $comentario);
+        }
         return [200, ['cita' => self::citaJson($this->citaPorId($id), true)]];
     }
 
@@ -304,7 +402,7 @@ final class CitasController
         $q->execute([$sede, $dia, $dia]);
         $ocupados = array_column($q->fetchAll(), 'n', 'hora');
 
-        $q = $db->prepare('SELECT hora_inicio, hora_fin FROM turnos_bloqueados WHERE sede = ? AND fecha = ?');
+        $q = $db->prepare('SELECT hora_inicio, hora_fin FROM turnos_bloqueados WHERE sede = ? AND fecha = ? AND activo = 1');
         $q->execute([$sede, $dia]);
         $bloqueos = $q->fetchAll();
 
@@ -326,6 +424,68 @@ final class CitasController
             }
         }
         return $turnos;
+    }
+
+    /** ¿Hay un bloqueo activo sobre ese turno? Lectura con bloqueo: ve lo último confirmado. */
+    private function bloqueado(\PDO $db, string $sede, string $dia, string $hora): bool
+    {
+        $q = $db->prepare('SELECT COUNT(*) FROM turnos_bloqueados WHERE sede = ? AND fecha = ? AND activo = 1
+                           AND (hora_inicio IS NULL OR (? >= hora_inicio AND ? < hora_fin)) LOCK IN SHARE MODE');
+        $q->execute([$sede, $dia, "$hora:00", "$hora:00"]);
+        return (int) $q->fetchColumn() > 0;
+    }
+
+    /**
+     * Correo de la cita (notificaciones-service). No bloquea: si falla, la cita sigue y la falla queda
+     * en la bitácora. La primera respuesta trae el código HMAC, que se guarda para mostrarlo.
+     */
+    private function notificar(string $tipo, array $c, ?string $comentario = null): void
+    {
+        [$http, $json] = Interno::post(rtrim(Env::get('NOTIFICACIONES_URL', 'http://notificaciones-service:8085'), '/') . '/internal/notificaciones/cita', [
+            'tipo'       => $tipo,
+            'comentario' => $comentario,
+            'cita'       => [
+                'id' => $c['id'], 'inicio' => substr($c['inicio'], 0, 16), 'servicio' => $c['servicio_nombre'], 'sede' => self::SEDES[$c['sede']],
+                'mascota' => $c['mascota_nombre'], 'cliente_nombre' => $c['cliente_nombre'], 'cliente_email' => $c['cliente_email'],
+            ],
+        ], 12);
+        $codigo = $json['codigo_verificacion'] ?? null;
+        if ($http !== 200 || !is_string($codigo) || !preg_match('/^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/', $codigo)) {
+            error_log("citas: notificaciones respondió $http al avisar la cita {$c['id']} ($tipo)");
+            return;
+        }
+        if ($c['codigo_verificacion'] === null) {
+            Db::escritura()->prepare('UPDATE citas SET codigo_verificacion = ? WHERE id = ? AND codigo_verificacion IS NULL')->execute([$codigo, $c['id']]);
+        }
+    }
+
+    /** Hora «HH:MM» de un turno válido (8:00 a 20:00 cada 30 min; 20:00 solo como fin). */
+    private static function horaTurno(mixed $valor, string $campo): string
+    {
+        if (is_string($valor) && preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/', $valor, $m)) {
+            $min = (int) $m[1] * 60 + (int) $m[2];
+            if ($min % self::TURNO_MIN === 0 && $min >= self::APERTURA * 60 && $min <= self::CIERRE * 60) {
+                return $valor;
+            }
+        }
+        throw new ApiError(422, 'Hora no válida: de 08:00 a 20:00, cada 30 minutos', ['campo' => $campo]);
+    }
+
+    private function bloqueoPorId(int $id): ?array
+    {
+        $q = Db::escritura()->prepare('SELECT * FROM turnos_bloqueados WHERE id = ?');
+        $q->execute([$id]);
+        return $q->fetch() ?: null;
+    }
+
+    private static function bloqueoJson(array $b): array
+    {
+        return [
+            'id' => (int) $b['id'], 'sede' => ['codigo' => $b['sede'], 'nombre' => self::SEDES[$b['sede']]], 'fecha' => $b['fecha'],
+            'hora_inicio' => $b['hora_inicio'] !== null ? substr($b['hora_inicio'], 0, 5) : null,
+            'hora_fin' => $b['hora_fin'] !== null ? substr($b['hora_fin'], 0, 5) : null,
+            'motivo' => $b['motivo'],
+        ];
     }
 
     private static function cupos(): int
@@ -461,6 +621,7 @@ final class CitasController
             'sede'     => ['codigo' => $c['sede'], 'nombre' => self::SEDES[$c['sede']]],
             'mascota'  => ['id' => $c['mascota_id'], 'nombre' => $c['mascota_nombre'], 'especie' => $c['especie']],
             'notas'    => $c['notas'],
+            'codigo_verificacion' => $c['codigo_verificacion'],
             'puede_cancelar' => in_array($c['estado'], ['pendiente', 'confirmada'], true)
                 && strtotime($c['inicio']) - time() >= self::CANCELAR_HORAS * 3600,
         ];

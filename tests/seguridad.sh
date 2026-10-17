@@ -518,7 +518,62 @@ esperar "al cancelar se libera el cupo" 2 "$(disp "$DIA" | jq --arg h "$HORA" '.
 esperar "cancelar de nuevo → 409" 409 "$(codigo -X POST -H "Authorization: Bearer $T2" "$BASE/api/citas/$CITA/cancelar")"
 esperar "no se desactiva una mascota con citas próximas → 409" 409 "$(codigo -X DELETE -H "Authorization: Bearer $T3" "$BASE/api/citas/mascotas/$CON_CITA")"
 
+caso "CP-42 Correo de la cita con código HMAC (R de STRIDE) y Zero Trust"
+# El gateway deja 10 r/s con ráfaga de 40 por IP en /api/citas; los casos de citas van seguidos y la
+# agotan. Una pausa de 4 s la repone entera (un usuario real nunca se acerca a ese ritmo).
+respiro() { sleep 4; }
+respiro
+# El código se recalcula con COMPROBANTE_SECRET: si el cliente niega haber reservado, se puede comprobar.
+codigo_cita() { printf 'cita|%s|%s' "$1" "$2" | openssl dgst -sha256 -hmac "$COMPROBANTE_SECRET" | awk '{print toupper(substr($2,1,16))}' | sed 's/.\{4\}/&-/g; s/-$//'; }
+HORA3=$(disp "$DIA" | jq -r '[.turnos[] | select(.libres==2)][0].hora')
+r=$(reservar "$T3" "$P1" "$HORA3")
+esperar "reserva → 201" 201 "$(tail -1 <<<"$r")"
+CITA3=$(head -n -1 <<<"$r" | jq -r .cita.id)
+COD3=$(head -n -1 <<<"$r" | jq -r .cita.codigo_verificacion)
+esperar "la cita trae su código de verificación" "true" "$(jq -rn --arg c "$COD3" '$c | test("^[0-9A-F]{4}(-[0-9A-F]{4}){3}$")')"
+esperar "el código es el HMAC de la cita y su hora" "$(codigo_cita "$CITA3" "$DIA $HORA3")" "$COD3"
+esperar "EMAIL_ENVIADO con la plantilla de la cita y el mismo código" "$CITA3|cita_reservada|$COD3" "$(evento_ultimo EMAIL_ENVIADO | jq -r '"\(.dato_nuevo.cita_id)|\(.dato_nuevo.plantilla)|\(.dato_nuevo.codigo_verificacion)"')"
+esperar "el admin confirma → correo de confirmación" "$CITA3|cita_confirmada" "$(estado "$CITA3" "$ADMIN" confirmada >/dev/null; evento_ultimo EMAIL_ENVIADO | jq -r '"\(.dato_nuevo.cita_id)|\(.dato_nuevo.plantilla)"')"
+esperar "el admin ve el código en la agenda" "$COD3" "$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/agenda?fecha=$DIA" | jq -r --arg c "$CITA3" '.citas[] | select(.id==$c) | .codigo_verificacion')"
+esperar "/internal/notificaciones/cita no se publica en el gateway" 404 "$(codigo -X POST "$BASE/internal/notificaciones/cita")"
+esperar "auth-service no puede pedir correos de citas → 403" 403 "$(docker compose exec -T auth-service php -r '
+    const SERVICE_DIR = "/var/www/app"; require "/var/www/shared/bootstrap.php";
+    [$c] = Huellitas\Interno::post("http://notificaciones-service:8085/internal/notificaciones/cita", ["tipo" => "reservada"]); echo $c;')"
+
+caso "CP-43 Bloqueo de turnos: feriados y mantenimiento (A01, A09)"
+respiro
+bloquear() { "${C[@]}" -w '\n%{http_code}' -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$2" "$BASE/api/citas/admin/bloqueos"; }
+mas30() { local m=$(( 10#${1%:*} * 60 + 10#${1#*:} + 30 )); printf '%02d:%02d' $((m / 60)) $((m % 60)); }
+HORA4=$(disp "$DIA" | jq -r '[.turnos[] | select(.libres==2)][0].hora')
+cuerpo=$(jq -nc --arg d "$DIA" --arg i "$HORA4" --arg f "$(mas30 "$HORA4")" '{sede:"centro", fecha:$d, hora_inicio:$i, hora_fin:$f, motivo:"Mantenimiento del consultorio"}')
+esperar "un cliente no puede bloquear → 403" 403 "$(bloquear "$T2" "$cuerpo" | tail -1)"
+esperar "hora fuera de la grilla (08:15) → 422" 422 "$(bloquear "$ADMIN" "$(jq -c '.hora_inicio="08:15"' <<<"$cuerpo")" | tail -1)"
+esperar "hora final antes de la inicial → 422" 422 "$(bloquear "$ADMIN" "$(jq -c '.hora_fin="08:00" | .hora_inicio="09:00"' <<<"$cuerpo")" | tail -1)"
+r=$(bloquear "$ADMIN" "$(jq -c --arg i "$HORA3" --arg f "$(mas30 "$HORA3")" '.hora_inicio=$i | .hora_fin=$f' <<<"$cuerpo")")
+esperar "no se bloquea un turno con citas activas → 409 con cuántas hay" "409|1" "$(tail -1 <<<"$r")|$(head -n -1 <<<"$r" | jq -r .citas)"
+r=$(bloquear "$ADMIN" "$cuerpo")
+esperar "bloquear un turno libre → 201" 201 "$(tail -1 <<<"$r")"
+BLOQ=$(head -n -1 <<<"$r" | jq -r .bloqueo.id)
+esperar "TURNO_BLOQUEADO con el motivo" "$BLOQ|Mantenimiento del consultorio" "$(evento_ultimo TURNO_BLOQUEADO | jq -r '"\(.dato_nuevo.bloqueo_id)|\(.dato_nuevo.motivo)"')"
+esperar "el turno desaparece de la disponibilidad" 0 "$(disp "$DIA" | jq --arg h "$HORA4" '[.turnos[] | select(.hora==$h)] | length')"
+esperar "reservar en el turno bloqueado → 422" 422 "$(reservar "$T3" "$P2" "$HORA4" | tail -1)"
+esperar "la agenda del día muestra el bloqueo" "$HORA4" "$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/agenda?fecha=$DIA&sede=centro" | jq -r --argjson b "$BLOQ" '.bloqueos[] | select(.id==$b) | .hora_inicio')"
+respiro
+esperar "un cliente no puede quitar el bloqueo → 403" 403 "$(codigo -X DELETE -H "Authorization: Bearer $T2" "$BASE/api/citas/admin/bloqueos/$BLOQ")"
+esperar "el admin lo quita → 200" 200 "$(codigo -X DELETE -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/bloqueos/$BLOQ")"
+esperar "TURNO_DESBLOQUEADO guarda el bloqueo anterior" "$BLOQ|Mantenimiento del consultorio|false" "$(evento_ultimo TURNO_DESBLOQUEADO | jq -r '"\(.dato_anterior.bloqueo_id)|\(.dato_anterior.motivo)|\(.dato_nuevo.activo)"')"
+esperar "el turno vuelve a estar libre" 2 "$(disp "$DIA" | jq --arg h "$HORA4" '.turnos[] | select(.hora==$h) | .libres')"
+esperar "quitarlo otra vez → 404" 404 "$(codigo -X DELETE -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/bloqueos/$BLOQ")"
+# Feriado: el día entero de una sede, lejos de los días que usan las demás pruebas.
+FERIADO=$(gt -d "+$(( 45 + 10#$SUF % 10 )) day" +%F); [[ $(gt -d "$FERIADO" +%u) == 7 ]] && FERIADO=$(gt -d "$FERIADO +1 day" +%F)
+r=$(bloquear "$ADMIN" "$(jq -nc --arg d "$FERIADO" '{sede:"sur", fecha:$d, motivo:"Feriado"}')")
+esperar "bloquear el día entero (feriado) → 201" 201 "$(tail -1 <<<"$r")"
+esperar "ese día la sede no tiene turnos" 0 "$(disp "$FERIADO" paseos | jq '.turnos | length')"
+esperar "las otras sedes siguen abiertas" true "$(disp "$FERIADO" veterinaria | jq '.turnos | length > 0')"
+codigo -X DELETE -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/bloqueos/$(head -n -1 <<<"$r" | jq -r .bloqueo.id)" >/dev/null
+
 caso "CP-41 Un cliente no puede acaparar la agenda (D de STRIDE)"
+respiro
 ultimo=""
 for h in $(disp "$DIA" | jq -r '.turnos[].hora' | head -8); do
     ultimo=$(reservar "$T2" "$M1" "$h")
