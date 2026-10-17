@@ -20,6 +20,9 @@ final class ClimaController
     private const LON = -90.5069;
     private const CACHE = 'clima:guatemala';
     private const TTL = 600;
+    // Último dato bueno: si el proveedor no responde, el panel muestra este (marcado como desactualizado).
+    private const ULTIMO = 'clima:guatemala:ultimo';
+    private const TTL_ULTIMO = 86400;
 
     public function actual(): array
     {
@@ -31,10 +34,16 @@ final class ClimaController
 
         $clima = Env::get('OPENWEATHER_API_KEY') !== null ? self::openWeather() : self::openMeteo();
         if ($clima === null) {
+            $ultimo = Cache::redis()->get(self::ULTIMO);
+            if (is_string($ultimo) && is_array($clima = json_decode($ultimo, true))) {
+                return [200, ['desactualizado' => true] + $clima];
+            }
             throw new ApiError(503, 'Clima no disponible');
         }
         $clima += ['ciudad' => 'Ciudad de Guatemala', 'actualizado' => date('c')];
-        Cache::redis()->setex(self::CACHE, self::TTL, json_encode($clima, JSON_UNESCAPED_UNICODE));
+        $json = json_encode($clima, JSON_UNESCAPED_UNICODE);
+        Cache::redis()->setex(self::CACHE, self::TTL, $json);
+        Cache::redis()->setex(self::ULTIMO, self::TTL_ULTIMO, $json);
         return [200, $clima];
     }
 
@@ -97,8 +106,9 @@ final class ClimaController
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 3,
-            CURLOPT_TIMEOUT        => 5,
+            // Menos que los 4 s que espera pedidos-service: así responde 503 controlado y no un timeout.
+            CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_TIMEOUT        => 3,
             CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
         ]);
         $respuesta = curl_exec($ch);

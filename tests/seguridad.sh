@@ -432,8 +432,14 @@ caso "CP-36 Clima del panel admin (API externa: OpenWeatherMap u Open-Meteo)"
 esperar "un cliente no puede pedir el clima → 403" 403 "$(codigo -H "Authorization: Bearer $T2" "$BASE/api/pedidos/admin/clima")"
 esperar "la ruta interna no se publica en el gateway" 404 "$(codigo -X POST "$BASE/internal/notificaciones/clima")"
 clima=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/pedidos/admin/clima")
-jq -e '(.temperatura | type) == "number" and (.descripcion | length) > 0' <<<"$clima" >/dev/null \
-    && ok "el admin ve el clima: $(jq -r '"\(.temperatura) °C, \(.descripcion) (\(.proveedor))"' <<<"$clima")" || mal "sin clima: $clima"
+if jq -e '(.temperatura | type) == "number" and (.descripcion | length) > 0' <<<"$clima" >/dev/null; then
+    ok "el admin ve el clima: $(jq -r '"\(.temperatura) °C, \(.descripcion) (\(.proveedor))"' <<<"$clima")"
+elif [[ $(jq -r .error <<<"$clima") == "Clima no disponible" ]]; then
+    # El proveedor es externo: si no responde, lo que se prueba es que la falla sea controlada.
+    ok "el proveedor del clima no respondió y el panel recibe un 503 controlado"
+else
+    mal "sin clima: $clima"
+fi
 
 # ======================= FASE 15: módulo de citas =======================
 caso "CP-37 Mascotas: cada cliente ve y edita solo las suyas (A01)"

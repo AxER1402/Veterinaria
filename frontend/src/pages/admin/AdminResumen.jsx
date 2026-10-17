@@ -39,7 +39,7 @@ export default function AdminResumen() {
           note={integridad.integra ? `${integridad.revisados} registros verificados` : `Primer registro alterado: #${integridad.primer_registro_alterado}`} />
         <Stat label="Clima en Ciudad de Guatemala"
           value={clima ? `${Math.round(clima.temperatura)} °C` : clima === false ? 'No disponible' : '…'}
-          note={clima ? `${clima.descripcion} · humedad ${clima.humedad}\u00a0% · viento ${clima.viento_kmh}\u00a0km/h · ${clima.proveedor}` : 'Para planificar las entregas'} />
+          note={clima ? `${clima.descripcion} · humedad ${clima.humedad}\u00a0% · viento ${clima.viento_kmh}\u00a0km/h · ${clima.proveedor}${clima.desactualizado ? ' · último dato disponible' : ''}` : 'Para planificar las entregas'} />
       </div>
 
       <div className="admin-grid">
