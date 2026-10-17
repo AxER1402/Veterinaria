@@ -44,7 +44,7 @@ echo "MariaDB> SELECT * FROM pagos_db.pagos;"
 master "SELECT id, id_pedido, monto, moneda, metodo, payment_intent_id, stripe_status, estado, fecha_pago FROM pagos_db.pagos ORDER BY created_at DESC"
 echo "MariaDB> -- columnas que parezcan de tarjeta en las 4 bases de negocio"
 master "SELECT COUNT(*) AS columnas_de_tarjeta FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA IN ('auth_db','catalogo_db','pedidos_db','pagos_db')
+        WHERE TABLE_SCHEMA IN ('auth_db','catalogo_db','pedidos_db','pagos_db','citas_db')
           AND COLUMN_NAME REGEXP 'card|tarjeta|cvv|cvc|pan\$|expir|vencimiento|track'"
 echo '```'
 echo

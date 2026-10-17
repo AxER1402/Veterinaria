@@ -42,6 +42,7 @@ Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 | `pedidos-vencimientos` | Tarea periódica (cada 15 min): cancela los pedidos sin pagar tras `PEDIDO_VENCE_HORAS` (24 h) y devuelve el stock | — |
 | `pagos-service` | Stripe (PaymentIntent + webhook firmado) y PayPal (Orders v2, captura en servidor). Sin datos de tarjeta | 8084 (interno; solo el webhook es público) |
 | `notificaciones-service` | Correo de confirmación por EmailJS con código de verificación HMAC. Clima del panel admin (OpenWeatherMap u Open-Meteo) | 8085 (interno) |
+| `citas-service` | Mascotas de cada cliente y citas por sede en turnos de 30 min (2 cupos). La BD impide la doble reserva; máx. 5 citas próximas por cliente | 8087 (interno) |
 | `security-audit-service` | Bitácora `security_audit_logs`: append-only, con cadena de hashes | 8086 (interno) |
 | `mariadb-master` / `mariadb-slave` | BD de negocio (una por servicio) con réplica de solo lectura | interno |
 | `mariadb-audit` | `audit_db` en una instancia y un volumen aparte | interno |
@@ -55,6 +56,8 @@ APIs externas: **Stripe**, **PayPal**, **EmailJS**, **Cloudinary**, **Google Map
 ops/generar-env.sh        # .env con secretos aleatorios; las claves de Stripe/PayPal/EmailJS se agregan a mano
 docker compose up -d --build
 ```
+
+¿Ya lo tenías levantado antes del módulo de citas? Corre una vez `ops/migrar-citas.sh` (agrega `CITAS_DB_PASSWORD` al `.env` y crea `citas_db` sin borrar datos) y luego `docker compose up -d --build`.
 
 Abrir <https://localhost:8443>. En local el certificado es autofirmado y se genera solo. En producción se monta el de Let's Encrypt en `gateway/certs/`.
 
@@ -88,6 +91,10 @@ Todos los usuarios (app, BD y Redis) están en [`usuarios.md`](usuarios.md).
 | POST | `/api/pagos/webhook/stripe` | Stripe. Requiere `Stripe-Signature` válida |
 | GET | `/api/pedidos/admin/todos` · `PATCH /api/pedidos/admin/{uuid}/estado` | admin |
 | GET | `/api/pedidos/admin/clima` | admin. Clima de Ciudad de Guatemala, en caché 10 min |
+| GET | `/api/citas/servicios` · `/api/citas/disponibilidad?servicio=&fecha=` | público |
+| GET/POST | `/api/citas/mascotas` · `PATCH`/`DELETE /api/citas/mascotas/{uuid}` | cliente. Solo sus mascotas |
+| GET/POST | `/api/citas` · `POST /api/citas/{uuid}/cancelar` | cliente. Solo sus citas; cancela hasta 2 h antes |
+| GET | `/api/citas/admin/agenda?fecha=&sede=` · `PATCH /api/citas/admin/{uuid}/estado` | admin |
 | GET | `/api/auditoria/eventos?accion=&resultado=&servicio=&usuario_email=&desde=&hasta=&limite=&pagina=` | admin |
 | GET | `/api/auditoria/resumen` | admin |
 | GET | `/api/auditoria/integridad` | admin. Verifica la cadena de hashes |
@@ -153,11 +160,12 @@ services/
   pedidos/           pedidos-service (pedidos, cupones, totales)
   pagos/             pagos-service (Stripe, PayPal, webhook)
   notificaciones/    notificaciones-service (EmailJS, clima)
+  citas/             citas-service (mascotas, turnos, agenda)
   audit/             security-audit-service
-db/master/           usuarios por servicio + esquemas y datos de auth_db, catalogo_db (24 productos), pedidos_db, pagos_db
+db/master/           usuarios por servicio + esquemas y datos de auth_db, catalogo_db (24 productos), pedidos_db, pagos_db, citas_db
 db/audit/            audit_db: tabla, triggers append-only, usuario INSERT/SELECT
 docs/                STRIDE/DFD, OWASP, PCI-DSS, BCP/DRP, ALE/ROSI, ISO 27001, despliegue, ZAP, PDF de SEC-1
-ops/                 generar-env.sh, backup.sh, backup-binlogs.sh, restore.sh, simulacro-drp.sh, evidencia.sh
+ops/                 generar-env.sh, migrar-citas.sh, backup.sh, backup-binlogs.sh, restore.sh, simulacro-drp.sh, evidencia.sh
 .github/workflows/   CI: lint, build, npm audit, php -l, secretos, pruebas de seguridad y simulacro DRP
 docker-compose.prod.yml  producción: puertos 80/443 y Let's Encrypt (certbot)
 docker-compose.proxy.yml detrás del Nginx de otro sistema (VPS compartido); scripts en ops/vps/

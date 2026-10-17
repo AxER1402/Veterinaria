@@ -54,6 +54,7 @@ services:
       catalogo-service: { condition: service_healthy }
       pedidos-service: { condition: service_healthy }
       pagos-service: { condition: service_healthy }
+      citas-service: { condition: service_healthy }
       security-audit-service: { condition: service_healthy }
     mem_limit: 128m
     cpu_shares: 1024
@@ -147,6 +148,25 @@ services:
     depends_on:
       pedidos-service: { condition: service_healthy }
 
+  # Mascotas y citas de la clínica, guardería y paseos (FASE 15).
+  citas-service:
+    <<: *php
+    build: { context: ./services, args: { SERVICE: citas, PORT: 8087 } }
+    image: huellitas/citas-service:latest
+    environment:
+      <<: *php-env
+      SERVICE_NAME: citas-service
+      DB_HOST: mariadb-master
+      DB_READ_HOST: mariadb-slave
+      DB_NAME: citas_db
+      DB_USER: citas_user
+      DB_PASSWORD: ${CITAS_DB_PASSWORD:?falta CITAS_DB_PASSWORD}
+      CITAS_CUPOS: ${CITAS_CUPOS:-2}
+    depends_on:
+      mariadb-master: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      security-audit-service: { condition: service_healthy }
+
   # Pagos y notificaciones son los únicos con salida a Internet (Stripe, PayPal, EmailJS).
   pagos-service:
     <<: *php
@@ -219,6 +239,7 @@ services:
       CATALOGO_DB_PASSWORD: ${CATALOGO_DB_PASSWORD:?falta CATALOGO_DB_PASSWORD}
       PEDIDOS_DB_PASSWORD: ${PEDIDOS_DB_PASSWORD:?falta PEDIDOS_DB_PASSWORD}
       PAGOS_DB_PASSWORD: ${PAGOS_DB_PASSWORD:?falta PAGOS_DB_PASSWORD}
+      CITAS_DB_PASSWORD: ${CITAS_DB_PASSWORD:?falta CITAS_DB_PASSWORD}
     volumes:
       - master_data:/var/lib/mysql
       - ./db/master:/docker-entrypoint-initdb.d:ro

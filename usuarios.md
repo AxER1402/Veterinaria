@@ -30,6 +30,7 @@ Ninguno es accesible desde fuera de la red Docker. Las contraseñas **no** está
 | `catalogo_user` | ídem solo en `catalogo_db` | `CATALOGO_DB_PASSWORD` |
 | `pedidos_user` | ídem solo en `pedidos_db` | `PEDIDOS_DB_PASSWORD` |
 | `pagos_user` | `SELECT/INSERT/UPDATE` en `pagos_db` (sin `DELETE`) | `PAGOS_DB_PASSWORD` |
+| `citas_user` | `SELECT/INSERT/UPDATE` en `citas_db` (sin `DELETE`: mascotas y citas se desactivan o cancelan) | `CITAS_DB_PASSWORD` |
 | `root` (BD de auditoría) | todo en `audit_db` | `AUDIT_DB_ROOT_PASSWORD` |
 | `audit_user` | `SELECT/INSERT` solo en `security_audit_logs` (append-only) | `AUDIT_DB_PASSWORD` |
 | Redis | — | `REDIS_PASSWORD` |

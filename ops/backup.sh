@@ -36,8 +36,8 @@ instancia() {
 
 # --master-data=2 deja anotada (como comentario) la posición del binlog en el instante del volcado:
 # desde ahí se aplican los binlogs archivados para recuperar hasta un minuto concreto (PITR).
-echo "→ Bases de negocio (maestro): auth_db catalogo_db pedidos_db pagos_db"
-volcar mariadb-master "$DB_ROOT_PASSWORD" negocio.sql.gz.enc "--master-data=2" auth_db catalogo_db pedidos_db pagos_db
+echo "→ Bases de negocio (maestro): auth_db catalogo_db pedidos_db pagos_db citas_db"
+volcar mariadb-master "$DB_ROOT_PASSWORD" negocio.sql.gz.enc "--master-data=2" auth_db catalogo_db pedidos_db pagos_db citas_db
 echo "→ Bitácora (instancia de auditoría): audit_db"
 volcar mariadb-audit "$AUDIT_DB_ROOT_PASSWORD" auditoria.sql.gz.enc "" audit_db
 # El grep corre en una sustitución de procesos: se espera a que termine de escribir.

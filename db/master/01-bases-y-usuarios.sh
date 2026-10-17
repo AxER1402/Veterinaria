@@ -8,14 +8,18 @@ docker_process_sql <<-EOSQL
 	CREATE DATABASE IF NOT EXISTS catalogo_db  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 	CREATE DATABASE IF NOT EXISTS pedidos_db   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 	CREATE DATABASE IF NOT EXISTS pagos_db     CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+	CREATE DATABASE IF NOT EXISTS citas_db     CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 	CREATE USER IF NOT EXISTS 'auth_user'@'%'     IDENTIFIED BY '${AUTH_DB_PASSWORD}';
 	CREATE USER IF NOT EXISTS 'catalogo_user'@'%' IDENTIFIED BY '${CATALOGO_DB_PASSWORD}';
 	CREATE USER IF NOT EXISTS 'pedidos_user'@'%'  IDENTIFIED BY '${PEDIDOS_DB_PASSWORD}';
 	CREATE USER IF NOT EXISTS 'pagos_user'@'%'    IDENTIFIED BY '${PAGOS_DB_PASSWORD}';
+	CREATE USER IF NOT EXISTS 'citas_user'@'%'    IDENTIFIED BY '${CITAS_DB_PASSWORD}';
 
 	GRANT SELECT, INSERT, UPDATE, DELETE ON auth_db.*     TO 'auth_user'@'%';
 	GRANT SELECT, INSERT, UPDATE, DELETE ON catalogo_db.* TO 'catalogo_user'@'%';
 	GRANT SELECT, INSERT, UPDATE, DELETE ON pedidos_db.*  TO 'pedidos_user'@'%';
 	GRANT SELECT, INSERT, UPDATE ON pagos_db.*            TO 'pagos_user'@'%';
+	-- Sin DELETE: mascotas y citas se desactivan o cancelan, no se borran (trazabilidad).
+	GRANT SELECT, INSERT, UPDATE ON citas_db.*            TO 'citas_user'@'%';
 EOSQL

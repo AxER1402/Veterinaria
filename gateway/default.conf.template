@@ -22,6 +22,7 @@ limit_req_zone $binary_remote_addr zone=catalogo:10m  rate=20r/s;
 limit_req_zone $binary_remote_addr zone=pedidos:10m   rate=10r/s;
 limit_req_zone $binary_remote_addr zone=cotizar:10m   rate=5r/s;
 limit_req_zone $binary_remote_addr zone=auditoria:10m rate=10r/s;
+limit_req_zone $binary_remote_addr zone=citas:10m     rate=10r/s;
 limit_conn_zone $binary_remote_addr zone=conexiones:10m;
 limit_req_status 429;
 limit_conn_status 429;
@@ -55,6 +56,7 @@ upstream auth_service { zone up_auth 64k; server auth-service:8081 resolve; keep
 upstream catalogo_service { zone up_catalogo 64k; server catalogo-service:8082 resolve; keepalive 16; }
 upstream pedidos_service { zone up_pedidos 64k; server pedidos-service:8083 resolve; keepalive 16; }
 upstream pagos_service { zone up_pagos 64k; server pagos-service:8084 resolve; keepalive 8; }
+upstream citas_service { zone up_citas 64k; server citas-service:8087 resolve; keepalive 8; }
 upstream audit_service { zone up_audit 64k; server security-audit-service:8086 resolve; keepalive 8; }
 
 # ---------- HTTP → HTTPS ----------
@@ -131,6 +133,11 @@ server {
     location = /api/pagos/webhook/stripe {
         limit_req zone=pedidos burst=30 nodelay;
         proxy_pass http://pagos_service;
+        include /etc/nginx/conf.d/proxy_comun.inc;
+    }
+    location /api/citas {
+        limit_req zone=citas burst=40 nodelay;
+        proxy_pass http://citas_service;
         include /etc/nginx/conf.d/proxy_comun.inc;
     }
     location /api/auditoria/ {

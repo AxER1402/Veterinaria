@@ -318,7 +318,7 @@ webhook "$EV" "t=$TS,v1=$(firmar "$TS" "$EV")" >/dev/null
 esperar "tarjeta rechazada → PAGO_FALLIDO con el código" "FALLO|card_declined" "$(evento_ultimo PAGO_FALLIDO | jq -r '"\(.resultado)|\(.dato_nuevo.motivo)"')"
 
 caso "CP-28 Sin datos de tarjeta en la base (PCI-DSS, SEC-3)"
-cols=$(docker compose exec -T mariadb-master mariadb -N -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA IN ('auth_db','catalogo_db','pedidos_db','pagos_db') AND COLUMN_NAME REGEXP 'card|tarjeta|cvv|cvc|pan$|expir|vencimiento|track'")
+cols=$(docker compose exec -T mariadb-master mariadb -N -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA IN ('auth_db','catalogo_db','pedidos_db','pagos_db','citas_db') AND COLUMN_NAME REGEXP 'card|tarjeta|cvv|cvc|pan$|expir|vencimiento|track'")
 esperar "ninguna columna de tarjeta en las 4 bases" 0 "$cols"
 esperar "pagos guarda la referencia de la pasarela, no la tarjeta" "$PI" "$(docker compose exec -T mariadb-master mariadb -N -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT payment_intent_id FROM pagos_db.pagos WHERE id_pedido='$PAGO_ID'")"
 esperar "pagos_user no puede borrar pagos" 0 "$(docker compose exec -T mariadb-master mariadb -N -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM information_schema.SCHEMA_PRIVILEGES WHERE GRANTEE LIKE '%pagos_user%' AND PRIVILEGE_TYPE='DELETE'")"
@@ -434,6 +434,89 @@ esperar "la ruta interna no se publica en el gateway" 404 "$(codigo -X POST "$BA
 clima=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/pedidos/admin/clima")
 jq -e '(.temperatura | type) == "number" and (.descripcion | length) > 0' <<<"$clima" >/dev/null \
     && ok "el admin ve el clima: $(jq -r '"\(.temperatura) °C, \(.descripcion) (\(.proveedor))"' <<<"$clima")" || mal "sin clima: $clima"
+
+# ======================= FASE 15: módulo de citas =======================
+caso "CP-37 Mascotas: cada cliente ve y edita solo las suyas (A01)"
+CLIENTE3="citas$SUF@correo.gt"
+post /api/auth/registro "{\"nombre\":\"Dueña $SUF\",\"email\":\"$CLIENTE3\",\"password\":\"Segura123\"}" >/dev/null
+T3=$(login "$CLIENTE3" Segura123)
+mascota() { # mascota <token> <nombre> → id
+    post /api/citas/mascotas "$(jq -nc --arg n "$2" '{nombre:$n, especie:"perro", raza:"Mestizo", peso_kg:12.5}')" -H "Authorization: Bearer $1" | jq -r .mascota.id
+}
+esperar "sin token → 401" 401 "$(codigo "$BASE/api/citas/mascotas")"
+M1=$(mascota "$T2" "Firulais $SUF")
+[[ "$M1" =~ $UUID_RE ]] && ok "la mascota se identifica con UUID ($M1)" || mal "id de mascota inválido: $M1"
+esperar "MASCOTA_REGISTRADA en la bitácora" "$CLIENTE2|$M1" "$(evento_ultimo MASCOTA_REGISTRADA | jq -r '"\(.usuario_email)|\(.dato_nuevo.mascota_id)"')"
+esperar "otro cliente no ve la mascota en su lista" 0 "$("${C[@]}" -H "Authorization: Bearer $T3" "$BASE/api/citas/mascotas" | jq --arg m "$M1" '[.mascotas[] | select(.id==$m)] | length')"
+esperar "editar una mascota ajena → 404" 404 "$(codigo -X PATCH -H "Authorization: Bearer $T3" -H 'Content-Type: application/json' -d '{"nombre":"Robado"}' "$BASE/api/citas/mascotas/$M1")"
+esperar "el intento queda como ACCESO_DENEGADO" "mascota|$CLIENTE3" "$(evento_ultimo ACCESO_DENEGADO | jq -r '"\(.dato_nuevo.recurso)|\(.usuario_email)"')"
+esperar "especie inválida → 422" 422 "$(codigo -X POST -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d '{"nombre":"X","especie":"dragon"}' "$BASE/api/citas/mascotas")"
+esperar "XSS en el nombre → 400" 400 "$(codigo -X POST -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d '{"nombre":"<script>alert(1)</script>","especie":"gato"}' "$BASE/api/citas/mascotas")"
+esperar "editar la propia: peso actualizado" 14 "$("${C[@]}" -X PATCH -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d '{"peso_kg":14}' "$BASE/api/citas/mascotas/$M1" | jq .mascota.peso_kg)"
+esperar "MASCOTA_ACTUALIZADA guarda el peso anterior y el nuevo" "12.5|14" "$(evento_ultimo MASCOTA_ACTUALIZADA | jq -r '"\(.dato_anterior.peso_kg)|\(.dato_nuevo.peso_kg)"')"
+
+caso "CP-38 Disponibilidad y reserva de citas"
+# Día al azar entre mañana y +40 días (nunca domingo), para que corridas seguidas no llenen la agenda.
+DIA=$(date -d "+$(( 1 + 10#$SUF % 40 )) day" +%F); [[ $(date -d "$DIA" +%u) == 7 ]] && DIA=$(date -d "$DIA +1 day" +%F)
+DOMINGO=$(date -d "next sunday" +%F)
+disp() { "${C[@]}" "$BASE/api/citas/disponibilidad?servicio=${2:-veterinaria}&fecha=$1"; }
+turnos=$(disp "$DIA")
+esperar "disponibilidad pública (sin cuenta)" 200 "$(codigo "$BASE/api/citas/disponibilidad?servicio=veterinaria&fecha=$DIA")"
+esperar "la consulta veterinaria se agenda en la sede Centro" centro "$(jq -r .sede.codigo <<<"$turnos")"
+esperar "domingo cerrado: sin turnos" 0 "$(disp "$DOMINGO" | jq '.turnos | length')"
+esperar "fecha pasada → 422" 422 "$(codigo "$BASE/api/citas/disponibilidad?servicio=veterinaria&fecha=$(date -d yesterday +%F)")"
+esperar "servicio inexistente → 422" 422 "$(codigo "$BASE/api/citas/disponibilidad?servicio=cirugia&fecha=$DIA")"
+HORA=$(jq -r '[.turnos[] | select(.libres==2)][0].hora' <<<"$turnos")
+reservar() { # reservar <token> <mascota> <hora> [dia] → cuerpo<LF>código
+    "${C[@]}" -w '\n%{http_code}' -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' \
+        -d "$(jq -nc --arg m "$2" --arg h "$3" --arg d "${4:-$DIA}" '{mascota_id:$m, servicio:"veterinaria", fecha:$d, hora:$h, nombre:"Compradora Prueba", telefono:"5555-1234"}')" "$BASE/api/citas"
+}
+esperar "fuera de horario (07:00) → 422" 422 "$(reservar "$T2" "$M1" 07:00 | tail -1)"
+esperar "con la mascota de otro cliente → 404" 404 "$(reservar "$T3" "$M1" "$HORA" | tail -1)"
+r=$(reservar "$T2" "$M1" "$HORA")
+esperar "reserva → 201" 201 "$(tail -1 <<<"$r")"
+CITA=$(head -n -1 <<<"$r" | jq -r .cita.id)
+esperar "la cita queda pendiente con UUID" "pendiente|true" "$(head -n -1 <<<"$r" | jq -r --arg re "$UUID_RE" '"\(.cita.estado)|\(.cita.id | test($re))"')"
+esperar "CITA_CREADA en la bitácora" "$CITA|$DIA ${HORA}:00" "$(evento_ultimo CITA_CREADA | jq -r '"\(.dato_nuevo.cita_id)|\(.dato_nuevo.inicio)"')"
+esperar "el turno queda con 1 cupo libre" 1 "$(disp "$DIA" | jq --arg h "$HORA" '.turnos[] | select(.hora==$h) | .libres')"
+esperar "la misma mascota no puede tener dos citas a la misma hora → 409" 409 "$(reservar "$T2" "$M1" "$HORA" | tail -1)"
+esperar "otro cliente no puede cancelar la cita → 404" 404 "$(codigo -X POST -H "Authorization: Bearer $T3" "$BASE/api/citas/$CITA/cancelar")"
+esperar "otro cliente no la ve en «mis citas»" 0 "$("${C[@]}" -H "Authorization: Bearer $T3" "$BASE/api/citas" | jq --arg c "$CITA" '[.citas[] | select(.id==$c)] | length')"
+
+caso "CP-39 Sin doble reserva aunque lleguen a la vez (condición de carrera)"
+HORA2=$(disp "$DIA" | jq -r '[.turnos[] | select(.libres==2)][0].hora')
+P1=$(mascota "$T3" "Luna $SUF"); P2=$(mascota "$T3" "Max $SUF"); P3=$(mascota "$T3" "Toby $SUF")
+carrera=$(mktemp -d)
+for p in "$P1" "$P2" "$P3"; do { reservar "$T3" "$p" "$HORA2" | tail -1; echo; } > "$carrera/$p" & done; wait
+codigos=$(cat "$carrera"/* | sort | tr '\n' ' '); rm -rf "$carrera"
+esperar "3 reservas simultáneas para 2 cupos: 2 entran y 1 recibe 409" "201 201 409 " "$codigos"
+esperar "el turno desaparece de la disponibilidad" 0 "$(disp "$DIA" | jq --arg h "$HORA2" '[.turnos[] | select(.hora==$h)] | length')"
+esperar "en la BD hay exactamente 2 citas activas en ese turno" 2 "$(docker compose exec -T mariadb-master mariadb -N -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM citas_db.citas WHERE sede='centro' AND inicio='$DIA $HORA2:00' AND estado<>'cancelada'")"
+
+caso "CP-40 Agenda del admin y estados de la cita (A01, A09)"
+esperar "cliente → agenda 403" 403 "$(codigo -H "Authorization: Bearer $T2" "$BASE/api/citas/admin/agenda?fecha=$DIA")"
+agenda=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/agenda?fecha=$DIA&sede=centro")
+esperar "el admin ve la cita con el teléfono del cliente" "5555-1234" "$(jq -r --arg c "$CITA" '.citas[] | select(.id==$c) | .cliente.telefono' <<<"$agenda")"
+estado() { "${C[@]}" -w '\n%{http_code}' -X PATCH -H "Authorization: Bearer $2" -H 'Content-Type: application/json' -d "{\"estado\":\"$3\"}" "$BASE/api/citas/admin/$1/estado"; }
+esperar "un cliente no puede cambiar el estado → 403" 403 "$(estado "$CITA" "$T2" confirmada | tail -1)"
+esperar "pendiente → confirmada" "confirmada" "$(estado "$CITA" "$ADMIN" confirmada | head -n -1 | jq -r .cita.estado)"
+esperar "CITA_ESTADO_CAMBIADO con estado anterior y nuevo" "pendiente|confirmada" "$(evento_ultimo CITA_ESTADO_CAMBIADO | jq -r '"\(.dato_anterior.estado)|\(.dato_nuevo.estado)"')"
+esperar "no se marca atendida antes del día de la cita → 422" 422 "$(estado "$CITA" "$ADMIN" atendida | tail -1)"
+esperar "transición inválida (confirmada → pendiente) → 422" 422 "$(estado "$CITA" "$ADMIN" pendiente | tail -1)"
+esperar "el cliente cancela su cita → 200" 200 "$(codigo -X POST -H "Authorization: Bearer $T2" "$BASE/api/citas/$CITA/cancelar")"
+esperar "CITA_CANCELADA en la bitácora" "$CITA|cancelada" "$(evento_ultimo CITA_CANCELADA | jq -r '"\(.dato_nuevo.cita_id)|\(.dato_nuevo.estado)"')"
+esperar "al cancelar se libera el cupo" 2 "$(disp "$DIA" | jq --arg h "$HORA" '.turnos[] | select(.hora==$h) | .libres')"
+esperar "cancelar de nuevo → 409" 409 "$(codigo -X POST -H "Authorization: Bearer $T2" "$BASE/api/citas/$CITA/cancelar")"
+esperar "no se desactiva una mascota con citas próximas → 409" 409 "$(codigo -X DELETE -H "Authorization: Bearer $T3" "$BASE/api/citas/mascotas/$P1")"
+
+caso "CP-41 Un cliente no puede acaparar la agenda (D de STRIDE)"
+ultimo=""
+for h in $(disp "$DIA" | jq -r '.turnos[].hora' | head -8); do
+    ultimo=$(reservar "$T2" "$M1" "$h")
+    [[ $(tail -1 <<<"$ultimo") == 409 ]] && break
+done
+esperar "la 6.ª cita próxima → 409" "409|true" "$(tail -1 <<<"$ultimo")|$(head -n -1 <<<"$ultimo" | jq -r '.error | test("citas próximas")')"
+esperar "el cliente tiene 5 citas próximas" 5 "$("${C[@]}" -H "Authorization: Bearer $T2" "$BASE/api/citas" | jq '[.citas[] | select(.estado=="pendiente")] | length')"
 
 caso "CP-16 Rate limiting en /login (gateway, se corre al final)"
 codigos=$(for i in $(seq 1 15); do codigo -X POST -H 'Content-Type: application/json' -d '{"email":"flood@correo.gt","password":"x"}' "$BASE/api/auth/login"; echo; done)

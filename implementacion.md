@@ -315,6 +315,31 @@ Implementar y documentar (mínimo 5, ideal 7 incluyendo A08). Referenciar en el 
 
 ---
 
+## FASE 15 — Módulos de la veterinaria (extra, 16 de octubre de 2026)
+
+Hoy la tienda es real pero el formulario «Reservar cita» de Inicio y Contacto no guarda nada (`BookingForm.jsx` solo hace `console.info`). Esta fase convierte la parte de servicios en un sistema de verdad, con los mismos controles que la tienda.
+
+**Supuestos (corregir si no van):**
+- Un microservicio nuevo, **`citas-service`** (PHP 8.3, puerto 8087 interno, base `citas_db` con su propio usuario). Llevaría la arquitectura a 7 microservicios.
+- El admin hace también de veterinario. No se agrega un rol nuevo, porque el enunciado fija el ENUM `admin, cliente, anonimo` en la bitácora.
+- Horario de lunes a sábado de 8:00 a 20:00, en turnos de 30 min. **2 cupos por turno y sede** (dos consultorios o dos cuidadores).
+- Cada servicio se presta en su sede: consulta, vacunación y peluquería en Centro; guardería y hospedaje en Norte; paseos y entrenamiento en Sur.
+- Las citas no se cobran en línea: se pagan en la sede. Así no se toca PCI-DSS.
+- Correos con EmailJS usando una segunda plantilla (`EMAILJS_TEMPLATE_CITA_ID`). Sin ella se audita `EMAIL_ENVIADO` con FALLO, igual que hoy.
+
+| Paso | Qué se entrega | Seguridad |
+|---|---|---|
+| **A1** ✅ citas-service (backend) | Tablas `mascotas`, `servicios`, `citas` y `turnos_bloqueados`. API: disponibilidad pública por sede, servicio y fecha; CRUD de *mis mascotas*; crear cita, ver *mis citas* y cancelar (hasta 2 h antes); en admin, agenda del día y cambio de estado (`pendiente → confirmada → atendida`, `no_asistio`, `cancelada`). Se suma al gateway, al Compose (hardening, healthcheck y límites) y a `generar-env.sh` | A01: el dueño sale del JWT en cada consulta. Sin doble reserva por condición de carrera: `UNIQUE (sede, inicio, cupo)`. Auditoría: `MASCOTA_REGISTRADA`, `CITA_CREADA`, `CITA_CANCELADA`, `CITA_ESTADO_CAMBIADO`. Rate limit propio. Pruebas CP-37… |
+| **A2** Reserva real (frontend) | `BookingForm` conectado: elige servicio → sede → día → turno libre → mascota. Si no hay sesión, pide entrar o registrarse. Páginas `/cuenta/mascotas` y `/cuenta/citas` | Validación en el servidor; el formulario solo ayuda |
+| **A3** Agenda del admin + correo | Pestaña *Agenda* en el panel: citas del día por sede, cambio de estado y bloqueo de turnos (feriados, mantenimiento). Correo de confirmación de la cita con código HMAC, como el comprobante de pedido. Tarjeta «Citas de hoy» en el resumen | `ACCESO_ADMIN_PANEL` ya cubre la entrada; cada cambio de estado se audita con `dato_anterior`/`dato_nuevo` |
+| **B1** Historial clínico y carné de vacunas | Al marcar una consulta como `atendida`, el admin registra el peso, el diagnóstico, el tratamiento y las vacunas aplicadas con la fecha de la próxima dosis. El cliente ve el **carné de vacunas** de su mascota (solo lectura) | Datos de salud = datos personales (A.5.34): solo el dueño y el admin. Se audita `HISTORIAL_REGISTRADO` y `HISTORIAL_CONSULTADO` (lectura del admin) |
+| **C1** Recordatorios | Tarea periódica `citas-recordatorios` (como `pedidos-vencimientos`): un día antes manda el recordatorio de la cita, avisa 7 días antes de que venza una vacuna y marca `no_asistio` las citas pasadas sin atender | Auditoría `RECORDATORIO_ENVIADO`. Healthcheck por último ciclo correcto |
+| **D1** Documentación | STRIDE/DFD con el flujo de citas, tabla OWASP, BIA (`citas-service` con criticidad ALTA, RTO 30 min y RPO 5 min), respaldos con `citas_db`, README, `usuarios.md`, guion de la presentación y PDF SEC-1 | — |
+
+Como en las fases anteriores: un commit por paso, `tests/seguridad.sh` y el CI en verde antes de seguir. **En la base de desarrollo**, `citas_db` necesita volúmenes nuevos de master y slave (los init SQL solo corren la primera vez) o aplicar `db/master/07-citas_db.sql` a mano en el master; la réplica la copia sola.
+
+---
+
 ## Recursos recomendados
 
 - Docker Compose: https://docs.docker.com/compose
@@ -337,7 +362,8 @@ Implementar y documentar (mínimo 5, ideal 7 incluyendo A08). Referenciar en el 
 
 ## Dónde nos quedamos (16 de octubre de 2026)
 
-- **Último trabajo:** PDF SEC-1 regenerado (ya dice Semgrep CE), clima en el panel admin (OpenWeatherMap, con Open-Meteo de respaldo sin clave; CP-36) y gráfica de ventas con Chart.js, como pide la rúbrica (criterio 6). `tests/seguridad.sh` en verde.
+- **FASE 15 en curso:** A1 hecho (`citas-service`, CP-37 a CP-41, 203 pruebas en verde). Sigue **A2** (reserva real en el frontend). Quien ya tenía el stack levantado corre `ops/migrar-citas.sh` antes de `docker compose up -d --build`.
+- **Antes:** PDF SEC-1 regenerado (ya dice Semgrep CE), clima en el panel admin (OpenWeatherMap, con Open-Meteo de respaldo sin clave; CP-36) y gráfica de ventas con Chart.js, como pide la rúbrica (criterio 6). `tests/seguridad.sh` en verde.
 - **Enunciado:** `instrucciones.docx` es el original del catedrático. Se comparó con este archivo y no trae requisitos nuevos.
 - **Lo siguiente, en este orden:**
   1. **Claves sandbox** de Stripe, PayPal y EmailJS en el `.env` (pendientes 3–5). Se pueden probar en local antes de desplegar.

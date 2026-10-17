@@ -37,10 +37,16 @@ final class AuditController
         'PRECIO_MODIFICADO'       => ['catalogo-service'],
         'PRODUCTO_AGOTADO'        => ['catalogo-service', 'pedidos-service'],
         'EMAIL_ENVIADO'           => ['notificaciones-service'],
+        // Módulo de citas (FASE 15).
+        'MASCOTA_REGISTRADA'      => ['citas-service'],
+        'MASCOTA_ACTUALIZADA'     => ['citas-service'],
+        'CITA_CREADA'             => ['citas-service'],
+        'CITA_CANCELADA'          => ['citas-service'],
+        'CITA_ESTADO_CAMBIADO'    => ['citas-service'],
         // Extra: intentos de ver recursos ajenos (A01), útil para detectar enumeración.
-        'ACCESO_DENEGADO'         => ['auth-service', 'catalogo-service', 'pedidos-service', 'pagos-service'],
+        'ACCESO_DENEGADO'         => ['auth-service', 'catalogo-service', 'pedidos-service', 'pagos-service', 'citas-service'],
     ];
-    private const SERVICIOS = ['auth-service', 'catalogo-service', 'pedidos-service', 'pagos-service', 'notificaciones-service'];
+    private const SERVICIOS = ['auth-service', 'catalogo-service', 'pedidos-service', 'pagos-service', 'notificaciones-service', 'citas-service'];
     private const ROLES = ['admin', 'cliente', 'anonimo'];
     private const RESULTADOS = ['EXITO', 'FALLO', 'FRAUDE'];
     private const COLUMNAS = ['timestamp', 'usuario_id', 'usuario_email', 'rol', 'accion', 'servicio', 'pedido_id',
