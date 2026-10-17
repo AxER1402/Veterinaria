@@ -572,6 +572,50 @@ esperar "ese día la sede no tiene turnos" 0 "$(disp "$FERIADO" paseos | jq '.tu
 esperar "las otras sedes siguen abiertas" true "$(disp "$FERIADO" veterinaria | jq '.turnos | length > 0')"
 codigo -X DELETE -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/bloqueos/$(head -n -1 <<<"$r" | jq -r .bloqueo.id)" >/dev/null
 
+caso "CP-44 Historial clínico de la consulta (A.5.34, A01, A09)"
+respiro
+# Una consulta de ayer: por la API no se puede reservar en el pasado, así que se crea en la BD.
+cita_pasada() { # cita_pasada <mascota> <servicio> <hora> → id
+    local id; id=$(cat /proc/sys/kernel/random/uuid)
+    docker compose exec -T mariadb-master mariadb -uroot -p"$DB_ROOT_PASSWORD" citas_db -e "
+        INSERT INTO citas (id, id_cliente, mascota_id, servicio, sede, inicio, cupo, estado, cliente_nombre, cliente_email, telefono)
+        SELECT '$id', id_cliente, id, '$2', (SELECT sede FROM servicios WHERE slug='$2'), '$(gt -d yesterday +%F) $3:00',
+               $(( 10 + 10#$SUF % 240 )), 'confirmada', 'Compradora Prueba', '$CLIENTE2', '5555-1234' FROM mascotas WHERE id='$1'" && echo "$id"
+}
+historial() { "${C[@]}" -w '\n%{http_code}' -X POST -H "Authorization: Bearer $2" -H 'Content-Type: application/json' -d "$3" "$BASE/api/citas/admin/$1/historial"; }
+CONSULTA=$(cita_pasada "$M1" veterinaria 10:00)
+PELU=$(cita_pasada "$M1" peluqueria 11:00)
+PROX=$(gt -d "+1 year" +%F)
+FICHA=$(jq -nc --arg p "$PROX" '{peso_kg:15.2, diagnostico:"Otitis leve en oído derecho", tratamiento:"Gotas óticas cada 12 h por 7 días", vacunas:[{nombre:"Rabia", lote:"RB-2291", proxima_dosis:$p}, {nombre:"Séxtuple", proxima_dosis:$p}]}')
+esperar "un cliente no puede registrar historial → 403" 403 "$(historial "$CONSULTA" "$T2" "$FICHA" | tail -1)"
+esperar "en una cita futura → 422" 422 "$(historial "$CITA3" "$ADMIN" "$FICHA" | tail -1)"
+esperar "en una cita de peluquería → 422" 422 "$(historial "$PELU" "$ADMIN" "$FICHA" | tail -1)"
+esperar "sin diagnóstico → 422" 422 "$(historial "$CONSULTA" "$ADMIN" "$(jq -c 'del(.diagnostico)' <<<"$FICHA")" | tail -1)"
+esperar "próxima dosis antes de la aplicación → 422" 422 "$(historial "$CONSULTA" "$ADMIN" "$(jq -c '.vacunas[0].proxima_dosis="2020-01-01"' <<<"$FICHA")" | tail -1)"
+esperar "XSS en el diagnóstico → 400" 400 "$(historial "$CONSULTA" "$ADMIN" "$(jq -c '.diagnostico="<img src=x onerror=alert(1)>"' <<<"$FICHA")" | tail -1)"
+r=$(historial "$CONSULTA" "$ADMIN" "$FICHA")
+esperar "registrar la consulta → 201 con 2 vacunas" "201|2" "$(tail -1 <<<"$r")|$(head -n -1 <<<"$r" | jq '.historial.vacunas | length')"
+esperar "la cita pasa a atendida" atendida "$("${C[@]}" -H "Authorization: Bearer $T2" "$BASE/api/citas" | jq -r --arg c "$CONSULTA" '.citas[] | select(.id==$c) | .estado')"
+esperar "CITA_ESTADO_CAMBIADO confirmada → atendida" "$CONSULTA|confirmada|atendida" "$(evento_ultimo CITA_ESTADO_CAMBIADO | jq -r '"\(.dato_nuevo.cita_id)|\(.dato_anterior.estado)|\(.dato_nuevo.estado)"')"
+reg=$(evento_ultimo HISTORIAL_REGISTRADO)
+esperar "HISTORIAL_REGISTRADO con las vacunas y el peso anterior y nuevo" "$CONSULTA|Rabia,Séxtuple|14|15.2" "$(jq -r '"\(.dato_nuevo.cita_id)|\(.dato_nuevo.vacunas | join(","))|\(.dato_anterior.peso_kg)|\(.dato_nuevo.peso_kg)"' <<<"$reg")"
+esperar "el diagnóstico no se copia a la bitácora (minimización)" false "$(jq '[.. | strings] | any(test("Otitis|Gotas"))' <<<"$reg")"
+esperar "el peso de la mascota se actualiza" 15.2 "$("${C[@]}" -H "Authorization: Bearer $T2" "$BASE/api/citas/mascotas" | jq --arg m "$M1" '.mascotas[] | select(.id==$m) | .peso_kg')"
+esperar "registrar otra vez la misma consulta → 409" 409 "$(historial "$CONSULTA" "$ADMIN" "$FICHA" | tail -1)"
+
+caso "CP-45 Carné de vacunas: solo el dueño; el historial, solo el admin y auditado"
+carne=$("${C[@]}" -H "Authorization: Bearer $T2" "$BASE/api/citas/mascotas/$M1/carne")
+esperar "el dueño ve el carné con la próxima dosis" "Rabia|$PROX|vigente" "$(jq -r '.vacunas[] | select(.nombre=="Rabia") | "\(.nombre)|\(.proxima_dosis)|\(.estado)"' <<<"$carne")"
+esperar "el carné no trae diagnósticos ni tratamientos" false "$(jq '[.. | strings] | any(test("Otitis|Gotas"))' <<<"$carne")"
+esperar "sin token → 401" 401 "$(codigo "$BASE/api/citas/mascotas/$M1/carne")"
+esperar "otro cliente → 404" 404 "$(codigo -H "Authorization: Bearer $T3" "$BASE/api/citas/mascotas/$M1/carne")"
+esperar "el intento queda como ACCESO_DENEGADO al carné" "carné de vacunas|$CLIENTE3" "$(evento_ultimo ACCESO_DENEGADO | jq -r '"\(.dato_nuevo.recurso)|\(.usuario_email)"')"
+esperar "un cliente no puede leer el historial clínico → 403" 403 "$(codigo -H "Authorization: Bearer $T2" "$BASE/api/citas/admin/mascotas/$M1/historial")"
+hist=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/mascotas/$M1/historial")
+esperar "el admin ve el diagnóstico y el tratamiento" "Otitis leve en oído derecho|Gotas óticas cada 12 h por 7 días" "$(jq -r '.consultas[0] | "\(.diagnostico)|\(.tratamiento)"' <<<"$hist")"
+esperar "cada lectura del admin queda como HISTORIAL_CONSULTADO" "$M1|admin@huellitas.gt" "$(evento_ultimo HISTORIAL_CONSULTADO | jq -r '"\(.dato_nuevo.mascota_id)|\(.usuario_email)"')"
+esperar "la agenda marca la consulta con historial" true "$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/agenda?fecha=$(gt -d yesterday +%F)" | jq --arg c "$CONSULTA" '.citas[] | select(.id==$c) | .tiene_historial')"
+
 caso "CP-41 Un cliente no puede acaparar la agenda (D de STRIDE)"
 respiro
 ultimo=""

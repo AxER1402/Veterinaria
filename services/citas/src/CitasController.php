@@ -33,6 +33,8 @@ final class CitasController
     private const CANCELAR_HORAS = 2;
     private const MAX_ACTIVAS = 5;       // D de STRIDE: un cliente no puede acaparar la agenda
     private const ESPECIES = ['perro', 'gato', 'otro'];
+    private const SERVICIO_CLINICO = 'veterinaria'; // solo la consulta lleva historial clínico
+    private const MAX_VACUNAS = 5;
 
     /** Transiciones que puede hacer el admin. La cancelación del cliente va por /cancelar. */
     private const TRANSICIONES = [
@@ -359,10 +361,185 @@ final class CitasController
         return [200, ['cita' => self::citaJson($this->citaPorId($id), true)]];
     }
 
+    // ---------- Historial clínico y carné (B1) ----------
+
+    /**
+     * Ficha de una consulta: peso, diagnóstico, tratamiento y vacunas. Si la cita seguía pendiente o
+     * confirmada, pasa a atendida en la misma transacción. A.5.34: el diagnóstico no va a la bitácora.
+     */
+    public function registrarHistorial(string $id): array
+    {
+        $claims = Guard::usuario(['admin']);
+        $d = Http::body();
+        Validar::sinAtaques($d);
+        $cita = $this->citaPorId($id) ?? throw new ApiError(404, 'Cita no encontrada');
+        if ($cita['servicio'] !== self::SERVICIO_CLINICO) {
+            throw new ApiError(422, 'Solo las consultas veterinarias llevan historial clínico');
+        }
+        $dia = substr($cita['inicio'], 0, 10);
+        if ($dia > date('Y-m-d')) {
+            throw new ApiError(422, 'La consulta se registra el día de la cita o después');
+        }
+
+        $peso = $d['peso_kg'] ?? null;
+        if ($peso !== null && $peso !== '' && (!is_numeric($peso) || (float) $peso <= 0 || (float) $peso > 150)) {
+            throw new ApiError(422, 'Peso no válido', ['campo' => 'peso_kg']);
+        }
+        $peso = $peso !== null && $peso !== '' ? round((float) $peso, 2) : null;
+        $diagnostico = Validar::texto($d, 'diagnostico', 3, 500);
+        $tratamiento = isset($d['tratamiento']) && $d['tratamiento'] !== '' ? Validar::texto($d, 'tratamiento', 1, 500) : null;
+        $vacunas = self::vacunas($d['vacunas'] ?? [], $dia);
+
+        $pesoAnterior = $this->mascotaPorId($cita['mascota_id'])['peso_kg'];
+        $db = Db::escritura();
+        $historialId = Jwt::uuid();
+        $db->beginTransaction();
+        try {
+            // Bloqueo de la fila: dos admins no registran dos fichas ni pisan un cambio de estado.
+            $q = $db->prepare('SELECT estado FROM citas WHERE id = ? FOR UPDATE');
+            $q->execute([$id]);
+            $anterior = $q->fetchColumn();
+            if (!in_array($anterior, ['pendiente', 'confirmada', 'atendida'], true)) {
+                throw new ApiError(409, "Una cita $anterior no lleva historial");
+            }
+            try {
+                $db->prepare('INSERT INTO historial_clinico (id, cita_id, mascota_id, peso_kg, diagnostico, tratamiento, registrado_por) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                    ->execute([$historialId, $id, $cita['mascota_id'], $peso, $diagnostico, $tratamiento, (int) $claims['sub']]);
+            } catch (\PDOException $e) {
+                if (($e->errorInfo[1] ?? null) === 1062) {
+                    throw new ApiError(409, 'Esta consulta ya tiene su historial registrado');
+                }
+                throw $e;
+            }
+            $insVacuna = $db->prepare('INSERT INTO vacunas (id, mascota_id, historial_id, nombre, lote, fecha_aplicacion, proxima_dosis) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            foreach ($vacunas as $v) {
+                $insVacuna->execute([Jwt::uuid(), $cita['mascota_id'], $historialId, $v['nombre'], $v['lote'], $dia, $v['proxima_dosis']]);
+            }
+            if ($peso !== null) {
+                $db->prepare('UPDATE mascotas SET peso_kg = ? WHERE id = ?')->execute([$peso, $cita['mascota_id']]);
+            }
+            if ($anterior !== 'atendida') {
+                $db->prepare("UPDATE citas SET estado = 'atendida' WHERE id = ?")->execute([$id]);
+                $db->prepare('INSERT INTO historial_citas (cita_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, ?, ?, ?, ?)')
+                    ->execute([$id, $anterior, 'atendida', (int) $claims['sub'], 'Consulta registrada en el historial clínico']);
+            }
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+
+        if ($anterior !== 'atendida') {
+            Auditoria::registrar('CITA_ESTADO_CAMBIADO', 'EXITO', Auditoria::actor($claims) + [
+                'dato_anterior' => ['cita_id' => $id, 'estado' => $anterior],
+                'dato_nuevo'    => ['cita_id' => $id, 'estado' => 'atendida', 'inicio' => $cita['inicio'], 'comentario' => 'Consulta registrada'],
+            ]);
+        }
+        Auditoria::registrar('HISTORIAL_REGISTRADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_anterior' => $peso !== null ? ['mascota_id' => $cita['mascota_id'], 'peso_kg' => $pesoAnterior !== null ? (float) $pesoAnterior : null] : null,
+            'dato_nuevo'    => ['historial_id' => $historialId, 'cita_id' => $id, 'mascota_id' => $cita['mascota_id'], 'peso_kg' => $peso,
+                                'vacunas' => array_column($vacunas, 'nombre')],
+        ]);
+        return [201, ['historial' => $this->historialMascota($cita['mascota_id'])['consultas'][0] ?? null]];
+    }
+
+    /** Historial completo de una mascota (solo admin). Cada lectura queda en la bitácora. */
+    public function historialAdmin(string $mascotaId): array
+    {
+        $claims = Guard::usuario(['admin']);
+        $m = preg_match('/^[0-9a-f\-]{36}$/', $mascotaId) ? $this->mascotaPorId($mascotaId) : null;
+        if (!$m) {
+            throw new ApiError(404, 'Mascota no encontrada');
+        }
+        $h = $this->historialMascota($mascotaId);
+        Auditoria::registrar('HISTORIAL_CONSULTADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_nuevo' => ['mascota_id' => $mascotaId, 'dueno_id' => (int) $m['id_cliente'], 'consultas' => count($h['consultas'])],
+        ]);
+        return [200, ['mascota' => self::mascotaJson($m) + ['activa' => (bool) $m['activa']]] + $h];
+    }
+
+    /** Carné de vacunas para el dueño: solo lectura y sin diagnósticos. */
+    public function carne(string $mascotaId): array
+    {
+        $claims = Guard::usuario(['cliente', 'admin']);
+        $m = $this->mascotaPropia($mascotaId, $claims, 'carné de vacunas');
+        return [200, ['mascota' => self::mascotaJson($m), 'vacunas' => $this->historialMascota($mascotaId)['vacunas']]];
+    }
+
+    private function historialMascota(string $mascotaId): array
+    {
+        $db = Db::escritura();
+        $q = $db->prepare('SELECT h.*, c.inicio, c.servicio FROM historial_clinico h JOIN citas c ON c.id = h.cita_id
+                           WHERE h.mascota_id = ? ORDER BY c.inicio DESC, h.created_at DESC');
+        $q->execute([$mascotaId]);
+        $consultas = $q->fetchAll();
+        $q = $db->prepare('SELECT * FROM vacunas WHERE mascota_id = ? ORDER BY fecha_aplicacion DESC, nombre');
+        $q->execute([$mascotaId]);
+        $vacunas = $q->fetchAll();
+
+        $hoy = date('Y-m-d');
+        $enSemana = date('Y-m-d', strtotime('+7 days'));
+        $vacunaJson = fn($v) => [
+            'id' => $v['id'], 'nombre' => $v['nombre'], 'lote' => $v['lote'], 'fecha_aplicacion' => $v['fecha_aplicacion'],
+            'proxima_dosis' => $v['proxima_dosis'],
+            'estado' => $v['proxima_dosis'] === null ? 'sin_refuerzo' : ($v['proxima_dosis'] < $hoy ? 'vencida' : ($v['proxima_dosis'] <= $enSemana ? 'por_vencer' : 'vigente')),
+        ];
+        // Vienen de la más reciente a la más antigua: si una vacuna ya apareció, esta dosis fue renovada.
+        $vistas = [];
+        $lista = [];
+        $porHistorial = [];
+        foreach ($vacunas as $v) {
+            $j = $vacunaJson($v);
+            $clave = mb_strtolower($v['nombre']);
+            if (isset($vistas[$clave])) {
+                $j['estado'] = 'renovada';
+            }
+            $vistas[$clave] = true;
+            $lista[] = $j;
+            $porHistorial[$v['historial_id']][] = $j;
+        }
+        return [
+            'consultas' => array_map(fn($h) => [
+                'id' => $h['id'], 'cita_id' => $h['cita_id'], 'fecha' => str_replace(' ', 'T', substr($h['inicio'], 0, 16)),
+                'peso_kg' => $h['peso_kg'] !== null ? (float) $h['peso_kg'] : null, 'diagnostico' => $h['diagnostico'], 'tratamiento' => $h['tratamiento'],
+                'vacunas' => $porHistorial[$h['id']] ?? [],
+            ], $consultas),
+            'vacunas' => $lista,
+        ];
+    }
+
+    /** @return list<array{nombre: string, lote: ?string, proxima_dosis: ?string}> */
+    private static function vacunas(mixed $lista, string $aplicacion): array
+    {
+        if (!is_array($lista) || !array_is_list($lista) || count($lista) > self::MAX_VACUNAS) {
+            throw new ApiError(422, 'Hasta ' . self::MAX_VACUNAS . ' vacunas por consulta', ['campo' => 'vacunas']);
+        }
+        $limite = (new \DateTimeImmutable($aplicacion))->modify('+3 years')->format('Y-m-d');
+        return array_map(function ($v) use ($aplicacion, $limite) {
+            if (!is_array($v)) {
+                throw new ApiError(422, 'Vacuna no válida', ['campo' => 'vacunas']);
+            }
+            $proxima = $v['proxima_dosis'] ?? null;
+            if ($proxima !== null && $proxima !== '') {
+                $f = is_string($proxima) ? \DateTimeImmutable::createFromFormat('!Y-m-d', $proxima) : false;
+                if (!$f || $f->format('Y-m-d') !== $proxima || $proxima <= $aplicacion || $proxima > $limite) {
+                    throw new ApiError(422, 'La próxima dosis debe ser después de la aplicación y dentro de 3 años', ['campo' => 'proxima_dosis']);
+                }
+            }
+            return [
+                'nombre' => Validar::texto($v, 'nombre', 2, 80),
+                'lote' => isset($v['lote']) && $v['lote'] !== '' ? Validar::texto($v, 'lote', 1, 40) : null,
+                'proxima_dosis' => $proxima ?: null,
+            ];
+        }, $lista);
+    }
+
     // ---------- Apoyo ----------
 
-    private const SQL_CITA = 'SELECT c.*, m.nombre AS mascota_nombre, m.especie, m.raza, m.notas AS mascota_notas, s.nombre AS servicio_nombre
-                                FROM citas c JOIN mascotas m ON m.id = c.mascota_id JOIN servicios s ON s.slug = c.servicio';
+    private const SQL_CITA = 'SELECT c.*, m.nombre AS mascota_nombre, m.especie, m.raza, m.notas AS mascota_notas, s.nombre AS servicio_nombre,
+                                     h.id AS historial_id
+                                FROM citas c JOIN mascotas m ON m.id = c.mascota_id JOIN servicios s ON s.slug = c.servicio
+                                LEFT JOIN historial_clinico h ON h.cita_id = c.id';
 
     /** Cambio de estado con bloqueo de fila: dos admins no pisan el mismo cambio. */
     private function moverEstado(array $cita, string $nuevo, array $claims, ?string $comentario, string $evento): void
@@ -556,13 +733,13 @@ final class CitasController
         return $q->fetch() ?: null;
     }
 
-    private function mascotaPropia(string $id, array $claims): array
+    private function mascotaPropia(string $id, array $claims, string $recurso = 'mascota'): array
     {
         $m = preg_match('/^[0-9a-f\-]{36}$/', $id) ? $this->mascotaPorId($id) : null;
         if (!$m || (int) $m['id_cliente'] !== (int) $claims['sub']) {
             if ($m) {
                 Auditoria::registrar('ACCESO_DENEGADO', 'FALLO', Auditoria::actor($claims) + [
-                    'dato_nuevo' => ['recurso' => 'mascota', 'mascota_id' => $id, 'motivo' => 'la mascota pertenece a otro cliente'],
+                    'dato_nuevo' => ['recurso' => $recurso, 'mascota_id' => $id, 'motivo' => 'la mascota pertenece a otro cliente'],
                 ]);
             }
             throw new ApiError(404, 'Mascota no encontrada', ['campo' => 'mascota_id']);
@@ -627,6 +804,8 @@ final class CitasController
         ];
         if ($admin) {
             $json['cupo'] = (int) $c['cupo'];
+            $json['clinica'] = $c['servicio'] === self::SERVICIO_CLINICO;
+            $json['tiene_historial'] = $c['historial_id'] !== null;
             $json['cliente'] = ['id' => (int) $c['id_cliente'], 'nombre' => $c['cliente_nombre'], 'email' => $c['cliente_email'], 'telefono' => $c['telefono']];
             $json['mascota'] += ['raza' => $c['raza'], 'notas' => $c['mascota_notas']];
         }

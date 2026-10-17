@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Ban } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Ban, Stethoscope, FileText } from 'lucide-react'
 import Loading from '../../components/Loading'
 import PetIcon from '../../components/PetIcon'
 import { api } from '../../api'
+import { ConsultaForm, HistorialPanel } from './ClinicalRecord'
 import { CITA_STATUS, addDays, formatDay, ymd } from '../account/citas'
 
 const SEDES = [
@@ -33,6 +34,8 @@ export default function AdminAgenda() {
   const [agenda, setAgenda] = useState(null)
   const [error, setError] = useState('')
   const [proximos, setProximos] = useState(null)
+  const [consulta, setConsulta] = useState(null) // cita cuya ficha se está llenando
+  const [historial, setHistorial] = useState(null) // mascota cuyo historial se está viendo
 
   const cargar = useCallback(() => {
     api(`/api/citas/admin/agenda?fecha=${fecha}${sede ? `&sede=${sede}` : ''}`)
@@ -117,11 +120,13 @@ export default function AdminAgenda() {
           <div className="table-scroll">
             <table className="admin-table">
               <thead>
-                <tr><th>Hora</th><th>Sede</th><th>Servicio</th><th>Mascota</th><th>Cliente</th><th>Código</th><th>Estado</th><th>Cambiar a</th></tr>
+                <tr><th>Hora</th><th>Sede</th><th>Servicio</th><th>Mascota</th><th>Cliente</th><th>Código</th><th>Estado</th><th>Ficha</th><th>Cambiar a</th></tr>
               </thead>
               <tbody>
                 {vigente.citas.map((c) => {
-                  const opciones = NEXT[c.estado].filter((n) => !['atendida', 'no_asistio'].includes(n) || fecha <= hoy)
+                  // En una consulta, «atendida» se marca al guardar la ficha clínica.
+                  const opciones = NEXT[c.estado].filter((n) => (!['atendida', 'no_asistio'].includes(n) || fecha <= hoy) && !(n === 'atendida' && c.clinica))
+                  const puedeFicha = c.clinica && !c.tiene_historial && ['pendiente', 'confirmada', 'atendida'].includes(c.estado) && fecha <= hoy
                   return (
                     <tr key={c.id} className={c.estado === 'cancelada' ? 'is-muted' : ''}>
                       <td className="mono">{c.inicio.slice(11, 16)}</td>
@@ -137,6 +142,12 @@ export default function AdminAgenda() {
                       </td>
                       <td className="mono">{c.codigo_verificacion || '—'}</td>
                       <td><span className={`status status--${CITA_STATUS[c.estado].tone}`}>{CITA_STATUS[c.estado].label}</span></td>
+                      <td className="agenda__actions">
+                        {puedeFicha && (
+                          <button className="btn btn--dark btn--xs" onClick={() => setConsulta(c)}><Stethoscope size={14} /> Registrar consulta</button>
+                        )}
+                        <button className="link-btn" onClick={() => setHistorial(c.mascota)}><FileText size={14} /> Historial</button>
+                      </td>
                       <td>
                         {opciones.length ? (
                           <select value="" onChange={(e) => e.target.value && cambiar(c, e.target.value)} aria-label={`Cambiar estado de la cita de ${c.mascota.nombre}`}>
@@ -153,6 +164,9 @@ export default function AdminAgenda() {
           </div>
         )}
       </div>
+
+      {consulta && <ConsultaForm cita={consulta} onClose={() => setConsulta(null)} onSaved={() => { setConsulta(null); cargar() }} />}
+      {historial && <HistorialPanel mascota={historial} onClose={() => setHistorial(null)} />}
 
       <div className="admin-grid admin-grid--even">
         <BlockForm fecha={fecha >= hoy ? fecha : hoy} sede={sede} onSaved={() => { cargar(); cargarBloqueos() }} />

@@ -45,6 +45,8 @@ final class AuditController
         'CITA_ESTADO_CAMBIADO'    => ['citas-service'],
         'TURNO_BLOQUEADO'         => ['citas-service'],
         'TURNO_DESBLOQUEADO'      => ['citas-service'],
+        'HISTORIAL_REGISTRADO'    => ['citas-service'],
+        'HISTORIAL_CONSULTADO'    => ['citas-service'],
         // Extra: intentos de ver recursos ajenos (A01), útil para detectar enumeración.
         'ACCESO_DENEGADO'         => ['auth-service', 'catalogo-service', 'pedidos-service', 'pagos-service', 'citas-service'],
     ];

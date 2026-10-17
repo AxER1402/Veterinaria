@@ -883,3 +883,47 @@
 .stat-tile--link { color: inherit; transition: box-shadow 0.2s, transform 0.2s; }
 .stat-tile--link:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
 .admin-table td.mono { white-space: nowrap; }
+
+/* Historial clínico y carné (FASE 15 B1) */
+.modal { border: 0; padding: 0; border-radius: 24px; width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); color: var(--navy); box-shadow: var(--shadow); }
+.modal--wide { width: min(820px, calc(100vw - 32px)); }
+.modal::backdrop { background: rgba(0, 40, 66, 0.45); }
+.modal__inner { padding: 24px clamp(18px, 3vw, 32px) 28px; }
+.modal__head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 4px; }
+.modal__head h2 { margin: 0; font-size: 1.35rem; }
+.modal__close { display: grid; place-items: center; width: 38px; height: 38px; border: 0; border-radius: 50%; background: var(--soft); color: var(--navy); cursor: pointer; }
+.modal__close:hover { background: var(--line); }
+.modal__sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--gray); font-size: 0.88rem; margin: 0 0 18px; }
+.btn--xs { padding: 7px 12px; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.icon-btn--ghost { width: 38px; height: 38px; background: var(--soft); }
+.icon-btn--ghost:hover { transform: none; background: #fdecea; color: #a12622; }
+.agenda__actions { white-space: nowrap; }
+.agenda__actions .link-btn { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; }
+.clinical-form { display: grid; gap: 14px; }
+.clinical-form label { display: grid; gap: 6px; font-size: 0.88rem; font-weight: 500; color: var(--navy); }
+.clinical-form input, .clinical-form textarea { font: inherit; font-weight: 300; color: var(--navy); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; background: var(--white); width: 100%; resize: vertical; }
+.clinical-form input:focus, .clinical-form textarea:focus { outline: none; border-color: var(--yellow-dark); }
+.agenda__form-row--3 { grid-template-columns: repeat(3, 1fr); }
+.clinical-form__vaccines { border: 0; padding: 16px; margin: 0; border-radius: 16px; background: var(--soft); display: grid; gap: 12px; min-width: 0; }
+.clinical-form__vaccines legend { font-weight: 500; float: left; width: 100%; margin-bottom: 4px; padding: 0; }
+.clinical-form__vaccines .pet-picker__add { justify-self: start; padding: 8px 16px; font-size: 0.9rem; background: var(--white); }
+.vaccine-row { display: grid; grid-template-columns: 2fr 1fr 1.3fr auto; gap: 10px; align-items: end; }
+.clinical__pet { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
+.clinical__title { font-size: 1.05rem; margin: 22px 0 10px; }
+.clinical__list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.clinical__list li { padding: 14px 16px; border-radius: 14px; background: var(--soft); font-size: 0.92rem; }
+.clinical__list li strong::first-letter { text-transform: uppercase; }
+.clinical__list p { margin: 6px 0 0; }
+.vaccine-table td { white-space: nowrap; }
+.admin-table tr.is-muted-soft td { color: var(--gray); }
+.pet__carne { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 12px; }
+@media (max-width: 640px) {
+  .vaccine-row { grid-template-columns: 1fr 1fr; }
+  .vaccine-row label:first-child { grid-column: 1 / -1; }
+  .agenda__form-row--3 { grid-template-columns: 1fr; }
+  .pet__carne { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+  .vaccine-table th:nth-child(2), .vaccine-table td:nth-child(2) { display: none; }
+  .vaccine-table td, .vaccine-table th { white-space: normal; padding: 8px 6px; }
+}

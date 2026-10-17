@@ -21,6 +21,7 @@ $router->add('GET',    '/api/citas/mascotas', fn() => $citas->mascotas());
 $router->add('POST',   '/api/citas/mascotas', fn() => $citas->crearMascota());
 $router->add('PATCH',  '/api/citas/mascotas/{id}', fn($p) => $citas->actualizarMascota($p['id']));
 $router->add('DELETE', '/api/citas/mascotas/{id}', fn($p) => $citas->desactivarMascota($p['id']));
+$router->add('GET',    '/api/citas/mascotas/{id}/carne', fn($p) => $citas->carne($p['id']));
 
 // Administración.
 $router->add('GET',    '/api/citas/admin/agenda', fn() => $citas->agenda());
@@ -28,6 +29,8 @@ $router->add('GET',    '/api/citas/admin/bloqueos', fn() => $citas->bloqueos());
 $router->add('POST',   '/api/citas/admin/bloqueos', fn() => $citas->bloquear());
 $router->add('DELETE', '/api/citas/admin/bloqueos/{id}', fn($p) => $citas->desbloquear($p['id']));
 $router->add('PATCH',  '/api/citas/admin/{id}/estado', fn($p) => $citas->cambiarEstado($p['id']));
+$router->add('POST',   '/api/citas/admin/{id}/historial', fn($p) => $citas->registrarHistorial($p['id']));
+$router->add('GET',    '/api/citas/admin/mascotas/{id}/historial', fn($p) => $citas->historialAdmin($p['id']));
 
 // Citas del cliente.
 $router->add('GET',    '/api/citas', fn() => $citas->misCitas());

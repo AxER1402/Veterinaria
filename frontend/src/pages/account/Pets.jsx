@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import VaccineTable from '../../components/VaccineTable'
 import { Navigate } from 'react-router-dom'
 import { PawPrint, Plus } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
@@ -91,6 +92,7 @@ export default function Pets() {
 function PetCard({ mascota: m, onEdit, onRemoved }) {
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState('')
+  const [carne, setCarne] = useState(null) // null cerrado, 'cargando' o la lista de vacunas
   const detalle = [
     ESPECIES.find((e) => e.value === m.especie)?.label,
     m.raza,
@@ -108,6 +110,12 @@ function PetCard({ mascota: m, onEdit, onRemoved }) {
       setError(e.message)
       setConfirming(false)
     }
+  }
+
+  const verCarne = () => {
+    if (carne) return setCarne(null)
+    setCarne('cargando')
+    api(`/api/citas/mascotas/${m.id}/carne`).then((d) => setCarne(d.vacunas)).catch((e) => { setError(e.message); setCarne(null) })
   }
 
   return (
@@ -128,11 +136,18 @@ function PetCard({ mascota: m, onEdit, onRemoved }) {
           </span>
         ) : (
           <>
+            <button className="link-btn" onClick={verCarne} aria-expanded={Boolean(carne)}>{carne ? 'Ocultar carné' : 'Carné de vacunas'}</button>
             <button className="link-btn" onClick={onEdit}>Editar</button>
             <button className="link-btn" onClick={() => setConfirming(true)}>Quitar</button>
           </>
         )}
       </span>
+      {carne && (
+        <div className="pet__carne">
+          {carne === 'cargando' ? <Loading /> : <VaccineTable vacunas={carne} />}
+          <p className="summary__hint">Las vacunas las registra el veterinario en la consulta. Te avisaremos antes de cada refuerzo.</p>
+        </div>
+      )}
     </li>
   )
 }
