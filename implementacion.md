@@ -374,25 +374,102 @@ Como en las fases anteriores: un commit por paso, `tests/seguridad.sh` y el CI e
      2. ZAP contra el dominio (pendiente 2, SEC-4).
      3. Volver a generar el PDF SEC-1 (`docs/pdf/construir.mjs`) para que lleve el ZAP del dominio.
      4. En producción: MFA del admin (pendiente 12), contraseña nueva de `admin@huellitas.gt` y cron de respaldos.
-- **Para el compañero que jala los cambios:** `ops/generar-env.sh` → `docker compose up -d --build --wait` → `tests/seguridad.sh`. Los usuarios están en `usuarios.md`.
+- **Para el compañero que jala los cambios:** `ops/generar-env.sh` → `docker compose up -d --build --wait` → `tests/seguridad.sh`. Todas las variables y claves, y de dónde sale cada una, están en **«Configurar el `.env`»**, más abajo. Los usuarios están en `usuarios.md`.
 - **Entrega:** 31 de octubre de 2026 (-1 pt por día de retraso).
 
-## Pendientes (al 10 de octubre de 2026)
+## Configurar el `.env` (para quien jala el repo)
 
-Las 4 semanas del cronograma están implementadas y subidas, más extras: recuperación a un punto en el tiempo con binlogs, vencimiento de pedidos sin pagar, verificación en dos pasos (TOTP) y CI en GitHub Actions. `tests/seguridad.sh` pasa 162 de 162 (16 de octubre). Falta lo que depende de decisiones o cuentas externas:
+El `.env` **no se sube nunca** (está en `.gitignore`, y el repo todavía es público). Cada quien tiene el suyo. Las claves de las cuentas sandbox (Stripe, PayPal, EmailJS…) se pasan por un canal privado (WhatsApp, gestor de contraseñas), **nunca** en un commit, un issue ni este archivo.
+
+### Pasos
+
+1. **Si no tienes `.env`:** `ops/generar-env.sh`. Crea el `.env` con permisos 600 y todos los secretos internos ya llenos (tabla A).
+2. **Si ya tenías uno de antes:** compara con `.env.example` para ver qué te falta. Las líneas que salgan con `<` agrégalas a tu `.env`:
+   ```bash
+   diff <(grep -o '^[A-Z_0-9]*=' .env.example | sort) <(grep -o '^[A-Z_0-9]*=' .env | sort)
+   ```
+   Si te falta `CITAS_DB_PASSWORD`, corre `ops/migrar-citas.sh`: la agrega y crea `citas_db` sin borrar datos.
+3. Llena a mano las claves de servicios externos (tabla B). Las que dejes vacías apagan esa función, pero el resto sigue funcionando.
+4. Levanta y comprueba:
+   ```bash
+   docker compose up -d --build --wait     # --build hace falta si cambiaste GOOGLE_MAPS_EMBED_KEY (va dentro del frontend)
+   tests/seguridad.sh                       # debe terminar en "263 pasaron, 0 fallaron"
+   ```
+   Con solo cambiar claves en el `.env` basta `docker compose up -d`: Compose recrea los contenedores que las usan.
+
+### A. Secretos internos: los genera `ops/generar-env.sh`, no se tocan
+
+| Variable | Para qué |
+|---|---|
+| `JWT_SECRET` | Firma los JWT de usuario |
+| `SERVICE_JWT_SECRET` | Firma los JWT entre servicios (distinto del anterior) |
+| `MFA_ENCRYPTION_KEY` | Cifra los secretos TOTP. Si cambia, quien tenía MFA lo tiene que volver a configurar |
+| `REDIS_PASSWORD` | Contraseña de Redis |
+| `DB_ROOT_PASSWORD`, `DB_REPLICATION_PASSWORD` | Root del maestro y la réplica, y el usuario de replicación |
+| `AUTH_DB_PASSWORD`, `CATALOGO_DB_PASSWORD`, `PEDIDOS_DB_PASSWORD`, `PAGOS_DB_PASSWORD`, `CITAS_DB_PASSWORD` | Un usuario de BD por servicio |
+| `AUDIT_DB_ROOT_PASSWORD`, `AUDIT_DB_PASSWORD` | BD de auditoría (root y `audit_user`) |
+| `COMPROBANTE_SECRET` | HMAC del código de verificación de pedidos y citas |
+| `BACKUP_PASSPHRASE` | Cifrado AES-256 de los respaldos. **Guárdala fuera del servidor**: sin ella los respaldos no se pueden restaurar |
+| `STRIPE_WEBHOOK_SECRET` | Sale como `whsec_local_…` para las pruebas. Se reemplaza al configurar Stripe (tabla B) |
+
+Las contraseñas de BD se aplican **solo la primera vez** que se crean los volúmenes. Si las cambias después, MariaDB sigue con las viejas: hay que borrar los volúmenes (`docker compose down -v`, que también borra los datos) o cambiarlas a mano dentro de la BD.
+
+### B. Claves de servicios externos: a mano
+
+| Variable | De dónde sale | Sin ella |
+|---|---|---|
+| `STRIPE_PUBLISHABLE_KEY` (`pk_test_…`) | <https://dashboard.stripe.com/test/apikeys>, en **modo prueba** | No aparece el pago con tarjeta |
+| `STRIPE_SECRET_KEY` (`sk_test_…`) | La misma página («Clave secreta») | Ídem |
+| `STRIPE_WEBHOOK_SECRET` (`whsec_…`) | **En local:** `stripe listen --forward-to https://localhost:8443/api/pagos/webhook/stripe --skip-verify` lo imprime al arrancar, y cambia cada vez que se inicia otro `stripe listen`. **En producción:** panel de Stripe → Developers → Webhooks → endpoint `https://<dominio>/api/pagos/webhook/stripe` con el evento `payment_intent.succeeded` (y `payment_intent.payment_failed`) → «Signing secret» | El pedido no pasa a pagado: el webhook se rechaza por firma inválida |
+| `PAYPAL_CLIENT_ID` | <https://developer.paypal.com/dashboard/applications/sandbox> → app de tipo *Merchant* → «Client ID» | No aparece el botón de PayPal |
+| `PAYPAL_CLIENT_SECRET` | La misma app («Secret») | Ídem |
+| `EMAILJS_SERVICE_ID` | <https://dashboard.emailjs.com> → *Email Services* → conectar Gmail → «Service ID» | No sale ningún correo; queda `EMAIL_ENVIADO` con FALLO |
+| `EMAILJS_TEMPLATE_ID` | *Email Templates* → plantilla del **pedido** (variables abajo) → «Template ID» | No sale el correo del pedido pagado |
+| `EMAILJS_TEMPLATE_CITA_ID` | Segunda plantilla, la de **citas** (variables abajo) | No salen los correos de las citas, los recordatorios ni los avisos de vacuna |
+| `EMAILJS_PUBLIC_KEY` | *Account* → *General* → «Public Key» | No sale ningún correo |
+| `EMAILJS_PRIVATE_KEY` | *Account* → *General* → «Private Key». Además, en *Account* → *Security* hay que activar **«Allow EmailJS API for non-browser applications»**: el correo lo manda el servidor, no el navegador | Ídem |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | <https://console.cloudinary.com> → *Dashboard* (opcional) | Las imágenes salen de su origen y la subida de imágenes del admin responde 503 |
+| `GOOGLE_MAPS_EMBED_KEY` | Google Cloud Console → habilitar *Maps Embed API* → *Credentials* → API key, restringida al dominio (opcional). Requiere `--build` | Se usa el mapa embebido básico sin clave |
+| `OPENWEATHER_API_KEY` | <https://home.openweathermap.org/api_keys> (opcional; la clave nueva tarda hasta 2 h en activarse) | El clima del panel usa Open-Meteo, que no pide clave |
+
+**Plantilla de EmailJS del pedido** (`EMAILJS_TEMPLATE_ID`). En *To Email* poner `{{to_email}}`. Variables: `{{to_name}}`, `{{pedido}}`, `{{pedido_id}}`, `{{total}}`, `{{productos}}`, `{{entrega}}`, `{{metodo_pago}}`, `{{referencia_pago}}` y `{{codigo_verificacion}}`.
+
+**Plantilla de EmailJS de las citas** (`EMAILJS_TEMPLATE_CITA_ID`). En *To Email* poner `{{to_email}}` y en *Subject*, `{{titulo}}`. Variables: `{{to_name}}`, `{{titulo}}`, `{{mensaje}}`, `{{estado}}`, `{{cita}}`, `{{servicio}}`, `{{mascota}}`, `{{sede}}`, `{{fecha}}`, `{{hora}}` y `{{codigo_verificacion}}`. Una misma plantilla sirve para los cinco casos (`estado` = `reservada`, `confirmada`, `cancelada`, `recordatorio` o `vacuna`). En el aviso de vacuna, `cita`, `hora` y `codigo_verificacion` llegan vacíos.
+
+**Para comprobar las claves:** con Stripe, comprar en la tienda con la tarjeta `4242 4242 4242 4242` (fecha futura, cualquier CVC) y ver que el pedido pasa a «Pagado». Con EmailJS, reservar una cita y revisar en `/admin` → Bitácora que `EMAIL_ENVIADO` salga con resultado EXITO. Con PayPal, pagar con la cuenta *Personal* de sandbox que aparece en *Testing Tools → Sandbox Accounts*.
+
+### C. Configuración con valor por defecto (normalmente no se toca)
+
+| Variable | Por defecto | Cuándo cambiarla |
+|---|---|---|
+| `HTTP_PORT`, `HTTPS_PORT` | `8088`, `8443` | Si en tu máquina esos puertos ya están ocupados |
+| `SERVER_NAME` | `localhost` | En producción: el dominio |
+| `TRUSTED_PROXY` | `127.0.0.1/32` | En producción, la red del proxy que está delante del gateway |
+| `PEDIDO_VENCE_HORAS` | `24` | Horas antes de cancelar un pedido sin pagar |
+| `CITAS_NO_ASISTIO_DIAS` | `1` | Días que se esperan antes de marcar una cita como «no asistió» |
+| `BACKUP_RETENCION_DIAS` | `30` | Días que se guardan los respaldos |
+| `BACKUP_S3_BUCKET`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY` | vacías | Solo en producción, para la copia remota en Cloudflare R2 o S3 |
+
+Hay unas pocas variables que no están en `.env.example` porque casi nunca se cambian (`PAYPAL_API_BASE` se queda en sandbox; `CITAS_CUPOS`, `CITAS_RECORDATORIOS_CADA_SEG` y `PEDIDO_VENCIMIENTO_CADA_SEG` tienen su valor en `docker-compose.yml`). `PROXY_NETWORK` y `PUBLIC_HTTPS_PORT` solo se usan en el despliegue del VPS (`docs/07-despliegue.md`).
+
+---
+
+## Pendientes (al 17 de octubre de 2026)
+
+Las 4 semanas del cronograma están implementadas y subidas, más extras: recuperación a un punto en el tiempo con binlogs, vencimiento de pedidos sin pagar, verificación en dos pasos (TOTP) y CI en GitHub Actions. Después vino la FASE 15 (citas). `tests/seguridad.sh` pasa 263 de 263 (17 de octubre). Falta lo que depende de decisiones o cuentas externas:
 
 | # | Pendiente | Qué hace falta | Afecta |
 |---|---|---|---|
 | 1 | **Desplegar en una URL pública** | Propuesta lista para el VPS 31.220.50.103 (detrás del Nginx del SGA, como FadeApp): elegir el dominio (sin decidir), crear su registro DNS y pegar `ops/vps/1-levantar.sh`, `2-nginx-http.sh` y `3-nginx-https.sh` (docs/07-despliegue.md §2c). Antes, confirmar dominio y RAM libre del VPS | Hosting en la nube (0.5 pts), URL pública y URL del panel admin |
 | 2 | **ZAP contra la URL pública** | Correr `zap-baseline.py` contra el dominio una vez desplegado (comando en `docs/07-despliegue.md` §3) | SEC-4 |
-| 3 | **Claves sandbox de Stripe** | `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET` (con `stripe listen` en local o el webhook del panel en producción) en `.env` | Pago real con la tarjeta 4242 en la demo |
+| 3 | **Claves sandbox de Stripe** | `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET` en `.env`. Paso a paso en «Configurar el `.env`», tabla B | Pago real con la tarjeta 4242 en la demo |
 | 4 | **Claves sandbox de PayPal** | `PAYPAL_CLIENT_ID` y `PAYPAL_CLIENT_SECRET` en `.env` | Botón de PayPal en la demo |
 | 5 | **EmailJS** | `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY` y `EMAILJS_PRIVATE_KEY`, y activar "Allow EmailJS API for non-browser applications". La plantilla usa `to_email`, `to_name`, `pedido`, `total`, `productos`, `entrega`, `metodo_pago`, `referencia_pago` y `codigo_verificacion`. Para las citas, una segunda plantilla en `EMAILJS_TEMPLATE_CITA_ID` con `to_email`, `to_name`, `titulo`, `mensaje`, `estado`, `cita`, `servicio`, `mascota`, `sede`, `fecha`, `hora` y `codigo_verificacion` (`estado` puede ser `reservada`, `confirmada`, `cancelada`, `recordatorio` o `vacuna`) | Correos del pedido y de la cita (hoy queda `EMAIL_ENVIADO` con FALLO por «no configurado») |
 | 6 | **Cloudinary y Google Maps (opcional)** | `CLOUDINARY_*` y `GOOGLE_MAPS_EMBED_KEY`. Sin ellos funcionan los respaldos: imágenes desde Unsplash y el mapa embebido básico | CDN de imágenes, upload firmado del admin |
 | 7 | **Repositorio privado** | AxER1402 debe cambiar la visibilidad de `AxER1402/Veterinaria` (Settings → Danger Zone). La cuenta Hugoda23 solo tiene permiso de escritura | Penalización «sin repo privado» |
 | 8 | **Mapas en un navegador real** | Abrir `/contacto` y confirmar que se dibujan los mapas (en Chromium headless solo carga el marco) | Detalle visual |
 | 9 | **Presentación de 10 min** | Ensayar con el guion de `docs/08-guion-presentacion.md` (ya escrito). Sin claves de Stripe, el pago se demuestra con el webhook firmado (CP-26) | Presentación |
-| 10 | ~~**CI en GitHub**~~ ✅ | En verde desde `d75c1a4`: frontend, PHP/secretos y stack completo con 158 pruebas + simulacro DRP en un runner limpio. Solo hay que mantenerlo verde | — |
+| 10 | ~~**CI en GitHub**~~ ✅ | En verde desde `d75c1a4`: frontend, PHP/secretos, SAST y stack completo con las 263 pruebas + simulacro DRP en un runner limpio. Solo hay que mantenerlo verde | — |
 | 11 | ~~**SAST**~~ ✅ | Semgrep CE en el CI (job `sast`, `p/php` + `p/javascript` + `p/secrets`): 0 hallazgos. Los 3 hashes bcrypt intencionales (seed de prueba y señuelo antienumeración) llevan `nosemgrep` justificado | — |
 | 12 | **Activar MFA en el admin** | Entrar con `admin@huellitas.gt` → aviso del panel → *Activar ahora* y escanear el QR. Hacerlo en producción, no en el seed de desarrollo, porque las pruebas automáticas usan el admin sin MFA | Riesgo «credenciales admin comprometidas» |
 
