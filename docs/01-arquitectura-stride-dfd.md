@@ -13,42 +13,33 @@ Es distinto del Proyecto 1 (POS de librería y papelería escolar).
 
 ```mermaid
 flowchart LR
-    U[Cliente / Admin<br>navegador] -- HTTPS TLS 1.3 --> GW
+    U[Cliente / Admin<br>navegador] -- HTTPS · TLS 1.3 --> GW[API Gateway Nginx<br>WAF · rate limit · TLS<br>sirve el frontend React]
+    WH[Stripe<br>webhook] -- firma Stripe-Signature --> GW
 
-    subgraph publica [Red pública]
-        GW[API Gateway Nginx<br>WAF · rate limit · TLS<br>sirve el frontend React]
+    subgraph SVC [Microservicios · red interna sin puertos publicados · verifican el JWT]
+        AUTH[auth :8081] ~~~ CAT[catalogo :8082] ~~~ PED[pedidos :8083]
+        PAG[pagos :8084] ~~~ NOT[notificaciones :8085] ~~~ CIT[citas :8087]
+        TAR[tareas periódicas<br>vencimientos · recordatorios]
     end
 
-    subgraph interna [Red interna Docker · internal: true · sin puertos publicados]
-        AUTH[auth-service :8081]
-        CAT[catalogo-service :8082]
-        PED[pedidos-service :8083]
-        PAG[pagos-service :8084]
-        NOT[notificaciones-service :8085]
-        AUD[security-audit-service :8086]
-        CIT[citas-service :8087]
-        REC[citas-recordatorios<br>tarea cada 15 min]
-        M[(MariaDB master<br>auth · catalogo · pedidos · pagos · citas)]
-        S[(MariaDB slave<br>solo lectura)]
-        A[(MariaDB audit<br>audit_db · volumen propio)]
-        R[(Redis<br>JWT revocados · rate limit · caché)]
-    end
-
-    GW --> AUTH & CAT & PED & AUD & CIT
-    CIT & REC -- JWT de servicio --> NOT
-    PED -- JWT de servicio --> PAG
-    PED -- JWT de servicio --> CAT
-    PED -- JWT de servicio --> NOT
-    PAG -- JWT de servicio --> PED
-    AUTH & CAT & PED & PAG & NOT & CIT -- JWT de servicio --> AUD
-    AUTH & CAT & PED & PAG & CIT & REC --> M
-    CAT & CIT -. lecturas .-> S
-    M -- replicación binlog --> S
-    AUD --> A
-    AUTH & CAT & PED & PAG & AUD & CIT --> R
-    PAG -- HTTPS --> STRIPE[(Stripe / PayPal)]
-    STRIPE -- webhook firmado --> GW
+    GW --> SVC
+    SVC -- eventos con<br>JWT de servicio --> AUD[security-audit :8086] --> A[(MariaDB auditoría<br>volumen propio)]
+    SVC --> M[(MariaDB maestro<br>una BD por servicio)] -- binlog --> S[(MariaDB réplica<br>solo lectura)]
+    SVC --> R[(Redis<br>JWT revocados · caché)]
+    SVC -- pagos y notificaciones<br>por la red salida --> EXT[(Stripe · PayPal<br>EmailJS · clima)]
 ```
+
+**Llamadas entre servicios** (todas con JWT de servicio de 60 s y un solo uso; el receptor tiene su lista de servicios permitidos):
+
+| Quién llama | A quién | Para qué |
+|---|---|---|
+| pedidos | catálogo | Precio vigente y reserva de stock |
+| pedidos | pagos | Iniciar el pago del pedido |
+| pagos | pedidos | Marcar el pedido como pagado tras el webhook |
+| pedidos, citas, citas-recordatorios | notificaciones | Correos de pedido y de cita, avisos de vacuna y clima del panel admin |
+| todos | security-audit | Registrar eventos en la bitácora |
+
+`catalogo-service` y `citas-service` leen de la réplica (catálogo y disponibilidad) para no cargar al maestro. Solo `pagos-service` y `notificaciones-service` están en la red `salida` con acceso a Internet.
 
 | Componente | Estado | Tecnología | Puerto |
 |---|---|---|---|
