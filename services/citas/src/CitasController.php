@@ -153,9 +153,12 @@ final class CitasController
         $notas = isset($datos['notas']) && $datos['notas'] !== '' ? Validar::texto($datos, 'notas', 1, 300) : null;
 
         $db = Db::escritura();
-        $turno = array_values(array_filter($this->turnos($servicio['sede'], $fecha, $db), fn($t) => $t['hora'] === $hora))[0] ?? null;
+        $turno = array_values(array_filter($this->turnos($servicio['sede'], $fecha, $db, true), fn($t) => $t['hora'] === $hora))[0] ?? null;
         if ($turno === null) {
             throw new ApiError(422, 'Ese turno no está disponible', ['campo' => 'hora']);
+        }
+        if ($turno['libres'] === 0) {
+            throw new ApiError(409, 'Ese turno se acaba de llenar. Elige otro');
         }
         $inicio = $fecha->format('Y-m-d') . " $hora:00";
 
@@ -289,8 +292,8 @@ final class CitasController
         ]);
     }
 
-    /** @return list<array{hora: string, libres: int}> */
-    private function turnos(string $sede, \DateTimeImmutable $fecha, \PDO $db): array
+    /** @return list<array{hora: string, libres: int}> Con $llenos también los turnos sin cupo (libres = 0). */
+    private function turnos(string $sede, \DateTimeImmutable $fecha, \PDO $db, bool $llenos = false): array
     {
         if ((int) $fecha->format('N') === 7) {
             return []; // domingo cerrado
@@ -318,8 +321,8 @@ final class CitasController
                 }
             }
             $libres = self::cupos() - (int) ($ocupados[$hora] ?? 0);
-            if ($libres > 0) {
-                $turnos[] = ['hora' => $hora, 'libres' => $libres];
+            if ($libres > 0 || $llenos) {
+                $turnos[] = ['hora' => $hora, 'libres' => max(0, $libres)];
             }
         }
         return $turnos;

@@ -457,14 +457,16 @@ esperar "MASCOTA_ACTUALIZADA guarda el peso anterior y el nuevo" "12.5|14" "$(ev
 
 caso "CP-38 Disponibilidad y reserva de citas"
 # Día al azar entre mañana y +40 días (nunca domingo), para que corridas seguidas no llenen la agenda.
-DIA=$(date -d "+$(( 1 + 10#$SUF % 40 )) day" +%F); [[ $(date -d "$DIA" +%u) == 7 ]] && DIA=$(date -d "$DIA +1 day" +%F)
-DOMINGO=$(date -d "next sunday" +%F)
+# Las fechas se calculan en la hora de Guatemala (la del servicio), no en la de la máquina (el CI corre en UTC).
+gt() { TZ=America/Guatemala date "$@"; }
+DIA=$(gt -d "+$(( 1 + 10#$SUF % 40 )) day" +%F); [[ $(gt -d "$DIA" +%u) == 7 ]] && DIA=$(gt -d "$DIA +1 day" +%F)
+DOMINGO=$(gt -d "next sunday" +%F)
 disp() { "${C[@]}" "$BASE/api/citas/disponibilidad?servicio=${2:-veterinaria}&fecha=$1"; }
 turnos=$(disp "$DIA")
 esperar "disponibilidad pública (sin cuenta)" 200 "$(codigo "$BASE/api/citas/disponibilidad?servicio=veterinaria&fecha=$DIA")"
 esperar "la consulta veterinaria se agenda en la sede Centro" centro "$(jq -r .sede.codigo <<<"$turnos")"
 esperar "domingo cerrado: sin turnos" 0 "$(disp "$DOMINGO" | jq '.turnos | length')"
-esperar "fecha pasada → 422" 422 "$(codigo "$BASE/api/citas/disponibilidad?servicio=veterinaria&fecha=$(date -d yesterday +%F)")"
+esperar "fecha pasada → 422" 422 "$(codigo "$BASE/api/citas/disponibilidad?servicio=veterinaria&fecha=$(gt -d yesterday +%F)")"
 esperar "servicio inexistente → 422" 422 "$(codigo "$BASE/api/citas/disponibilidad?servicio=cirugia&fecha=$DIA")"
 HORA=$(jq -r '[.turnos[] | select(.libres==2)][0].hora' <<<"$turnos")
 reservar() { # reservar <token> <mascota> <hora> [dia] → cuerpo<LF>código
@@ -488,7 +490,8 @@ HORA2=$(disp "$DIA" | jq -r '[.turnos[] | select(.libres==2)][0].hora')
 P1=$(mascota "$T3" "Luna $SUF"); P2=$(mascota "$T3" "Max $SUF"); P3=$(mascota "$T3" "Toby $SUF")
 carrera=$(mktemp -d)
 for p in "$P1" "$P2" "$P3"; do { reservar "$T3" "$p" "$HORA2" | tail -1; echo; } > "$carrera/$p" & done; wait
-codigos=$(cat "$carrera"/* | sort | tr '\n' ' '); rm -rf "$carrera"
+codigos=$(cat "$carrera"/* | sort | tr '\n' ' ')
+CON_CITA=$(grep -l '^201$' "$carrera"/* | head -1 | xargs -r basename); rm -rf "$carrera"
 esperar "3 reservas simultáneas para 2 cupos: 2 entran y 1 recibe 409" "201 201 409 " "$codigos"
 esperar "el turno desaparece de la disponibilidad" 0 "$(disp "$DIA" | jq --arg h "$HORA2" '[.turnos[] | select(.hora==$h)] | length')"
 esperar "en la BD hay exactamente 2 citas activas en ese turno" 2 "$(docker compose exec -T mariadb-master mariadb -N -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM citas_db.citas WHERE sede='centro' AND inicio='$DIA $HORA2:00' AND estado<>'cancelada'")"
@@ -507,7 +510,7 @@ esperar "el cliente cancela su cita → 200" 200 "$(codigo -X POST -H "Authoriza
 esperar "CITA_CANCELADA en la bitácora" "$CITA|cancelada" "$(evento_ultimo CITA_CANCELADA | jq -r '"\(.dato_nuevo.cita_id)|\(.dato_nuevo.estado)"')"
 esperar "al cancelar se libera el cupo" 2 "$(disp "$DIA" | jq --arg h "$HORA" '.turnos[] | select(.hora==$h) | .libres')"
 esperar "cancelar de nuevo → 409" 409 "$(codigo -X POST -H "Authorization: Bearer $T2" "$BASE/api/citas/$CITA/cancelar")"
-esperar "no se desactiva una mascota con citas próximas → 409" 409 "$(codigo -X DELETE -H "Authorization: Bearer $T3" "$BASE/api/citas/mascotas/$P1")"
+esperar "no se desactiva una mascota con citas próximas → 409" 409 "$(codigo -X DELETE -H "Authorization: Bearer $T3" "$BASE/api/citas/mascotas/$CON_CITA")"
 
 caso "CP-41 Un cliente no puede acaparar la agenda (D de STRIDE)"
 ultimo=""
