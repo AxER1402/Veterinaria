@@ -47,6 +47,7 @@ final class AuditController
         'TURNO_DESBLOQUEADO'      => ['citas-service'],
         'HISTORIAL_REGISTRADO'    => ['citas-service'],
         'HISTORIAL_CONSULTADO'    => ['citas-service'],
+        'RECORDATORIO_ENVIADO'    => ['citas-service'],
         // Extra: intentos de ver recursos ajenos (A01), útil para detectar enumeración.
         'ACCESO_DENEGADO'         => ['auth-service', 'catalogo-service', 'pedidos-service', 'pagos-service', 'citas-service'],
     ];

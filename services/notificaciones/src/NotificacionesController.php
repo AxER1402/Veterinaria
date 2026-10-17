@@ -61,6 +61,7 @@ final class NotificacionesController
         'reservada'  => ['titulo' => 'Recibimos tu cita', 'mensaje' => 'Tu cita quedó reservada. Te avisaremos cuando la confirmemos.'],
         'confirmada' => ['titulo' => 'Tu cita está confirmada', 'mensaje' => 'Te esperamos. Si no puedes venir, cancélala desde «Mis citas» hasta 2 horas antes.'],
         'cancelada'  => ['titulo' => 'Tu cita fue cancelada', 'mensaje' => 'La clínica canceló tu cita. Puedes reservar otro horario en la página.'],
+        'recordatorio' => ['titulo' => 'Mañana es tu cita', 'mensaje' => 'Te esperamos. Si no puedes venir, cancélala desde «Mis citas» hasta 2 horas antes.'],
     ];
 
     /**
@@ -103,6 +104,42 @@ final class NotificacionesController
             'dato_nuevo'    => ['plantilla' => "cita_$tipo", 'proveedor' => 'EmailJS', 'cita_id' => $c['id'], 'codigo_verificacion' => $codigo],
         ]);
         return [200, ['enviado' => $enviado, 'codigo_verificacion' => $codigo]];
+    }
+
+    /**
+     * Aviso de que vence una vacuna (tarea citas-recordatorios). Usa la misma plantilla que las citas.
+     * Entrada: {vacuna_id, vacuna, proxima_dosis "Y-m-d", mascota, cliente_nombre, cliente_email}
+     */
+    public function vacuna(): array
+    {
+        Guard::servicio(['citas-service']);
+        $d = Http::body();
+        foreach (['vacuna_id', 'vacuna', 'proxima_dosis', 'mascota', 'cliente_nombre', 'cliente_email'] as $campo) {
+            if (!is_string($d[$campo] ?? null) || $d[$campo] === '') {
+                throw new ApiError(422, 'Datos de la vacuna incompletos');
+            }
+        }
+        $email = filter_var($d['cliente_email'], FILTER_VALIDATE_EMAIL) ?: throw new ApiError(422, 'Correo inválido');
+        $fecha = \DateTimeImmutable::createFromFormat('!Y-m-d', $d['proxima_dosis']) ?: throw new ApiError(422, 'Fecha inválida');
+        $enviado = self::enviar('EMAILJS_TEMPLATE_CITA_ID', [
+            'to_email'            => $email,
+            'to_name'             => $d['cliente_nombre'],
+            'titulo'              => "Se acerca el refuerzo de {$d['mascota']}",
+            'mensaje'             => "La vacuna {$d['vacuna']} de {$d['mascota']} vence pronto. Reserva una consulta veterinaria para aplicar el refuerzo.",
+            'estado'              => 'vacuna',
+            'cita'                => '',
+            'servicio'            => "Refuerzo: {$d['vacuna']}",
+            'mascota'             => $d['mascota'],
+            'sede'                => 'Clínica veterinaria y peluquería · Av. Principal 954, Centro',
+            'fecha'               => self::fechaLarga($fecha),
+            'hora'                => '',
+            'codigo_verificacion' => '',
+        ], [
+            'usuario_email' => $email,
+            'rol'           => 'cliente',
+            'dato_nuevo'    => ['plantilla' => 'vacuna_por_vencer', 'proveedor' => 'EmailJS', 'vacuna_id' => $d['vacuna_id']],
+        ]);
+        return [200, ['enviado' => $enviado]];
     }
 
     /** Envía con EmailJS y deja EMAIL_ENVIADO en la bitácora (FALLO si no está configurado o falla). */

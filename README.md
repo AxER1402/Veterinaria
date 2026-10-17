@@ -40,6 +40,7 @@ Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 | `catalogo-service` | 24 productos con variantes, precio y stock. Lecturas en la réplica con caché Redis; imágenes por Cloudinary | 8082 (interno) |
 | `pedidos-service` | Pedidos con UUID, total calculado en el servidor, cupones, estados con historial | 8083 (interno) |
 | `pedidos-vencimientos` | Tarea periódica (cada 15 min): cancela los pedidos sin pagar tras `PEDIDO_VENCE_HORAS` (24 h) y devuelve el stock | — |
+| `citas-recordatorios` | Tarea periódica (cada 15 min): recordatorio de la cita un día antes, aviso 7 días antes de que venza una vacuna y cierre como «no asistió» de las citas que pasaron sin atenderse | — |
 | `pagos-service` | Stripe (PaymentIntent + webhook firmado) y PayPal (Orders v2, captura en servidor). Sin datos de tarjeta | 8084 (interno; solo el webhook es público) |
 | `notificaciones-service` | Correo de confirmación por EmailJS con código de verificación HMAC. Clima del panel admin (OpenWeatherMap u Open-Meteo) | 8085 (interno) |
 | `citas-service` | Mascotas de cada cliente y citas por sede en turnos de 30 min (2 cupos). La BD impide la doble reserva; máx. 5 citas próximas por cliente | 8087 (interno) |

@@ -127,7 +127,8 @@ services:
     build: { context: ./services, args: { SERVICE: pedidos, PORT: 8083 } }
     image: huellitas/pedidos-service:latest
     # Cada ejecución correcta anota la hora; el contenedor está sano si la última fue hace menos de 2 ciclos.
-    command: ["sh", "-c", "while :; do php /var/www/app/bin/vencer.php && date +%s > /tmp/vencimiento-ok; sleep ${PEDIDO_VENCIMIENTO_CADA_SEG:-900}; done"]
+    # Si una corrida falla (p. ej. el maestro aún no acepta conexiones al arrancar) se reintenta a los 30 s.
+    command: ["sh", "-c", "while :; do if php /var/www/app/bin/vencer.php; then date +%s > /tmp/vencimiento-ok; sleep ${PEDIDO_VENCIMIENTO_CADA_SEG:-900}; else sleep 30; fi; done"]
     healthcheck:
       test: ["CMD-SHELL", "test -s /tmp/vencimiento-ok && [ $$(( $$(date +%s) - $$(cat /tmp/vencimiento-ok) )) -lt $$(( 2 * ${PEDIDO_VENCIMIENTO_CADA_SEG:-900} + 60 )) ]"]
       interval: 60s
@@ -167,6 +168,35 @@ services:
       mariadb-master: { condition: service_healthy }
       redis: { condition: service_healthy }
       security-audit-service: { condition: service_healthy }
+
+  # Tarea periódica: recordatorio de la cita un día antes, aviso 7 días antes de que venza una vacuna
+  # y cierre de las citas que pasaron sin atenderse (FASE 15 C1).
+  citas-recordatorios:
+    <<: *php
+    # Misma imagen que citas-service, con su propio build (en el CI la imagen no existe en ningún registro).
+    build: { context: ./services, args: { SERVICE: citas, PORT: 8087 } }
+    image: huellitas/citas-service:latest
+    command: ["sh", "-c", "while :; do if php /var/www/app/bin/recordatorios.php; then date +%s > /tmp/recordatorios-ok; sleep ${CITAS_RECORDATORIOS_CADA_SEG:-900}; else sleep 30; fi; done"]
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /tmp/recordatorios-ok && [ $$(( $$(date +%s) - $$(cat /tmp/recordatorios-ok) )) -lt $$(( 2 * ${CITAS_RECORDATORIOS_CADA_SEG:-900} + 60 )) ]"]
+      interval: 60s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
+    mem_limit: 96m
+    cpu_shares: 256
+    environment:
+      <<: *php-env
+      SERVICE_NAME: citas-service
+      DB_HOST: mariadb-master
+      DB_NAME: citas_db
+      DB_USER: citas_user
+      DB_PASSWORD: ${CITAS_DB_PASSWORD}
+      NOTIFICACIONES_URL: http://notificaciones-service:8085
+      CITAS_NO_ASISTIO_DIAS: ${CITAS_NO_ASISTIO_DIAS:-1}
+    depends_on:
+      citas-service: { condition: service_healthy }
+      notificaciones-service: { condition: service_healthy }
 
   # Pagos y notificaciones son los únicos con salida a Internet (Stripe, PayPal, EmailJS).
   pagos-service:

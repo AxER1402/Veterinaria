@@ -616,6 +616,44 @@ esperar "el admin ve el diagnóstico y el tratamiento" "Otitis leve en oído der
 esperar "cada lectura del admin queda como HISTORIAL_CONSULTADO" "$M1|admin@huellitas.gt" "$(evento_ultimo HISTORIAL_CONSULTADO | jq -r '"\(.dato_nuevo.mascota_id)|\(.usuario_email)"')"
 esperar "la agenda marca la consulta con historial" true "$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/agenda?fecha=$(gt -d yesterday +%F)" | jq --arg c "$CONSULTA" '.citas[] | select(.id==$c) | .tiene_historial')"
 
+caso "CP-46 Recordatorios: cita de mañana, vacuna por vencer y citas sin atender (C1)"
+respiro
+sqlc() { docker compose exec -T -e MYSQL_PWD="$DB_ROOT_PASSWORD" mariadb-master mariadb -N -uroot citas_db -e "$1"; }
+cupo_bd=$(( 10 + 10#$SUF % 200 ))
+cita_bd() { # cita_bd <mascota> <servicio> <inicio> <creada> <email> → id   (cada una en su propio cupo)
+    local id; id=$(cat /proc/sys/kernel/random/uuid); cupo_bd=$((cupo_bd + 1))
+    sqlc "INSERT INTO citas (id, id_cliente, mascota_id, servicio, sede, inicio, cupo, estado, cliente_nombre, cliente_email, telefono, created_at)
+          SELECT '$id', id_cliente, id, '$2', (SELECT sede FROM servicios WHERE slug='$2'), '$3', $((cupo_bd % 250 + 5)), 'confirmada',
+                 'Dueña Prueba', '$5', '5555-1234', '$4' FROM mascotas WHERE id='$1'" && echo "$id"
+}
+eventos() { "${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auditoria/eventos?accion=$1&limite=30" | jq -c '.eventos'; }
+MANANA=$(cita_bd "$P3" veterinaria "$(gt -d '+20 hour' '+%F %H:00:00')" "$(gt -d '-3 day' '+%F %T')" "$CLIENTE3")
+RECIENTE=$(cita_bd "$P1" veterinaria "$(gt -d '+21 hour' '+%F %H:00:00')" "$(gt '+%F %T')" "$CLIENTE3")
+VIEJA=$(cita_bd "$P2" peluqueria "$(gt -d '-3 day' '+%F') 10:00:00" "$(gt -d '-5 day' '+%F %T')" "$CLIENTE3")
+HIST=$(jq -r '.consultas[0].id' <<<"$hist")
+VAC_POR_VENCER=$(cat /proc/sys/kernel/random/uuid); VAC_RENOVADA=$(cat /proc/sys/kernel/random/uuid)
+sqlc "INSERT INTO vacunas (id, mascota_id, historial_id, nombre, fecha_aplicacion, proxima_dosis) VALUES
+      ('$VAC_POR_VENCER', '$M1', '$HIST', 'Leptospirosis', '$(gt -d '-1 year' +%F)', '$(gt -d '+5 day' +%F)'),
+      ('$VAC_RENOVADA',   '$M1', '$HIST', 'Rabia',         '$(gt -d '-1 year' +%F)', '$(gt -d '+3 day' +%F)')"
+docker compose exec -T citas-recordatorios php /var/www/app/bin/recordatorios.php >/dev/null
+esperar "la cita de mañana queda con su recordatorio" 1 "$(sqlc "SELECT recordatorio_at IS NOT NULL FROM citas WHERE id='$MANANA'")"
+esperar "RECORDATORIO_ENVIADO de la cita" "$CLIENTE3" "$(eventos RECORDATORIO_ENVIADO | jq -r --arg c "$MANANA" '.[] | select(.dato_nuevo.cita_id==$c) | .usuario_email')"
+esperar "con su correo de recordatorio (EMAIL_ENVIADO)" cita_recordatorio "$(eventos EMAIL_ENVIADO | jq -r --arg c "$MANANA" '[.[] | select(.dato_nuevo.cita_id==$c)][0].dato_nuevo.plantilla')"
+esperar "si se reservó hace unas horas no se manda (ya recibió el de la reserva)" 0 "$(sqlc "SELECT recordatorio_at IS NOT NULL FROM citas WHERE id='$RECIENTE'")"
+esperar "la vacuna que vence en 5 días se avisa" "1|Leptospirosis" "$(sqlc "SELECT aviso_at IS NOT NULL FROM vacunas WHERE id='$VAC_POR_VENCER'")|$(eventos RECORDATORIO_ENVIADO | jq -r --arg v "$VAC_POR_VENCER" '.[] | select(.dato_nuevo.vacuna_id==$v) | .dato_nuevo.vacuna')"
+esperar "una dosis ya renovada no se avisa" 0 "$(sqlc "SELECT aviso_at IS NOT NULL FROM vacunas WHERE id='$VAC_RENOVADA'")"
+esperar "la cita de hace 3 días sin atender queda «no asistió»" no_asistio "$(sqlc "SELECT estado FROM citas WHERE id='$VIEJA'")"
+esperar "CITA_ESTADO_CAMBIADO con origen cierre automático" "confirmada|no_asistio|cierre automático" "$(eventos CITA_ESTADO_CAMBIADO | jq -r --arg c "$VIEJA" '.[] | select(.dato_nuevo.cita_id==$c) | "\(.dato_anterior.estado)|\(.dato_nuevo.estado)|\(.dato_nuevo.origen)"')"
+esperar "la de ayer se deja abierta (el admin aún puede registrarla)" confirmada "$(sqlc "SELECT estado FROM citas WHERE id='$PELU'")"
+antes=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auditoria/eventos?accion=RECORDATORIO_ENVIADO&limite=1" | jq -r '.eventos[0].id')
+docker compose exec -T citas-recordatorios php /var/www/app/bin/recordatorios.php >/dev/null
+esperar "una segunda corrida no repite avisos" "$antes" "$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auditoria/eventos?accion=RECORDATORIO_ENVIADO&limite=1" | jq -r '.eventos[0].id')"
+esperar "la tarea reporta su salud por el último ciclo correcto" healthy "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q citas-recordatorios)")"
+esperar "el script no se puede llamar por HTTP (ni desde la red interna)" 404 "$(docker compose exec -T auth-service curl -s -o /dev/null -w '%{http_code}' http://citas-service:8087/bin/recordatorios.php)"
+esperar "solo citas-service puede pedir avisos de vacunas → 403" 403 "$(docker compose exec -T auth-service php -r '
+    const SERVICE_DIR = "/var/www/app"; require "/var/www/shared/bootstrap.php";
+    [$c] = Huellitas\Interno::post("http://notificaciones-service:8085/internal/notificaciones/vacuna", []); echo $c;')"
+
 caso "CP-41 Un cliente no puede acaparar la agenda (D de STRIDE)"
 respiro
 ultimo=""

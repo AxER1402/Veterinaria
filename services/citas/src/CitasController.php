@@ -615,8 +615,9 @@ final class CitasController
     /**
      * Correo de la cita (notificaciones-service). No bloquea: si falla, la cita sigue y la falla queda
      * en la bitácora. La primera respuesta trae el código HMAC, que se guarda para mostrarlo.
+     * Devuelve si el correo salió (null si notificaciones-service no respondió).
      */
-    private function notificar(string $tipo, array $c, ?string $comentario = null): void
+    public function notificar(string $tipo, array $c, ?string $comentario = null): ?bool
     {
         [$http, $json] = Interno::post(rtrim(Env::get('NOTIFICACIONES_URL', 'http://notificaciones-service:8085'), '/') . '/internal/notificaciones/cita', [
             'tipo'       => $tipo,
@@ -629,11 +630,12 @@ final class CitasController
         $codigo = $json['codigo_verificacion'] ?? null;
         if ($http !== 200 || !is_string($codigo) || !preg_match('/^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/', $codigo)) {
             error_log("citas: notificaciones respondió $http al avisar la cita {$c['id']} ($tipo)");
-            return;
+            return null;
         }
         if ($c['codigo_verificacion'] === null) {
             Db::escritura()->prepare('UPDATE citas SET codigo_verificacion = ? WHERE id = ? AND codigo_verificacion IS NULL')->execute([$codigo, $c['id']]);
         }
+        return ($json['enviado'] ?? false) === true;
     }
 
     /** Hora «HH:MM» de un turno válido (8:00 a 20:00 cada 30 min; 20:00 solo como fin). */
@@ -747,7 +749,7 @@ final class CitasController
         return $m;
     }
 
-    private function citaPorId(string $id): ?array
+    public function citaPorId(string $id): ?array
     {
         if (!preg_match('/^[0-9a-f\-]{36}$/', $id)) {
             return null;
