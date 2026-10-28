@@ -21,10 +21,14 @@ $router->add('POST',  '/api/pedidos/cotizar', fn() => $pedidos->cotizar());
 $router->add('GET',   '/api/pedidos/admin/todos', fn() => $pedidos->listarTodos());
 $router->add('GET',   '/api/pedidos/admin/resumen', fn() => $pedidos->resumen());
 $router->add('GET',   '/api/pedidos/admin/clima', fn() => $pedidos->clima());
+$router->add('GET',   '/api/pedidos/admin/preparacion', fn() => $pedidos->preparacion());
+$router->add('GET',   '/api/pedidos/admin/clientes/{id}', fn($p) => $pedidos->deCliente((int) $p['id']));
 $router->add('PATCH', '/api/pedidos/admin/{id}/estado', fn($p) => $pedidos->cambiarEstado($p['id']));
+$router->add('PATCH', '/api/pedidos/admin/{id}/reembolso', fn($p) => $pedidos->registrarReembolso($p['id']));
 
 // Pago: el cliente dueño lo inicia aquí; pedidos-service habla con pagos-service por la red interna.
 $router->add('POST',  '/api/pedidos/{id}/pago', fn($p) => $pedidos->iniciarPago($p['id']));
+$router->add('POST',  '/api/pedidos/{id}/cancelar', fn($p) => $pedidos->cancelarPropio($p['id']));
 $router->add('POST',  '/api/pedidos/{id}/pago/paypal/capturar', fn($p) => $pedidos->capturarPayPal($p['id']));
 
 // Solo pagos-service: confirma que la pasarela cobró.

@@ -49,7 +49,7 @@ final class CatalogoController
 
     public function listarAdmin(): array
     {
-        Guard::usuario(['admin']);
+        Guard::usuario(Guard::TIENDA);
         return [200, ['productos' => $this->consultar(Db::escritura(), soloActivos: false, admin: true)]];
     }
 
@@ -59,7 +59,7 @@ final class CatalogoController
      */
     public function crearProducto(): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::TIENDA);
         $datos = Http::body();
         Validar::sinAtaques($datos);
 
@@ -119,7 +119,7 @@ final class CatalogoController
      */
     public function actualizarProducto(int $id): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::TIENDA);
         $datos = Http::body();
         Validar::sinAtaques($datos);
 
@@ -187,7 +187,7 @@ final class CatalogoController
     /** Presentaciones nuevas para un producto que ya existe (SKU HU-<producto>-<n> siguiente). */
     public function agregarVariantes(int $id): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::TIENDA);
         $datos = Http::body();
         Validar::sinAtaques($datos);
         $nuevas = self::variantesNuevas($datos['variantes'] ?? null);
@@ -236,7 +236,7 @@ final class CatalogoController
     /** Cambio de precio y/o stock de una variante. Registra PRECIO_MODIFICADO y PRODUCTO_AGOTADO. */
     public function actualizarVariante(int $id): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::TIENDA);
         $datos = Http::body();
 
         $nuevo = [];
@@ -302,7 +302,7 @@ final class CatalogoController
 
     public function firmaCloudinary(): array
     {
-        Guard::usuario(['admin']);
+        Guard::usuario(Guard::TIENDA);
         if (!Cloudinary::configurado()) {
             throw new ApiError(503, 'Cloudinary no está configurado (CLOUDINARY_* en .env)');
         }

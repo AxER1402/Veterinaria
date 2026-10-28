@@ -375,7 +375,7 @@ docker compose exec -T -e MYSQL_PWD="$DB_ROOT_PASSWORD" mariadb-master mariadb -
     "UPDATE pedidos_db.pedidos SET fecha = NOW() - INTERVAL 25 HOUR WHERE id = '$PED_V'"
 salida=$(docker compose exec -T pedidos-vencimientos php /var/www/app/bin/vencer.php)
 esperar "el pedido de hace 25 h se vence" true "$(jq --arg p "$PED_V" '.vencidos | index($p) != null' <<<"$salida")"
-esperar "queda cancelado con el motivo en el historial" "cancelado|Vencido: 24 h sin pago" "$(auth_json GET "$T2" "/api/pedidos/$PED_V" | jq -r '.pedido | "\(.estado)|\(.historial[-1].comentario)"')"
+esperar "queda cancelado con el motivo en el historial" "cancelado|Vencido: ${PEDIDO_VENCE_HORAS:-2} h sin pago" "$(auth_json GET "$T2" "/api/pedidos/$PED_V" | jq -r '.pedido | "\(.estado)|\(.historial[-1].comentario)"')"
 esperar "el stock apartado vuelve al catálogo" "$antes_stock" "$(stock_admin)"
 esperar "PEDIDO_ESTADO_CAMBIADO con origen vencimiento automático" "$PED_V|vencimiento automático" "$(evento_ultimo PEDIDO_ESTADO_CAMBIADO | jq -r '"\(.pedido_id)|\(.dato_nuevo.origen)"')"
 esperar "un pedido reciente no se toca" "[]" "$(docker compose exec -T pedidos-vencimientos php /var/www/app/bin/vencer.php | jq -c .vencidos)"
@@ -480,7 +480,7 @@ esperar "servicio inexistente → 422" 422 "$(codigo "$BASE/api/citas/disponibil
 HORA=$(jq -r '[.turnos[] | select(.libres==2)][0].hora' <<<"$turnos")
 reservar() { # reservar <token> <mascota> <hora> [dia] → cuerpo<LF>código
     "${C[@]}" -w '\n%{http_code}' -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' \
-        -d "$(jq -nc --arg m "$2" --arg h "$3" --arg d "${4:-$DIA}" '{mascota_id:$m, servicio:"veterinaria", fecha:$d, hora:$h, nombre:"Compradora Prueba", telefono:"+502 5512-3478"}')" "$BASE/api/citas"
+        -d "$(jq -nc --arg m "$2" --arg h "$3" --arg d "${4:-$DIA}" '{mascota_id:$m, servicio:"veterinaria", fecha:$d, hora:$h, nombre:"Compradora Prueba", telefono:"+502 5512-3478", notas:"Control"}')" "$BASE/api/citas"
 }
 esperar "fuera de horario (07:00) → 422" 422 "$(reservar "$T2" "$M1" 07:00 | tail -1)"
 esperar "con la mascota de otro cliente → 404" 404 "$(reservar "$T3" "$M1" "$HORA" | tail -1)"
@@ -664,8 +664,8 @@ for h in $(disp "$DIA" | jq -r '.turnos[].hora' | head -8); do
     ultimo=$(reservar "$T2" "$M1" "$h")
     [[ $(tail -1 <<<"$ultimo") == 409 ]] && break
 done
-esperar "la 6.ª cita próxima → 409" "409|true" "$(tail -1 <<<"$ultimo")|$(head -n -1 <<<"$ultimo" | jq -r '.error | test("citas próximas")')"
-esperar "el cliente tiene 5 citas próximas" 5 "$("${C[@]}" -H "Authorization: Bearer $T2" "$BASE/api/citas" | jq '[.citas[] | select(.estado=="pendiente")] | length')"
+esperar "la 4.ª cita próxima de la misma mascota → 409" "409|true" "$(tail -1 <<<"$ultimo")|$(head -n -1 <<<"$ultimo" | jq -r '.error | test("citas próximas")')"
+esperar "la mascota tiene 3 citas próximas (límite por mascota)" 3 "$("${C[@]}" -H "Authorization: Bearer $T2" "$BASE/api/citas" | jq '[.citas[] | select(.estado=="pendiente")] | length')"
 
 caso "CP-47 Alta de productos desde el panel (A01, A03, A09)"
 nuevo_producto() { # nuevo_producto <cambios jq sobre el cuerpo válido>

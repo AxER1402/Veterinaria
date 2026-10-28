@@ -25,93 +25,168 @@ final class CitasController
         'norte'  => 'Guardería y hospedaje – Norte · Calzada José Milla y Vidaurre 10-55, zona 6',
         'sur'    => 'Paseadores y cuidadores – Sur · Calzada Aguilar Batres 34-70, zona 11',
     ];
+    public const TELEFONO_CLINICA = '+502 2385-6420';
     private const APERTURA = 8;          // lunes a sábado, 8:00–20:00
     private const CIERRE = 20;
     private const TURNO_MIN = 30;
     private const ANTICIPACION_MIN = 60; // no se reserva un turno que empieza en menos de 1 h
     private const MAX_DIAS = 60;
+    private const MAX_NOCHES = 30;
     private const CANCELAR_HORAS = 2;
-    private const MAX_ACTIVAS = 5;       // D de STRIDE: un cliente no puede acaparar la agenda
-    private const ESPECIES = ['perro', 'gato', 'otro'];
+    // D de STRIDE: nadie acapara la agenda. El límite es por mascota (una familia con tres perros
+    // puede tener más citas que una con uno) con un tope por cliente.
+    private const MAX_ACTIVAS_MASCOTA = 3;
+    private const MAX_ACTIVAS_CLIENTE = 10;
+    private const MAX_FALTAS = 3;        // faltas en FALTAS_DIAS: ya no reserva en línea, debe llamar
+    private const FALTAS_DIAS = 90;
+    private const SEPARACION_MIN = 90;   // misma mascota en dos sedes: al menos 1 h 30 entre citas
+    private const ESPECIES = ['perro', 'gato', 'conejo', 'ave', 'roedor', 'reptil', 'otro'];
     private const SERVICIO_CLINICO = 'veterinaria'; // solo la consulta lleva historial clínico
     private const MAX_VACUNAS = 20;      // tope de cordura por consulta, no una regla clínica
     private const MAX_MEDICAMENTOS = 15;
     private const MUCOSAS = ['rosadas', 'palidas', 'ictericas', 'cianoticas', 'congestivas'];
     private const HIDRATACION = ['normal', 'leve', 'moderada', 'severa']; // deshidratación
     private const TIPOS_VACUNA = ['vacuna', 'desparasitacion'];
+    private const ACTIVAS = "('pendiente','confirmada')";
 
-    /** Transiciones que puede hacer el admin. La cancelación del cliente va por /cancelar. */
+    /**
+     * Transiciones del personal. Las de vuelta atrás (corregir un error) piden un comentario:
+     * «atendida» → «no asistió» solo si no tiene ficha clínica, y una cancelada vuelve a pendiente
+     * solo si es futura y su cupo sigue libre (lo decide el índice único).
+     */
     private const TRANSICIONES = [
         'pendiente'  => ['confirmada', 'cancelada', 'no_asistio', 'atendida'],
-        'confirmada' => ['atendida', 'no_asistio', 'cancelada'],
-        'atendida'   => [],
-        'no_asistio' => [],
-        'cancelada'  => [],
+        'confirmada' => ['atendida', 'no_asistio', 'cancelada', 'pendiente'],
+        'atendida'   => ['no_asistio'],
+        'no_asistio' => ['atendida', 'confirmada'],
+        'cancelada'  => ['pendiente'],
     ];
+    private const REVERSIONES = ['confirmada>pendiente', 'atendida>no_asistio', 'no_asistio>atendida', 'no_asistio>confirmada', 'cancelada>pendiente'];
 
     // ---------- Públicos ----------
 
     public function servicios(): array
     {
-        $filas = Db::lectura()->query('SELECT slug, nombre, sede, precio_desde FROM servicios WHERE activo = 1 ORDER BY sede, nombre')->fetchAll();
+        $filas = Db::lectura()->query('SELECT slug, nombre, sede, modalidad, precio_desde FROM servicios WHERE activo = 1 ORDER BY sede, nombre')->fetchAll();
         return [200, ['servicios' => array_map(fn($s) => [
-            'slug' => $s['slug'], 'nombre' => $s['nombre'], 'precio_desde' => (float) $s['precio_desde'],
+            'slug' => $s['slug'], 'nombre' => $s['nombre'], 'precio_desde' => (float) $s['precio_desde'], 'modalidad' => $s['modalidad'],
             'sede' => ['codigo' => $s['sede'], 'nombre' => self::SEDES[$s['sede']]],
-        ], $filas)]];
+        ], $filas), 'telefono' => self::TELEFONO_CLINICA]];
     }
 
-    /** Turnos de un día con los cupos libres. Se lee de la réplica: no carga al maestro. */
+    /**
+     * Turnos de un día con los cupos libres. Se lee del maestro: la réplica puede ir atrasada y
+     * mostrar como libre un turno que ya se ocupó. En hospedaje, con «salida» da los lugares de la estadía.
+     */
     public function disponibilidad(): array
     {
         $servicio = $this->servicio($_GET['servicio'] ?? null);
         $fecha = self::fecha($_GET['fecha'] ?? null);
-        return [200, [
-            'servicio' => $servicio['slug'],
-            'sede'     => ['codigo' => $servicio['sede'], 'nombre' => self::SEDES[$servicio['sede']]],
-            'fecha'    => $fecha->format('Y-m-d'),
-            'turnos'   => $this->turnos($servicio['sede'], $fecha, Db::lectura()),
-        ]];
+        $db = Db::escritura();
+        $dia = $fecha->format('Y-m-d');
+        $json = [
+            'servicio'  => $servicio['slug'],
+            'modalidad' => $servicio['modalidad'],
+            'sede'      => ['codigo' => $servicio['sede'], 'nombre' => self::SEDES[$servicio['sede']]],
+            'fecha'     => $dia,
+            'turnos'    => $this->turnosDia($servicio, $dia, $this->ocupacion($db, $servicio, $dia, $dia), false, false),
+        ];
+        if ($servicio['modalidad'] === 'estadia' && isset($_GET['salida'])) {
+            $salida = self::salida($_GET['salida'], $fecha);
+            $json['salida'] = $salida;
+            $json['libres_estadia'] = $this->libresEstadia($db, $servicio, $dia, $salida);
+        }
+        return [200, $json];
+    }
+
+    /** Días de los próximos 60 con lugar, llenos o cerrados: la reserva abre en el primero con lugar. */
+    public function calendario(): array
+    {
+        $servicio = $this->servicio($_GET['servicio'] ?? null);
+        $hoy = new \DateTimeImmutable('today');
+        $hasta = $hoy->modify('+' . self::MAX_DIAS . ' days');
+        $ocupacion = $this->ocupacion(Db::escritura(), $servicio, $hoy->format('Y-m-d'), $hasta->format('Y-m-d'));
+        $dias = [];
+        for ($d = $hoy; $d <= $hasta; $d = $d->modify('+1 day')) {
+            $dia = $d->format('Y-m-d');
+            $turnos = $this->turnosDia($servicio, $dia, $ocupacion, false, false);
+            $libres = array_sum(array_column($turnos, 'libres'));
+            $dias[] = ['fecha' => $dia, 'libres' => $libres,
+                       'estado' => (int) $d->format('N') === 7 ? 'cerrado' : ($libres > 0 ? 'libre' : 'lleno')];
+        }
+        $primero = array_values(array_filter($dias, fn($x) => $x['estado'] === 'libre'))[0]['fecha'] ?? null;
+        return [200, ['servicio' => $servicio['slug'], 'primer_dia_libre' => $primero, 'dias' => $dias]];
     }
 
     // ---------- Mascotas del cliente ----------
 
+    /** Con su próxima cita y su próxima vacuna, para mostrarlas en cada tarjeta. */
     public function mascotas(): array
     {
-        $claims = Guard::usuario(['cliente', 'admin']);
-        $q = Db::escritura()->prepare('SELECT * FROM mascotas WHERE id_cliente = ? AND activa = 1 ORDER BY created_at');
+        $claims = Guard::usuario(['cliente', ...Guard::CLINICA]);
+        $db = Db::escritura();
+        $q = $db->prepare("SELECT m.*,
+                                  (SELECT CONCAT(c.inicio, '|', s.nombre) FROM citas c JOIN servicios s ON s.slug = c.servicio
+                                    WHERE c.mascota_id = m.id AND c.estado IN " . self::ACTIVAS . " AND c.inicio >= NOW() ORDER BY c.inicio LIMIT 1) AS proxima_cita,
+                                  (SELECT CONCAT(v.proxima_dosis, '|', v.nombre) FROM vacunas v
+                                    WHERE v.mascota_id = m.id AND v.proxima_dosis >= CURDATE() - INTERVAL 30 DAY
+                                      AND NOT EXISTS (SELECT 1 FROM vacunas n WHERE n.mascota_id = v.mascota_id AND n.tipo = v.tipo AND n.nombre = v.nombre
+                                                      AND n.fecha_aplicacion > v.fecha_aplicacion)
+                                    ORDER BY v.proxima_dosis LIMIT 1) AS proxima_vacuna
+                             FROM mascotas m WHERE m.id_cliente = ? AND m.activa = 1 ORDER BY m.created_at");
         $q->execute([(int) $claims['sub']]);
-        return [200, ['mascotas' => array_map(fn($m) => self::mascotaJson($m), $q->fetchAll())]];
+        return [200, ['mascotas' => array_map(function ($m) {
+            $cita = $m['proxima_cita'] ? explode('|', $m['proxima_cita'], 2) : null;
+            $vacuna = $m['proxima_vacuna'] ? explode('|', $m['proxima_vacuna'], 2) : null;
+            return self::mascotaJson($m) + [
+                'proxima_cita'   => $cita ? ['inicio' => str_replace(' ', 'T', substr($cita[0], 0, 16)), 'servicio' => $cita[1]] : null,
+                'proxima_vacuna' => $vacuna ? ['fecha' => $vacuna[0], 'nombre' => $vacuna[1]] : null,
+            ];
+        }, $q->fetchAll())]];
     }
 
     public function crearMascota(): array
     {
-        $claims = Guard::usuario(['cliente', 'admin']);
+        $claims = Guard::usuario(['cliente', ...Guard::CLINICA]);
         $datos = Http::body();
         Validar::sinAtaques($datos);
-        $m = self::datosMascota($datos);
-        $id = Jwt::uuid();
-        Db::escritura()->prepare('INSERT INTO mascotas (id, id_cliente, nombre, especie, raza, sexo, fecha_nacimiento, peso_kg, alergias, enfermedades_cronicas, notas)
-                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-            ->execute([$id, (int) $claims['sub'], $m['nombre'], $m['especie'], $m['raza'], $m['sexo'], $m['fecha_nacimiento'], $m['peso_kg'],
-                       $m['alergias'], $m['enfermedades_cronicas'], $m['notas']]);
+        return [201, ['mascota' => $this->insertarMascota((int) $claims['sub'], self::datosMascota($datos), $claims)]];
+    }
 
+    /** El personal registra la mascota de un cliente que llama o llega sin cita. */
+    public function crearMascotaCliente(int $clienteId): array
+    {
+        $claims = Guard::usuario(Guard::CLINICA);
+        $datos = Http::body();
+        Validar::sinAtaques($datos);
+        if ($clienteId < 1) {
+            throw new ApiError(422, 'Cliente no válido');
+        }
+        return [201, ['mascota' => $this->insertarMascota($clienteId, self::datosMascota($datos), $claims)]];
+    }
+
+    private function insertarMascota(int $clienteId, array $m, array $claims): array
+    {
+        $id = Jwt::uuid();
+        $columnas = array_keys($m);
+        Db::escritura()->prepare('INSERT INTO mascotas (id, id_cliente, ' . implode(', ', $columnas) . ') VALUES (?, ?' . str_repeat(', ?', count($m)) . ')')
+            ->execute([$id, $clienteId, ...array_values($m)]);
         Auditoria::registrar('MASCOTA_REGISTRADA', 'EXITO', Auditoria::actor($claims) + [
-            'dato_nuevo' => ['mascota_id' => $id, 'nombre' => $m['nombre'], 'especie' => $m['especie']],
+            'dato_nuevo' => ['mascota_id' => $id, 'nombre' => $m['nombre'], 'especie' => $m['especie'], 'dueno_id' => $clienteId],
         ]);
-        return [201, ['mascota' => self::mascotaJson($this->mascotaPorId($id))]];
+        return self::mascotaJson($this->mascotaPorId($id));
     }
 
     public function actualizarMascota(string $id): array
     {
-        $claims = Guard::usuario(['cliente', 'admin']);
+        $claims = Guard::usuario(['cliente', ...Guard::CLINICA]);
         $actual = $this->mascotaPropia($id, $claims);
         $datos = Http::body();
         Validar::sinAtaques($datos);
         $m = self::datosMascota($datos + self::mascotaJson($actual));
-        Db::escritura()->prepare('UPDATE mascotas SET nombre = ?, especie = ?, raza = ?, sexo = ?, fecha_nacimiento = ?, peso_kg = ?, alergias = ?,
-                                  enfermedades_cronicas = ?, notas = ? WHERE id = ?')
-            ->execute([$m['nombre'], $m['especie'], $m['raza'], $m['sexo'], $m['fecha_nacimiento'], $m['peso_kg'], $m['alergias'],
-                       $m['enfermedades_cronicas'], $m['notas'], $id]);
+        // Las columnas salen de datosMascota() (lista fija); los valores van como parámetros.
+        Db::escritura()->prepare('UPDATE mascotas SET ' . implode(', ', array_map(fn($c) => "$c = ?", array_keys($m))) . ' WHERE id = ?')
+            ->execute([...array_values($m), $id]);
 
         $antes = array_intersect_key(self::mascotaJson($actual), $m);
         $cambios = array_filter($m, fn($v, $k) => $antes[$k] != $v, ARRAY_FILTER_USE_BOTH);
@@ -127,10 +202,10 @@ final class CitasController
     /** No se borra: queda inactiva (sus citas pasadas siguen teniendo a quién apuntar). */
     public function desactivarMascota(string $id): array
     {
-        $claims = Guard::usuario(['cliente', 'admin']);
+        $claims = Guard::usuario(['cliente', ...Guard::CLINICA]);
         $this->mascotaPropia($id, $claims);
         $db = Db::escritura();
-        $q = $db->prepare("SELECT COUNT(*) FROM citas WHERE mascota_id = ? AND estado IN ('pendiente','confirmada') AND inicio > NOW()");
+        $q = $db->prepare('SELECT COUNT(*) FROM citas WHERE mascota_id = ? AND estado IN ' . self::ACTIVAS . ' AND inicio > NOW()');
         $q->execute([$id]);
         if ((int) $q->fetchColumn() > 0) {
             throw new ApiError(409, 'Cancela primero sus citas próximas');
@@ -143,72 +218,67 @@ final class CitasController
         return [200, ['ok' => true]];
     }
 
-    // ---------- Citas del cliente ----------
+    // ---------- Citas ----------
 
+    /** Reserva del cliente desde la página. */
     public function crear(): array
     {
-        $claims = Guard::usuario(['cliente', 'admin']);
+        $claims = Guard::usuario(['cliente', ...Guard::CLINICA]);
         $datos = Http::body();
         Validar::sinAtaques($datos);
-
         $mascota = $this->mascotaPropia(is_string($datos['mascota_id'] ?? null) ? $datos['mascota_id'] : '', $claims);
+        $contacto = ['nombre' => Validar::texto($datos, 'nombre', 2, 100), 'email' => $claims['email'], 'telefono' => self::telefono($datos['telefono'] ?? null)];
+        return [201, $this->reservar($claims, $mascota, $datos, $contacto, false)];
+    }
+
+    /** Cita que agenda el personal para alguien que llama o llega sin cita (sin los límites del cliente). */
+    public function crearAdmin(): array
+    {
+        $claims = Guard::usuario(Guard::CLINICA);
+        $datos = Http::body();
+        Validar::sinAtaques($datos);
+        $mascota = $this->mascotaAdmin(is_string($datos['mascota_id'] ?? null) ? $datos['mascota_id'] : '');
+        $contacto = ['nombre' => Validar::texto($datos, 'nombre', 2, 100), 'email' => Validar::email($datos), 'telefono' => self::telefono($datos['telefono'] ?? null)];
+        return [201, $this->reservar($claims, $mascota, $datos, $contacto, true)];
+    }
+
+    /**
+     * Valida y guarda una reserva. La doble reserva la impide la BD (índice único por servicio, hora y
+     * cupo); en hospedaje, que cruza varias noches, se serializa con un bloqueo de la fila del servicio.
+     */
+    private function reservar(array $claims, array $mascota, array $datos, array $contacto, bool $personal): array
+    {
         if (!(int) $mascota['activa']) {
             throw new ApiError(422, 'Esa mascota ya no está activa', ['campo' => 'mascota_id']);
         }
         $servicio = $this->servicio($datos['servicio'] ?? null);
-        $fecha = self::fecha($datos['fecha'] ?? null);
-        $hora = is_string($datos['hora'] ?? null) ? $datos['hora'] : '';
-        $nombre = Validar::texto($datos, 'nombre', 2, 100);
-        $telefono = self::telefono($datos['telefono'] ?? null);
+        [$inicio, $fin] = $this->horario($servicio, $datos, $personal);
         $notas = isset($datos['notas']) && $datos['notas'] !== '' ? Validar::texto($datos, 'notas', 1, 300) : null;
-
+        if ($servicio['slug'] === self::SERVICIO_CLINICO && $notas === null) {
+            throw new ApiError(422, 'Cuéntanos el motivo de la consulta', ['campo' => 'notas']);
+        }
+        $clienteId = (int) $mascota['id_cliente'];
         $db = Db::escritura();
-        $turno = array_values(array_filter($this->turnos($servicio['sede'], $fecha, $db, true), fn($t) => $t['hora'] === $hora))[0] ?? null;
-        if ($turno === null) {
-            throw new ApiError(422, 'Ese turno no está disponible', ['campo' => 'hora']);
+        if (!$personal) {
+            $this->limitesCliente($db, $clienteId, $mascota);
         }
-        if ($turno['libres'] === 0) {
-            throw new ApiError(409, 'Ese turno se acaba de llenar. Elige otro');
-        }
-        $inicio = $fecha->format('Y-m-d') . " $hora:00";
+        $aviso = $this->choques($db, $mascota, $servicio, $inicio, null);
 
-        $q = $db->prepare("SELECT COUNT(*) FROM citas WHERE id_cliente = ? AND estado IN ('pendiente','confirmada') AND inicio > NOW()");
-        $q->execute([(int) $claims['sub']]);
-        if ((int) $q->fetchColumn() >= self::MAX_ACTIVAS) {
-            throw new ApiError(409, 'Ya tienes ' . self::MAX_ACTIVAS . ' citas próximas. Cancela alguna o espera a que pasen');
-        }
-
-        // Se prueba cada cupo; el índice único decide quién se queda con el turno.
         $id = Jwt::uuid();
-        $insertar = $db->prepare('INSERT INTO citas (id, id_cliente, mascota_id, servicio, sede, inicio, cupo, cliente_nombre, cliente_email, telefono, notas)
-                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $insertar = $db->prepare('INSERT INTO citas (id, id_cliente, mascota_id, servicio, sede, inicio, fin, cupo, cliente_nombre, cliente_email, telefono, notas)
+                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         $db->beginTransaction();
         try {
-            $guardada = false;
-            for ($cupo = 1; $cupo <= self::cupos() && !$guardada; $cupo++) {
-                try {
-                    $insertar->execute([$id, (int) $claims['sub'], $mascota['id'], $servicio['slug'], $servicio['sede'], $inicio, $cupo,
-                        $nombre, $claims['email'], $telefono, $notas]);
-                    $guardada = true;
-                } catch (\PDOException $e) {
-                    if (($e->errorInfo[1] ?? null) !== 1062) {
-                        throw $e;
-                    }
-                    if (str_contains($e->getMessage(), 'uq_citas_mascota')) {
-                        throw new ApiError(409, "{$mascota['nombre']} ya tiene una cita a esa hora");
-                    }
-                }
-            }
-            if (!$guardada) {
-                throw new ApiError(409, 'Ese turno se acaba de llenar. Elige otro');
-            }
-            // Si el admin bloqueó el turno mientras tanto, bloquear() tenía el rango y este INSERT esperó a
+            $this->asignarCupo($db, $servicio, $inicio, $fin, null, fn(int $cupo) => $insertar->execute([
+                $id, $clienteId, $mascota['id'], $servicio['slug'], $servicio['sede'], $inicio, $fin, $cupo,
+                $contacto['nombre'], $contacto['email'], $contacto['telefono'], $notas]), $mascota['nombre']);
+            // Si el personal bloqueó el turno mientras tanto, bloquear() tenía el rango y este INSERT esperó a
             // que terminara: la lectura con bloqueo ya ve el bloqueo confirmado y la reserva se deshace.
-            if ($this->bloqueado($db, $servicio['sede'], $fecha->format('Y-m-d'), $hora)) {
+            if ($this->bloqueado($db, $servicio['sede'], substr($inicio, 0, 10), substr($inicio, 11, 5))) {
                 throw new ApiError(422, 'Ese turno no está disponible', ['campo' => 'hora']);
             }
             $db->prepare('INSERT INTO historial_citas (cita_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, NULL, ?, ?, ?)')
-                ->execute([$id, 'pendiente', (int) $claims['sub'], 'Cita reservada por el cliente']);
+                ->execute([$id, 'pendiente', (int) $claims['sub'], $personal ? 'Cita agendada por el personal' : 'Cita reservada por el cliente']);
             $db->commit();
         } catch (\Throwable $e) {
             $db->rollBack();
@@ -216,48 +286,213 @@ final class CitasController
         }
 
         Auditoria::registrar('CITA_CREADA', 'EXITO', Auditoria::actor($claims) + [
-            'dato_nuevo' => ['cita_id' => $id, 'servicio' => $servicio['slug'], 'sede' => $servicio['sede'], 'inicio' => $inicio,
-                             'mascota_id' => $mascota['id']],
+            'dato_nuevo' => ['cita_id' => $id, 'servicio' => $servicio['slug'], 'sede' => $servicio['sede'], 'inicio' => $inicio, 'fin' => $fin,
+                             'mascota_id' => $mascota['id'], 'origen' => $personal ? 'personal' : 'cliente'],
         ]);
         $this->notificar('reservada', $this->citaPorId($id));
-        return [201, ['cita' => self::citaJson($this->citaPorId($id))]];
+        return ['cita' => self::citaJson($this->citaPorId($id), $personal), 'aviso' => $aviso];
+    }
+
+    /** @return array{0: string, 1: ?string} inicio y fin («Y-m-d H:i:s») según la modalidad del servicio */
+    private function horario(array $servicio, array $datos, bool $personal): array
+    {
+        $fecha = self::fecha($datos['fecha'] ?? null);
+        $dia = $fecha->format('Y-m-d');
+        $hora = $servicio['modalidad'] === 'turno' ? (is_string($datos['hora'] ?? null) ? $datos['hora'] : '') : '08:00';
+        $db = Db::escritura();
+        $turno = array_values(array_filter($this->turnosDia($servicio, $dia, $this->ocupacion($db, $servicio, $dia, $dia), true, $personal),
+            fn($t) => $t['hora'] === $hora))[0] ?? null;
+        if ($turno === null) {
+            throw new ApiError(422, $servicio['modalidad'] === 'turno' ? 'Ese turno no está disponible' : 'Ese día no está disponible', ['campo' => 'hora']);
+        }
+        if ($turno['libres'] === 0) {
+            throw new ApiError(409, 'Ese turno se acaba de llenar. Elige otro');
+        }
+        $fin = null;
+        if ($servicio['modalidad'] === 'estadia') {
+            $salida = self::salida($datos['salida'] ?? null, $fecha);
+            if ($this->libresEstadia($db, $servicio, $dia, $salida) === 0) {
+                throw new ApiError(409, 'No quedan lugares para esas noches. Elige otras fechas');
+            }
+            $fin = "$salida 08:00:00";
+        }
+        return ["$dia $hora:00", $fin];
+    }
+
+    /** Límites de la reserva en línea: por mascota, por cliente y por faltas recientes. */
+    private function limitesCliente(\PDO $db, int $clienteId, array $mascota): void
+    {
+        $q = $db->prepare('SELECT COUNT(*) FROM citas WHERE id_cliente = ? AND estado = ? AND inicio >= NOW() - INTERVAL ? DAY AND inicio < NOW()');
+        $q->execute([$clienteId, 'no_asistio', self::FALTAS_DIAS]);
+        if ((int) $q->fetchColumn() >= self::MAX_FALTAS) {
+            throw new ApiError(409, 'Tienes ' . self::MAX_FALTAS . ' o más citas a las que no asististe en los últimos 3 meses. Para reservar, llámanos al '
+                . self::TELEFONO_CLINICA, ['motivo' => 'faltas']);
+        }
+        $q = $db->prepare('SELECT COUNT(*) FROM citas WHERE mascota_id = ? AND estado IN ' . self::ACTIVAS . ' AND inicio > NOW()');
+        $q->execute([$mascota['id']]);
+        if ((int) $q->fetchColumn() >= self::MAX_ACTIVAS_MASCOTA) {
+            throw new ApiError(409, "{$mascota['nombre']} ya tiene " . self::MAX_ACTIVAS_MASCOTA . ' citas próximas. Cancela alguna o espera a que pasen');
+        }
+        $q = $db->prepare('SELECT COUNT(*) FROM citas WHERE id_cliente = ? AND estado IN ' . self::ACTIVAS . ' AND inicio > NOW()');
+        $q->execute([$clienteId]);
+        if ((int) $q->fetchColumn() >= self::MAX_ACTIVAS_CLIENTE) {
+            throw new ApiError(409, 'Ya tienes ' . self::MAX_ACTIVAS_CLIENTE . ' citas próximas. Cancela alguna o espera a que pasen');
+        }
+    }
+
+    /**
+     * Otra cita de la misma mascota ese día: en otra sede y muy pegada se rechaza (no llega a tiempo);
+     * si no, se devuelve un aviso para mostrarlo.
+     */
+    private function choques(\PDO $db, array $mascota, array $servicio, string $inicio, ?string $excluir): ?string
+    {
+        $q = $db->prepare('SELECT c.inicio, c.sede, s.nombre FROM citas c JOIN servicios s ON s.slug = c.servicio
+                            WHERE c.mascota_id = ? AND c.estado IN ' . self::ACTIVAS . ' AND c.inicio >= ? AND c.inicio < ? + INTERVAL 1 DAY AND c.id <> ?');
+        $dia = substr($inicio, 0, 10);
+        $q->execute([$mascota['id'], $dia, $dia, $excluir ?? '']);
+        $otras = $q->fetchAll();
+        foreach ($otras as $o) {
+            if ($o['sede'] !== $servicio['sede'] && abs(strtotime($o['inicio']) - strtotime($inicio)) < self::SEPARACION_MIN * 60) {
+                throw new ApiError(409, "{$mascota['nombre']} tiene {$o['nombre']} a las " . substr($o['inicio'], 11, 5)
+                    . ' en otra sede. Deja al menos 1 h 30 entre las dos citas', ['campo' => 'hora']);
+            }
+        }
+        return $otras ? "{$mascota['nombre']} ya tiene otra cita ese día: " . implode(', ', array_map(fn($o) => "{$o['nombre']} a las " . substr($o['inicio'], 11, 5), $otras)) . '.' : null;
+    }
+
+    /**
+     * Prueba los cupos del servicio con $guardar(cupo) hasta que el índice único acepte uno. En hospedaje
+     * se toma la fila del servicio con FOR UPDATE y se elige un cupo libre en todas las noches.
+     */
+    private function asignarCupo(\PDO $db, array $servicio, string $inicio, ?string $fin, ?string $excluir, callable $guardar, string $mascota): void
+    {
+        if ($servicio['modalidad'] === 'estadia') {
+            $db->prepare('SELECT slug FROM servicios WHERE slug = ? FOR UPDATE')->execute([$servicio['slug']]);
+            $q = $db->prepare('SELECT cupo FROM citas WHERE servicio = ? AND ocupa = 1 AND inicio < ? AND fin > ? AND id <> ?');
+            $q->execute([$servicio['slug'], $fin, $inicio, $excluir ?? '']);
+            $usados = array_map('intval', $q->fetchAll(\PDO::FETCH_COLUMN));
+            for ($cupo = 1; $cupo <= (int) $servicio['cupos']; $cupo++) {
+                if (!in_array($cupo, $usados, true)) {
+                    $this->guardarCupo($guardar, $cupo, $mascota);
+                    return;
+                }
+            }
+            throw new ApiError(409, 'No quedan lugares para esas noches. Elige otras fechas');
+        }
+        for ($cupo = 1; $cupo <= (int) $servicio['cupos']; $cupo++) {
+            if ($this->guardarCupo($guardar, $cupo, $mascota)) {
+                return;
+            }
+        }
+        throw new ApiError(409, 'Ese turno se acaba de llenar. Elige otro');
+    }
+
+    /** true si el cupo quedó; false si otra cita ya lo tiene (1062 en el índice del turno). */
+    private function guardarCupo(callable $guardar, int $cupo, string $mascota): bool
+    {
+        try {
+            $guardar($cupo);
+            return true;
+        } catch (\PDOException $e) {
+            if (($e->errorInfo[1] ?? null) !== 1062) {
+                throw $e;
+            }
+            if (str_contains($e->getMessage(), 'uq_citas_mascota')) {
+                throw new ApiError(409, "$mascota ya tiene una cita a esa hora");
+            }
+            return false;
+        }
     }
 
     public function misCitas(): array
     {
-        $claims = Guard::usuario(['cliente', 'admin']);
-        $q = Db::escritura()->prepare(self::SQL_CITA . ' WHERE c.id_cliente = ? ORDER BY c.inicio DESC LIMIT 100');
+        $claims = Guard::usuario(['cliente', ...Guard::CLINICA]);
+        $q = Db::escritura()->prepare(self::SQL_CITA . ' WHERE c.id_cliente = ? ORDER BY c.inicio DESC LIMIT 200');
         $q->execute([(int) $claims['sub']]);
-        return [200, ['citas' => array_map(fn($c) => self::citaJson($c), $q->fetchAll())]];
+        return [200, ['citas' => array_map(fn($c) => self::citaJson($c), $q->fetchAll()), 'telefono' => self::TELEFONO_CLINICA]];
     }
 
     public function cancelar(string $id): array
     {
-        $claims = Guard::usuario(['cliente', 'admin']);
+        $claims = Guard::usuario(['cliente', ...Guard::CLINICA]);
         $cita = $this->citaPropia($id, $claims);
         if (!in_array($cita['estado'], ['pendiente', 'confirmada'], true)) {
             throw new ApiError(409, 'Esta cita ya no se puede cancelar');
         }
         if (strtotime($cita['inicio']) - time() < self::CANCELAR_HORAS * 3600) {
-            throw new ApiError(409, 'Solo se puede cancelar hasta ' . self::CANCELAR_HORAS . ' horas antes. Llámanos para cambiarla');
+            throw new ApiError(409, 'Solo se puede cancelar hasta ' . self::CANCELAR_HORAS . ' horas antes. Llámanos al ' . self::TELEFONO_CLINICA);
         }
         $this->moverEstado($cita, 'cancelada', $claims, 'Cancelada por el cliente', 'CITA_CANCELADA');
         return [200, ['cita' => self::citaJson($this->citaPorId($id))]];
     }
 
-    // ---------- Administración ----------
+    /**
+     * Cambia el día y la hora (y en hospedaje la salida). El cliente, hasta 2 horas antes y la cita vuelve
+     * a quedar pendiente de confirmar; el personal, en cualquier momento y conserva el estado.
+     */
+    public function reprogramar(string $id): array
+    {
+        $claims = Guard::usuario(['cliente', ...Guard::CLINICA]);
+        $personal = in_array($claims['rol'], Guard::CLINICA, true);
+        $datos = Http::body();
+        Validar::sinAtaques($datos);
+        $cita = $this->citaPropia($id, $claims);
+        if (!in_array($cita['estado'], ['pendiente', 'confirmada'], true)) {
+            throw new ApiError(409, 'Esta cita ya no se puede reprogramar');
+        }
+        if (!$personal && strtotime($cita['inicio']) - time() < self::CANCELAR_HORAS * 3600) {
+            throw new ApiError(409, 'Solo se puede reprogramar hasta ' . self::CANCELAR_HORAS . ' horas antes. Llámanos al ' . self::TELEFONO_CLINICA);
+        }
+        $servicio = $this->servicio($cita['servicio']);
+        $mascota = $this->mascotaPorId($cita['mascota_id']);
+        [$inicio, $fin] = $this->horario($servicio, $datos + ['servicio' => $servicio['slug']], $personal);
+        if ($inicio === $cita['inicio'] && $fin === $cita['fin']) {
+            throw new ApiError(422, 'Elige un día u hora distintos', ['campo' => 'hora']);
+        }
+        $aviso = $this->choques(Db::escritura(), $mascota, $servicio, $inicio, $id);
+        $estado = $personal ? $cita['estado'] : 'pendiente';
+        $comentario = 'Reprogramada de ' . substr($cita['inicio'], 0, 16) . ' a ' . substr($inicio, 0, 16) . ($personal ? ' por el personal' : ' por el cliente');
+
+        $db = Db::escritura();
+        $actualizar = $db->prepare('UPDATE citas SET inicio = ?, fin = ?, cupo = ?, estado = ?, recordatorio_at = NULL WHERE id = ?');
+        $db->beginTransaction();
+        try {
+            $q = $db->prepare('SELECT estado FROM citas WHERE id = ? FOR UPDATE');
+            $q->execute([$id]);
+            if ($q->fetchColumn() !== $cita['estado']) {
+                throw new ApiError(409, 'La cita cambió mientras tanto, recarga');
+            }
+            $this->asignarCupo($db, $servicio, $inicio, $fin, $id, fn(int $cupo) => $actualizar->execute([$inicio, $fin, $cupo, $estado, $id]), $mascota['nombre']);
+            if ($this->bloqueado($db, $servicio['sede'], substr($inicio, 0, 10), substr($inicio, 11, 5))) {
+                throw new ApiError(422, 'Ese turno no está disponible', ['campo' => 'hora']);
+            }
+            $db->prepare('INSERT INTO historial_citas (cita_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, ?, ?, ?, ?)')
+                ->execute([$id, $cita['estado'], $estado, (int) $claims['sub'], $comentario]);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+        Auditoria::registrar('CITA_REPROGRAMADA', 'EXITO', Auditoria::actor($claims) + [
+            'dato_anterior' => ['cita_id' => $id, 'inicio' => $cita['inicio'], 'fin' => $cita['fin'], 'estado' => $cita['estado']],
+            'dato_nuevo'    => ['cita_id' => $id, 'inicio' => $inicio, 'fin' => $fin, 'estado' => $estado],
+        ]);
+        $this->notificar('reprogramada', $this->citaPorId($id));
+        return [200, ['cita' => self::citaJson($this->citaPorId($id), $personal), 'aviso' => $aviso]];
+    }
+
+    // ---------- Agenda del personal ----------
 
     public function agenda(): array
     {
-        Guard::usuario(['admin']);
+        Guard::usuario(Guard::CLINICA);
         $fecha = self::fecha($_GET['fecha'] ?? date('Y-m-d'), true);
-        $sede = $_GET['sede'] ?? null;
-        $sql = self::SQL_CITA . ' WHERE c.inicio >= ? AND c.inicio < ? + INTERVAL 1 DAY';
-        $params = [$fecha->format('Y-m-d'), $fecha->format('Y-m-d')];
-        if ($sede !== null && $sede !== '') {
-            if (!isset(self::SEDES[$sede])) {
-                throw new ApiError(422, 'Sede no válida', ['campo' => 'sede']);
-            }
+        $sede = self::sedeFiltro();
+        $dia = $fecha->format('Y-m-d');
+        // Un hospedaje aparece todos los días de la estadía, no solo el de entrada.
+        $sql = self::SQL_CITA . ' WHERE ((c.inicio >= ? AND c.inicio < ? + INTERVAL 1 DAY) OR (c.fin IS NOT NULL AND c.inicio < ? AND c.fin > ?))';
+        $params = [$dia, $dia, $dia, $dia];
+        if ($sede !== null) {
             $sql .= ' AND c.sede = ?';
             $params[] = $sede;
         }
@@ -266,25 +501,89 @@ final class CitasController
         $citas = array_map(fn($c) => self::citaJson($c, true), $q->fetchAll());
 
         $b = Db::escritura()->prepare('SELECT * FROM turnos_bloqueados WHERE activo = 1 AND fecha = ?' . ($sede ? ' AND sede = ?' : '') . ' ORDER BY sede, hora_inicio');
-        $b->execute($sede ? [$fecha->format('Y-m-d'), $sede] : [$fecha->format('Y-m-d')]);
-        return [200, ['fecha' => $fecha->format('Y-m-d'), 'citas' => $citas, 'bloqueos' => array_map(fn($x) => self::bloqueoJson($x), $b->fetchAll())]];
+        $b->execute($sede ? [$dia, $sede] : [$dia]);
+        return [200, ['fecha' => $dia, 'citas' => $citas, 'bloqueos' => array_map(fn($x) => self::bloqueoJson($x), $b->fetchAll())]];
+    }
+
+    /** Vista semanal: citas por día (lunes a sábado) de la semana de la fecha. */
+    public function semana(): array
+    {
+        Guard::usuario(Guard::CLINICA);
+        $fecha = self::fecha($_GET['fecha'] ?? date('Y-m-d'), true);
+        $lunes = $fecha->modify('-' . ((int) $fecha->format('N') - 1) . ' days');
+        $sede = self::sedeFiltro();
+        $q = Db::escritura()->prepare('SELECT DATE(inicio) AS dia, estado, COUNT(*) AS n FROM citas WHERE inicio >= ? AND inicio < ? + INTERVAL 6 DAY'
+            . ($sede ? ' AND sede = ?' : '') . ' GROUP BY DATE(inicio), estado');
+        $q->execute(array_filter([$lunes->format('Y-m-d'), $lunes->format('Y-m-d'), $sede]));
+        $conteo = [];
+        foreach ($q->fetchAll() as $f) {
+            $conteo[$f['dia']][$f['estado']] = (int) $f['n'];
+        }
+        $dias = [];
+        for ($i = 0; $i < 6; $i++) {
+            $dia = $lunes->modify("+$i days")->format('Y-m-d');
+            $e = $conteo[$dia] ?? [];
+            $dias[] = ['fecha' => $dia, 'activas' => array_sum($e) - ($e['cancelada'] ?? 0), 'pendientes' => $e['pendiente'] ?? 0,
+                       'canceladas' => $e['cancelada'] ?? 0];
+        }
+        return [200, ['dias' => $dias]];
+    }
+
+    /** Busca citas por mascota, cliente, correo o teléfono (de 3 meses atrás a 2 meses adelante). */
+    public function buscar(): array
+    {
+        Guard::usuario(Guard::CLINICA);
+        $texto = is_string($_GET['q'] ?? null) ? trim($_GET['q']) : '';
+        if (mb_strlen($texto) < 2 || mb_strlen($texto) > 60) {
+            throw new ApiError(422, 'Escribe al menos 2 letras', ['campo' => 'q']);
+        }
+        $patron = '%' . addcslashes($texto, '%_\\') . '%';
+        $q = Db::escritura()->prepare(self::SQL_CITA . ' WHERE c.inicio >= NOW() - INTERVAL 90 DAY AND c.inicio < NOW() + INTERVAL 61 DAY
+                                       AND (m.nombre LIKE ? OR c.cliente_nombre LIKE ? OR c.cliente_email LIKE ? OR c.telefono LIKE ?)
+                                     ORDER BY c.inicio DESC LIMIT 50');
+        $q->execute([$patron, $patron, $patron, $patron]);
+        return [200, ['citas' => array_map(fn($c) => self::citaJson($c, true), $q->fetchAll())]];
+    }
+
+    /** Confirma de una vez las pendientes de un día (normalmente mañana) y avisa a cada cliente. */
+    public function confirmarDia(): array
+    {
+        $claims = Guard::usuario(Guard::CLINICA);
+        $d = Http::body();
+        $fecha = self::fecha($d['fecha'] ?? null);
+        $sede = isset($d['sede']) && $d['sede'] !== '' ? (isset(self::SEDES[$d['sede']]) ? $d['sede'] : throw new ApiError(422, 'Sede no válida')) : null;
+        $q = Db::escritura()->prepare(self::SQL_CITA . " WHERE c.estado = 'pendiente' AND c.inicio > NOW() AND c.inicio >= ? AND c.inicio < ? + INTERVAL 1 DAY"
+            . ($sede ? ' AND c.sede = ?' : ''));
+        $q->execute(array_filter([$fecha->format('Y-m-d'), $fecha->format('Y-m-d'), $sede]));
+        $confirmadas = 0;
+        foreach ($q->fetchAll() as $cita) {
+            try {
+                $this->moverEstado($cita, 'confirmada', $claims, 'Confirmada junto con las demás del día', 'CITA_ESTADO_CAMBIADO');
+            } catch (ApiError) {
+                continue; // cambió mientras tanto: se deja como está
+            }
+            $this->notificar('confirmada', $this->citaPorId($cita['id']));
+            $confirmadas++;
+        }
+        return [200, ['confirmadas' => $confirmadas]];
     }
 
     /** Próximos bloqueos (feriados, mantenimiento). */
     public function bloqueos(): array
     {
-        Guard::usuario(['admin']);
+        Guard::usuario(Guard::CLINICA);
         $q = Db::escritura()->query('SELECT * FROM turnos_bloqueados WHERE activo = 1 AND fecha >= CURDATE() ORDER BY fecha, sede, hora_inicio LIMIT 100');
         return [200, ['bloqueos' => array_map(fn($x) => self::bloqueoJson($x), $q->fetchAll())]];
     }
 
     /**
-     * Bloquea un día entero o un rango de turnos de una sede. Si ya hay citas activas en ese rango se
-     * rechaza (409): primero se cancelan en la agenda, y así cada cliente recibe su aviso.
+     * Bloquea un día entero o un rango de turnos de una sede. Si hay citas activas en ese rango, se
+     * rechaza (409 con la cantidad) salvo que venga «cancelar_citas»: entonces se cancelan en la misma
+     * transacción con el motivo del bloqueo y se avisa a cada cliente.
      */
     public function bloquear(): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::CLINICA);
         $d = Http::body();
         Validar::sinAtaques($d);
         $sede = is_string($d['sede'] ?? null) && isset(self::SEDES[$d['sede']]) ? $d['sede'] : throw new ApiError(422, 'Sede no válida', ['campo' => 'sede']);
@@ -300,19 +599,28 @@ final class CitasController
             }
         }
         $motivo = Validar::texto($d, 'motivo', 3, 120);
+        $cancelar = ($d['cancelar_citas'] ?? false) === true;
         $desde = $todoElDia ? "$dia 00:00:00" : "$dia $ini:00";
         $hasta = $todoElDia ? $fecha->modify('+1 day')->format('Y-m-d 00:00:00') : "$dia $fin:00";
 
         $db = Db::escritura();
+        $canceladas = [];
         $db->beginTransaction();
         try {
             // FOR UPDATE toma el rango del índice: una reserva en ese rango espera a que esto termine.
-            $q = $db->prepare("SELECT COUNT(*) FROM citas WHERE inicio >= ? AND inicio < ? AND sede = ? AND estado IN ('pendiente','confirmada') FOR UPDATE");
+            $q = $db->prepare('SELECT id, estado, inicio FROM citas WHERE inicio >= ? AND inicio < ? AND sede = ? AND estado IN ' . self::ACTIVAS . ' FOR UPDATE');
             $q->execute([$desde, $hasta, $sede]);
-            $activas = (int) $q->fetchColumn();
-            if ($activas > 0) {
-                throw new ApiError(409, $activas === 1 ? 'Hay 1 cita en ese horario. Cancélala primero en la agenda'
-                    : "Hay $activas citas en ese horario. Cancélalas primero en la agenda", ['citas' => $activas]);
+            $activas = $q->fetchAll();
+            if ($activas && !$cancelar) {
+                $n = count($activas);
+                throw new ApiError(409, $n === 1 ? 'Hay 1 cita en ese horario' : "Hay $n citas en ese horario", ['citas' => $n]);
+            }
+            $comentario = mb_substr("Cancelada por bloqueo: $motivo", 0, 200);
+            foreach ($activas as $c) {
+                $db->prepare("UPDATE citas SET estado = 'cancelada' WHERE id = ?")->execute([$c['id']]);
+                $db->prepare('INSERT INTO historial_citas (cita_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, ?, ?, ?, ?)')
+                    ->execute([$c['id'], $c['estado'], 'cancelada', (int) $claims['sub'], $comentario]);
+                $canceladas[] = $c;
             }
             $db->prepare('INSERT INTO turnos_bloqueados (sede, fecha, hora_inicio, hora_fin, motivo, creado_por) VALUES (?, ?, ?, ?, ?, ?)')
                 ->execute([$sede, $dia, $ini ? "$ini:00" : null, $fin ? "$fin:00" : null, $motivo, (int) $claims['sub']]);
@@ -322,16 +630,24 @@ final class CitasController
             $db->rollBack();
             throw $e;
         }
+        foreach ($canceladas as $c) {
+            Auditoria::registrar('CITA_ESTADO_CAMBIADO', 'EXITO', Auditoria::actor($claims) + [
+                'dato_anterior' => ['cita_id' => $c['id'], 'estado' => $c['estado']],
+                'dato_nuevo'    => ['cita_id' => $c['id'], 'estado' => 'cancelada', 'inicio' => $c['inicio'], 'comentario' => $comentario, 'bloqueo_id' => $id],
+            ]);
+            $this->notificar('cancelada', $this->citaPorId($c['id']), $motivo);
+        }
         $bloqueo = self::bloqueoJson($this->bloqueoPorId($id));
         Auditoria::registrar('TURNO_BLOQUEADO', 'EXITO', Auditoria::actor($claims) + [
-            'dato_nuevo' => ['bloqueo_id' => $id, 'sede' => $sede, 'fecha' => $dia, 'hora_inicio' => $ini, 'hora_fin' => $fin, 'motivo' => $motivo],
+            'dato_nuevo' => ['bloqueo_id' => $id, 'sede' => $sede, 'fecha' => $dia, 'hora_inicio' => $ini, 'hora_fin' => $fin, 'motivo' => $motivo,
+                             'citas_canceladas' => count($canceladas)],
         ]);
-        return [201, ['bloqueo' => $bloqueo]];
+        return [201, ['bloqueo' => $bloqueo, 'citas_canceladas' => count($canceladas)]];
     }
 
     public function desbloquear(string $id): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::CLINICA);
         $b = ctype_digit($id) ? $this->bloqueoPorId((int) $id) : null;
         if (!$b || !(int) $b['activo']) {
             throw new ApiError(404, 'Bloqueo no encontrado');
@@ -349,7 +665,7 @@ final class CitasController
 
     public function cambiarEstado(string $id): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::CLINICA);
         $datos = Http::body();
         Validar::sinAtaques($datos);
         $nuevo = $datos['estado'] ?? null;
@@ -360,12 +676,81 @@ final class CitasController
         if (in_array($nuevo, ['atendida', 'no_asistio'], true) && substr($cita['inicio'], 0, 10) > date('Y-m-d')) {
             throw new ApiError(422, 'Solo se marca como atendida o no asistió el día de la cita o después', ['campo' => 'estado']);
         }
-        $comentario = isset($datos['comentario']) && $datos['comentario'] !== '' ? Validar::texto($datos, 'comentario', 1, 200) : null;
+        $reversion = in_array("{$cita['estado']}>$nuevo", self::REVERSIONES, true);
+        if ($reversion && $cita['estado'] === 'atendida' && $cita['historial_id'] !== null) {
+            throw new ApiError(409, 'Esta consulta ya tiene ficha clínica: corrígela con una adenda');
+        }
+        if ($reversion && $cita['estado'] === 'cancelada' && strtotime($cita['inicio']) < time()) {
+            throw new ApiError(409, 'Solo se reactiva una cita futura');
+        }
+        $comentario = isset($datos['comentario']) && $datos['comentario'] !== '' ? Validar::texto($datos, 'comentario', $reversion ? 3 : 1, 200) : null;
+        if ($reversion && $comentario === null) {
+            throw new ApiError(422, 'Explica por qué se corrige el estado', ['campo' => 'comentario']);
+        }
         $this->moverEstado($cita, $nuevo, $claims, $comentario, 'CITA_ESTADO_CAMBIADO');
         if (in_array($nuevo, ['confirmada', 'cancelada'], true) && $cita['inicio'] > date('Y-m-d H:i:s')) {
             $this->notificar($nuevo, $this->citaPorId($id), $comentario);
         }
         return [200, ['cita' => self::citaJson($this->citaPorId($id), true)]];
+    }
+
+    // ---------- Clientes y resumen clínico ----------
+
+    /** Cancelaciones, faltas y citas atendidas por cliente (para la lista de clientes). */
+    public function contadoresClientes(): array
+    {
+        Guard::usuario(Guard::CLINICA);
+        $q = Db::escritura()->query("SELECT id_cliente, SUM(estado = 'cancelada') AS canceladas, SUM(estado = 'no_asistio') AS faltas,
+                                            SUM(estado = 'atendida') AS atendidas, COUNT(DISTINCT mascota_id) AS mascotas
+                                       FROM citas GROUP BY id_cliente");
+        $r = [];
+        foreach ($q->fetchAll() as $f) {
+            $r[(int) $f['id_cliente']] = ['canceladas' => (int) $f['canceladas'], 'faltas' => (int) $f['faltas'], 'atendidas' => (int) $f['atendidas']];
+        }
+        return [200, ['contadores' => (object) $r]];
+    }
+
+    /** Mascotas, citas y contadores de un cliente (ficha del cliente en el panel). */
+    public function cliente(int $clienteId): array
+    {
+        Guard::usuario(Guard::CLINICA);
+        $db = Db::escritura();
+        $q = $db->prepare('SELECT * FROM mascotas WHERE id_cliente = ? ORDER BY activa DESC, created_at');
+        $q->execute([$clienteId]);
+        $mascotas = array_map(fn($m) => self::mascotaJson($m) + ['activa' => (bool) $m['activa']], $q->fetchAll());
+        $q = $db->prepare(self::SQL_CITA . ' WHERE c.id_cliente = ? ORDER BY c.inicio DESC LIMIT 100');
+        $q->execute([$clienteId]);
+        $citas = array_map(fn($c) => self::citaJson($c, true), $q->fetchAll());
+        $contar = fn(string $e) => count(array_filter($citas, fn($c) => $c['estado'] === $e));
+        return [200, [
+            'mascotas' => $mascotas, 'citas' => $citas,
+            'contadores' => ['canceladas' => $contar('cancelada'), 'faltas' => $contar('no_asistio'), 'atendidas' => $contar('atendida')],
+            'telefono' => $citas[0]['cliente']['telefono'] ?? null,
+        ]];
+    }
+
+    /** Resumen clínico del panel: hoy, pendientes de confirmar, vacunas que vencen esta semana y faltas recientes. */
+    public function resumen(): array
+    {
+        Guard::usuario(Guard::CLINICA);
+        $db = Db::escritura();
+        $hoy = $db->query("SELECT estado, COUNT(*) AS n FROM citas WHERE inicio >= CURDATE() AND inicio < CURDATE() + INTERVAL 1 DAY GROUP BY estado")->fetchAll();
+        $porEstado = array_column($hoy, 'n', 'estado');
+        $pendientes = $db->query("SELECT DATE(inicio) AS dia, COUNT(*) AS n FROM citas WHERE estado = 'pendiente' AND inicio > NOW()
+                                    AND inicio < CURDATE() + INTERVAL 8 DAY GROUP BY DATE(inicio) ORDER BY dia")->fetchAll();
+        $vacunas = $db->query("SELECT v.nombre, v.tipo, v.proxima_dosis, m.id AS mascota_id, m.nombre AS mascota FROM vacunas v
+                                 JOIN mascotas m ON m.id = v.mascota_id AND m.activa = 1
+                                WHERE v.proxima_dosis BETWEEN CURDATE() AND CURDATE() + INTERVAL 7 DAY
+                                  AND NOT EXISTS (SELECT 1 FROM vacunas n WHERE n.mascota_id = v.mascota_id AND n.tipo = v.tipo AND n.nombre = v.nombre
+                                                  AND n.fecha_aplicacion > v.fecha_aplicacion)
+                                ORDER BY v.proxima_dosis LIMIT 30")->fetchAll();
+        $faltas = $db->query(self::SQL_CITA . " WHERE c.estado = 'no_asistio' AND c.inicio >= CURDATE() - INTERVAL 14 DAY ORDER BY c.inicio DESC LIMIT 20")->fetchAll();
+        return [200, [
+            'hoy' => ['total' => array_sum($porEstado) - (int) ($porEstado['cancelada'] ?? 0), 'por_estado' => array_map('intval', $porEstado)],
+            'pendientes' => array_map(fn($p) => ['fecha' => $p['dia'], 'citas' => (int) $p['n']], $pendientes),
+            'vacunas' => $vacunas,
+            'faltas' => array_map(fn($c) => self::citaJson($c, true), $faltas),
+        ]];
     }
 
     // ---------- Pacientes e historial clínico ----------
@@ -377,7 +762,7 @@ final class CitasController
      */
     public function pacientes(): array
     {
-        Guard::usuario(['admin']);
+        Guard::usuario(Guard::CLINICA);
         $q = Db::escritura()->query("SELECT m.id, m.id_cliente, m.nombre, m.especie, m.raza, m.alergias, m.enfermedades_cronicas, m.activa,
                                             (SELECT MAX(h.fecha) FROM historial_clinico h WHERE h.mascota_id = m.id) AS ultima_consulta,
                                             (SELECT MIN(c.inicio) FROM citas c WHERE c.mascota_id = m.id AND c.estado IN ('pendiente','confirmada')
@@ -398,7 +783,7 @@ final class CitasController
     /** Ficha del paciente (solo admin): historial, carné, notas de servicios y citas. Cada lectura queda en la bitácora. */
     public function historialAdmin(string $mascotaId): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::VETERINARIO);
         $m = $this->mascotaAdmin($mascotaId);
         $h = $this->historialMascota($mascotaId);
         Auditoria::registrar('HISTORIAL_CONSULTADO', 'EXITO', Auditoria::actor($claims) + [
@@ -432,7 +817,7 @@ final class CitasController
     /** El veterinario actualiza las alertas clínicas (alergias y enfermedades crónicas) de cualquier paciente. */
     public function actualizarAlertas(string $mascotaId): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::VETERINARIO);
         $m = $this->mascotaAdmin($mascotaId);
         $d = Http::body();
         Validar::sinAtaques($d);
@@ -456,7 +841,7 @@ final class CitasController
      */
     public function registrarHistorial(string $id): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::VETERINARIO);
         $d = Http::body();
         Validar::sinAtaques($d);
         $cita = $this->citaPorId($id) ?? throw new ApiError(404, 'Cita no encontrada');
@@ -514,7 +899,7 @@ final class CitasController
     /** Consulta sin cita previa (urgencias o gente que llega sin cita): queda con la fecha y hora de ahora. */
     public function registrarConsultaSinCita(string $mascotaId): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::VETERINARIO);
         $d = Http::body();
         Validar::sinAtaques($d);
         $m = $this->mascotaAdmin($mascotaId);
@@ -539,7 +924,7 @@ final class CitasController
     /** Corrección de una ficha: el original no cambia y la adenda queda a la vista y en la bitácora. */
     public function agregarAdenda(string $historialId): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::VETERINARIO);
         $d = Http::body();
         Validar::sinAtaques($d);
         $q = Db::escritura()->prepare('SELECT id, mascota_id, cita_id FROM historial_clinico WHERE id = ?');
@@ -562,7 +947,7 @@ final class CitasController
     /** Vacuna o desparasitación aplicada en otra clínica (o antes de usar el sistema): va al carné sin ficha. */
     public function registrarVacunaExterna(string $mascotaId): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::VETERINARIO);
         $d = Http::body();
         Validar::sinAtaques($d);
         $this->mascotaAdmin($mascotaId);
@@ -586,7 +971,7 @@ final class CitasController
     /** Observación de un servicio no clínico (peluquería, guardería…), p. ej. «se le encontró otitis». */
     public function registrarNota(string $citaId): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::CLINICA);
         $d = Http::body();
         Validar::sinAtaques($d);
         $cita = $this->citaPorId($citaId) ?? throw new ApiError(404, 'Cita no encontrada');
@@ -606,10 +991,49 @@ final class CitasController
         return [201, ['ok' => true]];
     }
 
+    /** Firma para subir un resultado o una radiografía a Cloudinary (privado). */
+    public function firmaAdjunto(): array
+    {
+        Guard::usuario(Guard::VETERINARIO);
+        return [200, Adjuntos::firma()];
+    }
+
+    /** Registra en la ficha un archivo ya subido con firmaAdjunto(). */
+    public function registrarAdjunto(string $historialId): array
+    {
+        $claims = Guard::usuario(Guard::VETERINARIO);
+        $d = Http::body();
+        Validar::sinAtaques($d);
+        $q = Db::escritura()->prepare('SELECT id, mascota_id FROM historial_clinico WHERE id = ?');
+        $q->execute([$historialId]);
+        $h = preg_match('/^[0-9a-f\-]{36}$/', $historialId) ? $q->fetch() : null;
+        if (!$h) {
+            throw new ApiError(404, 'Consulta no encontrada');
+        }
+        $publicId = $d['public_id'] ?? null;
+        if (!is_string($publicId) || !preg_match('#^' . preg_quote(Adjuntos::CARPETA, '#') . '/[A-Za-z0-9_.\-]{1,150}$#', $publicId)) {
+            throw new ApiError(422, 'El archivo debe subirse con la firma del historial', ['campo' => 'public_id']);
+        }
+        $recurso = in_array($d['recurso'] ?? null, ['image', 'raw'], true) ? $d['recurso'] : throw new ApiError(422, 'Tipo de archivo no válido', ['campo' => 'recurso']);
+        $formato = isset($d['formato']) && $d['formato'] !== '' ? $d['formato'] : null;
+        if ($formato !== null && (!is_string($formato) || !preg_match('/^[a-z0-9]{2,5}$/', $formato))) {
+            throw new ApiError(422, 'Formato no válido', ['campo' => 'formato']);
+        }
+        $tipo = in_array($d['tipo'] ?? 'otro', ['laboratorio', 'radiografia', 'otro'], true) ? ($d['tipo'] ?? 'otro') : throw new ApiError(422, 'Tipo no válido', ['campo' => 'tipo']);
+        $nombre = Validar::texto($d, 'nombre', 2, 120);
+        $db = Db::escritura();
+        $db->prepare('INSERT INTO historial_adjuntos (historial_id, nombre, tipo, public_id, recurso, formato, registrado_por, registrado_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+            ->execute([$historialId, $nombre, $tipo, $publicId, $recurso, $formato, (int) $claims['sub'], $claims['email']]);
+        Auditoria::registrar('HISTORIAL_REGISTRADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_nuevo' => ['adjunto_id' => (int) $db->lastInsertId(), 'historial_id' => $historialId, 'mascota_id' => $h['mascota_id'], 'tipo' => $tipo],
+        ]);
+        return [201, $this->historialMascota($h['mascota_id'])];
+    }
+
     /** Carné de vacunas para el dueño: solo lectura y sin diagnósticos. */
     public function carne(string $mascotaId): array
     {
-        $claims = Guard::usuario(['cliente', 'admin']);
+        $claims = Guard::usuario(['cliente', ...Guard::CLINICA]);
         $m = $this->mascotaPropia($mascotaId, $claims, 'carné de vacunas');
         return [200, ['mascota' => self::mascotaJson($m), 'vacunas' => $this->historialMascota($mascotaId)['vacunas']]];
     }
@@ -668,6 +1092,14 @@ final class CitasController
         foreach ($q->fetchAll() as $d) {
             $medicamentos[$d['historial_id']][] = ['nombre' => $d['nombre'], 'dosis' => $d['dosis'], 'frecuencia' => $d['frecuencia'], 'duracion' => $d['duracion']];
         }
+        $q = $db->prepare('SELECT a.* FROM historial_adjuntos a JOIN historial_clinico h ON h.id = a.historial_id WHERE h.mascota_id = ? ORDER BY a.id');
+        $q->execute([$mascotaId]);
+        $adjuntos = [];
+        $firmar = Adjuntos::configurado();
+        foreach ($q->fetchAll() as $a) {
+            $adjuntos[$a['historial_id']][] = ['id' => (int) $a['id'], 'nombre' => $a['nombre'], 'tipo' => $a['tipo'], 'formato' => $a['formato'],
+                'url' => $firmar ? Adjuntos::enlace($a['public_id'], $a['recurso'], $a['formato']) : null];
+        }
         $q = $db->prepare('SELECT a.* FROM historial_adendas a JOIN historial_clinico h ON h.id = a.historial_id WHERE h.mascota_id = ? ORDER BY a.id');
         $q->execute([$mascotaId]);
         $adendas = [];
@@ -714,6 +1146,7 @@ final class CitasController
                 'medicamentos' => $medicamentos[$h['id']] ?? [],
                 'vacunas' => $porHistorial[$h['id']] ?? [],
                 'adendas' => $adendas[$h['id']] ?? [],
+                'adjuntos' => $adjuntos[$h['id']] ?? [],
                 'registrado_por' => self::autor($h),
             ], $consultas),
             'vacunas' => $lista,
@@ -832,12 +1265,12 @@ final class CitasController
     // ---------- Apoyo ----------
 
     private const SQL_CITA = 'SELECT c.*, m.nombre AS mascota_nombre, m.especie, m.raza, m.notas AS mascota_notas, m.alergias, m.enfermedades_cronicas,
-                                     s.nombre AS servicio_nombre,
+                                     s.nombre AS servicio_nombre, s.modalidad,
                                      h.id AS historial_id
                                 FROM citas c JOIN mascotas m ON m.id = c.mascota_id JOIN servicios s ON s.slug = c.servicio
                                 LEFT JOIN historial_clinico h ON h.cita_id = c.id';
 
-    /** Cambio de estado con bloqueo de fila: dos admins no pisan el mismo cambio. */
+    /** Cambio de estado con bloqueo de fila: dos personas no pisan el mismo cambio. */
     private function moverEstado(array $cita, string $nuevo, array $claims, ?string $comentario, string $evento): void
     {
         $db = Db::escritura();
@@ -849,7 +1282,15 @@ final class CitasController
             if ($anterior !== $cita['estado']) {
                 throw new ApiError(409, 'La cita cambió mientras tanto, recarga');
             }
-            $db->prepare('UPDATE citas SET estado = ? WHERE id = ?')->execute([$nuevo, $cita['id']]);
+            try {
+                $db->prepare('UPDATE citas SET estado = ? WHERE id = ?')->execute([$nuevo, $cita['id']]);
+            } catch (\PDOException $e) {
+                // Reactivar una cancelada vuelve a ocupar su cupo: si otra cita lo tomó, el índice único lo impide.
+                if (($e->errorInfo[1] ?? null) === 1062) {
+                    throw new ApiError(409, 'Ese turno ya lo ocupa otra cita: reprográmala en vez de reactivarla');
+                }
+                throw $e;
+            }
             $db->prepare('INSERT INTO historial_citas (cita_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, ?, ?, ?, ?)')
                 ->execute([$cita['id'], $anterior, $nuevo, (int) $claims['sub'], $comentario]);
             $db->commit();
@@ -863,40 +1304,97 @@ final class CitasController
         ]);
     }
 
-    /** @return list<array{hora: string, libres: int}> Con $llenos también los turnos sin cupo (libres = 0). */
-    private function turnos(string $sede, \DateTimeImmutable $fecha, \PDO $db, bool $llenos = false): array
+    /**
+     * Ocupación de un servicio entre dos días (inclusive) y bloqueos de su sede, en dos consultas.
+     * En hospedaje cuenta las estadías que pasan cada noche; en el resto, las citas de cada turno.
+     * @return array{citas: array<string, int>, bloqueos: array<string, list<array>>}
+     */
+    private function ocupacion(\PDO $db, array $servicio, string $desde, string $hasta): array
     {
-        if ((int) $fecha->format('N') === 7) {
+        $citas = [];
+        if ($servicio['modalidad'] === 'estadia') {
+            $q = $db->prepare('SELECT inicio, fin FROM citas WHERE servicio = ? AND ocupa = 1 AND inicio < ? + INTERVAL 1 DAY AND fin > ?');
+            $q->execute([$servicio['slug'], $hasta, $desde]);
+            foreach ($q->fetchAll() as $e) {
+                for ($n = substr($e['inicio'], 0, 10); "$n 08:00:00" < $e['fin']; $n = date('Y-m-d', strtotime("$n +1 day"))) {
+                    $citas["$n 08:00"] = ($citas["$n 08:00"] ?? 0) + 1;
+                }
+            }
+        } else {
+            $q = $db->prepare('SELECT DATE_FORMAT(inicio, "%Y-%m-%d %H:%i") AS turno, COUNT(*) AS n FROM citas
+                               WHERE servicio = ? AND inicio >= ? AND inicio < ? + INTERVAL 1 DAY AND ocupa = 1 GROUP BY inicio');
+            $q->execute([$servicio['slug'], $desde, $hasta]);
+            $citas = array_map('intval', array_column($q->fetchAll(), 'n', 'turno'));
+        }
+        $q = $db->prepare('SELECT fecha, hora_inicio, hora_fin FROM turnos_bloqueados WHERE sede = ? AND fecha BETWEEN ? AND ? AND activo = 1');
+        $q->execute([$servicio['sede'], $desde, $hasta]);
+        $bloqueos = [];
+        foreach ($q->fetchAll() as $b) {
+            $bloqueos[$b['fecha']][] = $b;
+        }
+        return ['citas' => $citas, 'bloqueos' => $bloqueos];
+    }
+
+    /**
+     * Turnos de un día con sus cupos libres. Turnos de 30 min; en guardería y hospedaje, uno solo a las
+     * 8:00 (la entrada). Con $llenos también los que no tienen cupo; el personal puede agendar el turno
+     * en curso (la persona ya está en la clínica), el cliente necesita 1 h de anticipación.
+     * @return list<array{hora: string, libres: int}>
+     */
+    private function turnosDia(array $servicio, string $dia, array $ocupacion, bool $llenos, bool $personal): array
+    {
+        if ((int) date('N', strtotime($dia)) === 7) {
             return []; // domingo cerrado
         }
-        $dia = $fecha->format('Y-m-d');
-        $q = $db->prepare('SELECT DATE_FORMAT(inicio, "%H:%i") AS hora, COUNT(*) AS n FROM citas
-                           WHERE sede = ? AND inicio >= ? AND inicio < ? + INTERVAL 1 DAY AND ocupa = 1 GROUP BY inicio');
-        $q->execute([$sede, $dia, $dia]);
-        $ocupados = array_column($q->fetchAll(), 'n', 'hora');
-
-        $q = $db->prepare('SELECT hora_inicio, hora_fin FROM turnos_bloqueados WHERE sede = ? AND fecha = ? AND activo = 1');
-        $q->execute([$sede, $dia]);
-        $bloqueos = $q->fetchAll();
-
-        $limite = time() + self::ANTICIPACION_MIN * 60;
+        $horas = [];
+        if ($servicio['modalidad'] === 'turno') {
+            for ($min = self::APERTURA * 60; $min < self::CIERRE * 60; $min += self::TURNO_MIN) {
+                $horas[] = sprintf('%02d:%02d', intdiv($min, 60), $min % 60);
+            }
+        } else {
+            $horas[] = sprintf('%02d:00', self::APERTURA);
+        }
+        $limite = $personal ? time() - self::TURNO_MIN * 60 : time() + self::ANTICIPACION_MIN * 60;
         $turnos = [];
-        for ($min = self::APERTURA * 60; $min < self::CIERRE * 60; $min += self::TURNO_MIN) {
-            $hora = sprintf('%02d:%02d', intdiv($min, 60), $min % 60);
-            if (strtotime("$dia $hora:00") < $limite) {
+        foreach ($horas as $hora) {
+            // En guardería y hospedaje la entrada es a las 8:00, pero se puede reservar el mismo día hasta el mediodía.
+            $corte = $servicio['modalidad'] === 'turno' ? strtotime("$dia $hora:00") : strtotime("$dia 12:00:00");
+            if ($corte < $limite) {
                 continue;
             }
-            foreach ($bloqueos as $b) {
+            foreach ($ocupacion['bloqueos'][$dia] ?? [] as $b) {
                 if ($b['hora_inicio'] === null || ("$hora:00" >= $b['hora_inicio'] && "$hora:00" < $b['hora_fin'])) {
                     continue 2;
                 }
             }
-            $libres = self::cupos() - (int) ($ocupados[$hora] ?? 0);
+            $libres = (int) $servicio['cupos'] - ($ocupacion['citas']["$dia $hora"] ?? 0);
             if ($libres > 0 || $llenos) {
                 $turnos[] = ['hora' => $hora, 'libres' => max(0, $libres)];
             }
         }
         return $turnos;
+    }
+
+    /** Lugares de hospedaje libres en todas las noches de la estadía (el mínimo entre ellas). */
+    private function libresEstadia(\PDO $db, array $servicio, string $entrada, string $salida, ?string $excluir = null): int
+    {
+        $ultima = date('Y-m-d', strtotime("$salida -1 day"));
+        $ocupacion = $this->ocupacion($db, $servicio, $entrada, $ultima);
+        $libres = (int) $servicio['cupos'];
+        for ($n = $entrada; $n < $salida; $n = date('Y-m-d', strtotime("$n +1 day"))) {
+            $libres = min($libres, (int) $servicio['cupos'] - ($ocupacion['citas']["$n 08:00"] ?? 0));
+        }
+        return max(0, $libres);
+    }
+
+    /** Fecha de salida del hospedaje: después de la entrada y como máximo MAX_NOCHES noches. */
+    private static function salida(mixed $valor, \DateTimeImmutable $entrada): string
+    {
+        $f = is_string($valor) ? \DateTimeImmutable::createFromFormat('!Y-m-d', $valor) : false;
+        if (!$f || $f->format('Y-m-d') !== $valor || $f <= $entrada || $f > $entrada->modify('+' . self::MAX_NOCHES . ' days')) {
+            throw new ApiError(422, 'La salida debe ser después de la entrada y como máximo ' . self::MAX_NOCHES . ' noches', ['campo' => 'salida']);
+        }
+        return $valor;
     }
 
     /** ¿Hay un bloqueo activo sobre ese turno? Lectura con bloqueo: ve lo último confirmado. */
@@ -963,15 +1461,11 @@ final class CitasController
         ];
     }
 
-    private static function cupos(): int
-    {
-        return max(1, min(5, (int) Env::get('CITAS_CUPOS', '2')));
-    }
-
+    /** Servicio activo con su modalidad y sus cupos. Del maestro: los cupos deciden reservas. */
     private function servicio(mixed $slug): array
     {
         if (is_string($slug) && preg_match('/^[a-z]{3,30}$/', $slug)) {
-            $q = Db::lectura()->prepare('SELECT slug, nombre, sede FROM servicios WHERE slug = ? AND activo = 1');
+            $q = Db::escritura()->prepare('SELECT slug, nombre, sede, modalidad, cupos FROM servicios WHERE slug = ? AND activo = 1');
             $q->execute([$slug]);
             if ($s = $q->fetch()) {
                 return $s;
@@ -980,7 +1474,16 @@ final class CitasController
         throw new ApiError(422, 'Servicio no válido', ['campo' => 'servicio']);
     }
 
-    /** Fecha Y-m-d entre hoy y MAX_DIAS (el admin puede consultar días pasados). */
+    private static function sedeFiltro(): ?string
+    {
+        $sede = $_GET['sede'] ?? null;
+        if ($sede === null || $sede === '') {
+            return null;
+        }
+        return is_string($sede) && isset(self::SEDES[$sede]) ? $sede : throw new ApiError(422, 'Sede no válida', ['campo' => 'sede']);
+    }
+
+    /** Fecha Y-m-d entre hoy y MAX_DIAS (el personal puede consultar días pasados). */
     private static function fecha(mixed $valor, bool $pasado = false): \DateTimeImmutable
     {
         $f = is_string($valor) ? \DateTimeImmutable::createFromFormat('!Y-m-d', $valor) : false;
@@ -1012,12 +1515,23 @@ final class CitasController
         if ($peso !== null && $peso !== '' && (!is_numeric($peso) || (float) $peso <= 0 || (float) $peso > 150)) {
             throw new ApiError(422, 'Peso no válido', ['campo' => 'peso_kg']);
         }
+        $esterilizado = $d['esterilizado'] ?? null;
+        if ($esterilizado !== null && $esterilizado !== '' && !is_bool($esterilizado)) {
+            throw new ApiError(422, 'Indica si está esterilizado', ['campo' => 'esterilizado']);
+        }
+        $microchip = isset($d['microchip']) && $d['microchip'] !== '' ? $d['microchip'] : null;
+        if ($microchip !== null && (!is_string($microchip) || !preg_match('/^[0-9A-Za-z]{9,15}$/', $microchip))) {
+            throw new ApiError(422, 'El microchip tiene de 9 a 15 letras o números', ['campo' => 'microchip']);
+        }
         $opcional = fn(string $campo, int $max) => isset($d[$campo]) && $d[$campo] !== '' ? Validar::texto($d, $campo, 1, $max) : null;
         return [
             'nombre'           => Validar::texto($d, 'nombre', 1, 60),
             'especie'          => $especie,
             'raza'             => $opcional('raza', 60),
             'sexo'             => $sexo ?: null,
+            'esterilizado'     => is_bool($esterilizado) ? (int) $esterilizado : null,
+            'color'            => $opcional('color', 40),
+            'microchip'        => $microchip,
             'fecha_nacimiento' => $nacimiento ?: null,
             'peso_kg'          => $peso !== null && $peso !== '' ? round((float) $peso, 2) : null,
             'alergias'         => $opcional('alergias', 300),
@@ -1060,7 +1574,7 @@ final class CitasController
     private function citaPropia(string $id, array $claims): array
     {
         $c = $this->citaPorId($id);
-        if (!$c || ($claims['rol'] !== 'admin' && (int) $c['id_cliente'] !== (int) $claims['sub'])) {
+        if (!$c || (!in_array($claims['rol'], Guard::CLINICA, true) && (int) $c['id_cliente'] !== (int) $claims['sub'])) {
             if ($c) {
                 Auditoria::registrar('ACCESO_DENEGADO', 'FALLO', Auditoria::actor($claims) + [
                     'dato_nuevo' => ['recurso' => 'cita', 'cita_id' => $id, 'motivo' => 'la cita pertenece a otro cliente'],
@@ -1084,18 +1598,20 @@ final class CitasController
     {
         return [
             'id' => $m['id'], 'nombre' => $m['nombre'], 'especie' => $m['especie'], 'raza' => $m['raza'], 'sexo' => $m['sexo'],
+            'esterilizado' => $m['esterilizado'] !== null ? (bool) $m['esterilizado'] : null, 'color' => $m['color'], 'microchip' => $m['microchip'],
             'fecha_nacimiento' => $m['fecha_nacimiento'], 'peso_kg' => $m['peso_kg'] !== null ? (float) $m['peso_kg'] : null,
             'alergias' => $m['alergias'], 'enfermedades_cronicas' => $m['enfermedades_cronicas'], 'notas' => $m['notas'],
         ];
     }
 
-    private static function citaJson(array $c, bool $admin = false): array
+    private static function citaJson(array $c, bool $personal = false): array
     {
         $json = [
             'id'       => $c['id'],
             'estado'   => $c['estado'],
             'inicio'   => str_replace(' ', 'T', substr($c['inicio'], 0, 16)),
-            'servicio' => ['slug' => $c['servicio'], 'nombre' => $c['servicio_nombre']],
+            'fin'      => $c['fin'] !== null ? str_replace(' ', 'T', substr($c['fin'], 0, 16)) : null,
+            'servicio' => ['slug' => $c['servicio'], 'nombre' => $c['servicio_nombre'], 'modalidad' => $c['modalidad']],
             'sede'     => ['codigo' => $c['sede'], 'nombre' => self::SEDES[$c['sede']]],
             'mascota'  => ['id' => $c['mascota_id'], 'nombre' => $c['mascota_nombre'], 'especie' => $c['especie']],
             'notas'    => $c['notas'],
@@ -1103,7 +1619,7 @@ final class CitasController
             'puede_cancelar' => in_array($c['estado'], ['pendiente', 'confirmada'], true)
                 && strtotime($c['inicio']) - time() >= self::CANCELAR_HORAS * 3600,
         ];
-        if ($admin) {
+        if ($personal) {
             $json['cupo'] = (int) $c['cupo'];
             $json['clinica'] = $c['servicio'] === self::SERVICIO_CLINICO;
             $json['tiene_historial'] = $c['historial_id'] !== null;

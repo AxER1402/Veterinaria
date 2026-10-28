@@ -9,6 +9,12 @@ namespace Huellitas;
  */
 final class Guard
 {
+    /** Roles del personal (A.5.15). El admin entra en todo; cada rol solo en lo de su trabajo. */
+    public const PERSONAL = ['admin', 'veterinario', 'recepcion', 'tienda'];
+    public const CLINICA = ['admin', 'veterinario', 'recepcion'];   // agenda, citas y clientes
+    public const VETERINARIO = ['admin', 'veterinario'];            // historial clínico (dato de salud)
+    public const TIENDA = ['admin', 'tienda'];                      // pedidos y catálogo
+
     /** Usuario autenticado; si se indican roles, el suyo debe estar entre ellos. */
     public static function usuario(array $roles = []): array
     {

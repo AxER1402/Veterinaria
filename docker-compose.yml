@@ -146,7 +146,7 @@ services:
       DB_USER: pedidos_user
       DB_PASSWORD: ${PEDIDOS_DB_PASSWORD}
       CATALOGO_URL: http://catalogo-service:8082
-      PEDIDO_VENCE_HORAS: ${PEDIDO_VENCE_HORAS:-24}
+      PEDIDO_VENCE_HORAS: ${PEDIDO_VENCE_HORAS:-2}
     depends_on:
       pedidos-service: { condition: service_healthy }
 
@@ -158,6 +158,10 @@ services:
     environment:
       <<: *php-env
       SERVICE_NAME: citas-service
+      # Adjuntos del historial (laboratorio, radiografías) como archivos privados de Cloudinary.
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
       DB_HOST: mariadb-master
       DB_READ_HOST: mariadb-slave
       DB_NAME: citas_db

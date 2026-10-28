@@ -28,8 +28,11 @@ final class AuditController
         'TOKEN_REVOCADO'          => ['auth-service'],
         'EXPORTACION_CLIENTES'    => ['auth-service'],
         'MFA_CONFIGURADO'         => ['auth-service'],
+        'ROL_CAMBIADO'            => ['auth-service'],
         'PEDIDO_CREADO'           => ['pedidos-service'],
         'PEDIDO_ESTADO_CAMBIADO'  => ['pedidos-service'],
+        'REEMBOLSO_PENDIENTE'     => ['pedidos-service'],
+        'REEMBOLSO_REGISTRADO'    => ['pedidos-service'],
         'PAGO_INICIADO'           => ['pagos-service'],
         'PAGO_CONFIRMADO'         => ['pagos-service'],
         'PAGO_FALLIDO'            => ['pagos-service'],
@@ -45,6 +48,7 @@ final class AuditController
         'CITA_CREADA'             => ['citas-service'],
         'CITA_CANCELADA'          => ['citas-service'],
         'CITA_ESTADO_CAMBIADO'    => ['citas-service'],
+        'CITA_REPROGRAMADA'       => ['citas-service'],
         'TURNO_BLOQUEADO'         => ['citas-service'],
         'TURNO_DESBLOQUEADO'      => ['citas-service'],
         'HISTORIAL_REGISTRADO'    => ['citas-service'],
@@ -55,7 +59,7 @@ final class AuditController
         'ACCESO_DENEGADO'         => ['auth-service', 'catalogo-service', 'pedidos-service', 'pagos-service', 'citas-service'],
     ];
     private const SERVICIOS = ['auth-service', 'catalogo-service', 'pedidos-service', 'pagos-service', 'notificaciones-service', 'citas-service'];
-    private const ROLES = ['admin', 'cliente', 'anonimo'];
+    private const ROLES = ['admin', 'cliente', 'anonimo', 'veterinario', 'recepcion', 'tienda'];
     private const RESULTADOS = ['EXITO', 'FALLO', 'FRAUDE'];
     private const COLUMNAS = ['timestamp', 'usuario_id', 'usuario_email', 'rol', 'accion', 'servicio', 'pedido_id',
                               'pago_id', 'dato_anterior', 'dato_nuevo', 'ip_origen', 'user_agent', 'resultado'];

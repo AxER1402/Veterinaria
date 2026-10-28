@@ -57,9 +57,56 @@ final class NotificacionesController
         return [200, ['enviado' => $enviado, 'codigo_verificacion' => $codigo]];
     }
 
+    private const PEDIDO_ESTADOS = [
+        'preparando'   => ['titulo' => 'Estamos preparando tu pedido', 'mensaje' => 'Ya estamos juntando tus productos. Te avisaremos cuando salga o esté listo.'],
+        'listo_retiro' => ['titulo' => 'Tu pedido está listo para retirar', 'mensaje' => 'Puedes pasar por él en la sede indicada, en nuestro horario de atención.'],
+        'enviado'      => ['titulo' => 'Tu pedido va en camino', 'mensaje' => 'Tu pedido salió hacia la dirección de entrega.'],
+        'entregado'    => ['titulo' => 'Tu pedido fue entregado', 'mensaje' => '¡Gracias por tu compra! Esperamos que a tu mascota le encante.'],
+        'cancelado'    => ['titulo' => 'Tu pedido fue cancelado', 'mensaje' => 'Cancelamos tu pedido. Si ya lo habías pagado, te devolveremos el dinero por el mismo medio.'],
+    ];
+
+    /**
+     * Aviso de cambio de estado de un pedido (pedidos-service). Usa la plantilla genérica de las citas
+     * (título, mensaje y datos), así no hace falta otra plantilla en EmailJS.
+     * Entrada: {pedido: <detalle de pedidos-service>, comentario?}
+     */
+    public function pedidoEstado(): array
+    {
+        Guard::servicio(['pedidos-service']);
+        $d = Http::body();
+        $p = $d['pedido'] ?? null;
+        if (!is_array($p) || !isset($p['id'], $p['estado'], $p['contacto']['email']) || !isset(self::PEDIDO_ESTADOS[$p['estado']])) {
+            throw new ApiError(422, 'Datos del pedido incompletos');
+        }
+        $email = filter_var($p['contacto']['email'], FILTER_VALIDATE_EMAIL) ?: throw new ApiError(422, 'Correo inválido');
+        $comentario = is_string($d['comentario'] ?? null) ? mb_substr($d['comentario'], 0, 200) : '';
+        $tipo = self::PEDIDO_ESTADOS[$p['estado']];
+        $enviado = self::enviar('EMAILJS_TEMPLATE_CITA_ID', [
+            'to_email'            => $email,
+            'to_name'             => $p['contacto']['nombre'] ?? '',
+            'titulo'              => $tipo['titulo'],
+            'mensaje'             => $tipo['mensaje'] . ($comentario !== '' ? " Nota: $comentario" : ''),
+            'estado'              => $p['estado'],
+            'cita'                => strtoupper(substr($p['id'], 0, 8)),
+            'servicio'            => 'Pedido de la tienda · Q' . number_format((float) ($p['total'] ?? 0), 2),
+            'mascota'             => '',
+            'sede'                => $p['metodo_entrega'] === 'retiro' ? (string) $p['sede'] : 'Envío a ' . ($p['direccion']['direccion'] ?? ''),
+            'fecha'               => self::fechaLarga(new \DateTimeImmutable('today')),
+            'hora'                => '',
+            'codigo_verificacion' => '',
+        ], [
+            'usuario_email' => $email,
+            'rol'           => 'cliente',
+            'pedido_id'     => $p['id'],
+            'dato_nuevo'    => ['plantilla' => "pedido_{$p['estado']}", 'proveedor' => 'EmailJS'],
+        ]);
+        return [200, ['enviado' => $enviado]];
+    }
+
     private const CITA_TIPOS = [
         'reservada'  => ['titulo' => 'Recibimos tu cita', 'mensaje' => 'Tu cita quedó reservada. Te avisaremos cuando la confirmemos.'],
         'confirmada' => ['titulo' => 'Tu cita está confirmada', 'mensaje' => 'Te esperamos. Si no puedes venir, cancélala desde «Mis citas» hasta 2 horas antes.'],
+        'reprogramada' => ['titulo' => 'Tu cita cambió de horario', 'mensaje' => 'Tu cita tiene un nuevo día y hora. Revisa los datos abajo y, si no te queda bien, cámbiala desde «Mis citas».'],
         'cancelada'  => ['titulo' => 'Tu cita fue cancelada', 'mensaje' => 'La clínica canceló tu cita. Puedes reservar otro horario en la página.'],
         'recordatorio' => ['titulo' => 'Mañana es tu cita', 'mensaje' => 'Te esperamos. Si no puedes venir, cancélala desde «Mis citas» hasta 2 horas antes.'],
     ];

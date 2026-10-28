@@ -67,7 +67,7 @@ final class AuthController
         }
 
         $db = Db::escritura();
-        $consulta = $db->prepare('SELECT id, nombre, email, password_hash, rol, activo, intentos_fallidos, bloqueado_hasta, mfa_activo
+        $consulta = $db->prepare('SELECT id, nombre, email, telefono, password_hash, rol, activo, intentos_fallidos, bloqueado_hasta, mfa_activo
                                     FROM usuarios WHERE email = ?');
         $consulta->execute([$email]);
         $usuario = $consulta->fetch() ?: null;
@@ -222,7 +222,7 @@ final class AuthController
 
     private function usuarioPorId(int $id): array
     {
-        $consulta = Db::escritura()->prepare('SELECT id, nombre, email, password_hash, rol, activo, intentos_fallidos, bloqueado_hasta,
+        $consulta = Db::escritura()->prepare('SELECT id, nombre, email, telefono, password_hash, rol, activo, intentos_fallidos, bloqueado_hasta,
                                                      mfa_activo, mfa_secreto, mfa_ultimo_paso FROM usuarios WHERE id = ?');
         $consulta->execute([$id]);
         return $consulta->fetch() ?: throw new ApiError(401, 'Cuenta no disponible');
@@ -243,7 +243,7 @@ final class AuthController
     public function me(): array
     {
         $claims = Guard::usuario();
-        $consulta = Db::lectura()->prepare('SELECT id, nombre, email, rol, activo, mfa_activo FROM usuarios WHERE id = ?');
+        $consulta = Db::escritura()->prepare('SELECT id, nombre, email, telefono, rol, activo, mfa_activo FROM usuarios WHERE id = ?');
         $consulta->execute([$claims['sub']]);
         $usuario = $consulta->fetch();
         if (!$usuario || !$usuario['activo']) {
@@ -252,12 +252,33 @@ final class AuthController
         return [200, ['usuario' => $this->publico($usuario)]];
     }
 
-    /** El panel de administración llama a esto al abrirse; queda registrado quién entró. */
+    /** Nombre y teléfono del perfil. El teléfono se reutiliza al reservar y al comprar. */
+    public function actualizarPerfil(): array
+    {
+        $claims = Guard::usuario();
+        $datos = Http::body();
+        Validar::sinAtaques($datos);
+        $cambios = [];
+        if (array_key_exists('nombre', $datos)) {
+            $cambios['nombre'] = Validar::texto($datos, 'nombre', 2, 100);
+        }
+        if (array_key_exists('telefono', $datos)) {
+            $cambios['telefono'] = $datos['telefono'] === '' || $datos['telefono'] === null ? null : self::telefono($datos['telefono']);
+        }
+        if (!$cambios) {
+            throw new ApiError(422, 'No hay cambios que aplicar');
+        }
+        $set = implode(', ', array_map(fn($c) => "$c = ?", array_keys($cambios)));
+        Db::escritura()->prepare("UPDATE usuarios SET $set WHERE id = ?")->execute([...array_values($cambios), (int) $claims['sub']]);
+        return [200, ['usuario' => $this->publico($this->usuarioPorId((int) $claims['sub']))]];
+    }
+
+    /** El panel llama a esto al abrirse; queda registrado quién entró. Entra todo el personal, cada rol a lo suyo. */
     public function accesoAdmin(): array
     {
         $claims = Guard::usuario();
         $datos = ['usuario_id' => (int) $claims['sub'], 'usuario_email' => $claims['email'], 'rol' => $claims['rol']];
-        if ($claims['rol'] !== 'admin') {
+        if (!in_array($claims['rol'], Guard::PERSONAL, true)) {
             Auditoria::registrar('ACCESO_ADMIN_PANEL', 'FALLO', $datos + ['dato_nuevo' => ['motivo' => 'rol sin permiso']]);
             throw new ApiError(403, 'No tienes permiso para esta acción');
         }
@@ -267,13 +288,72 @@ final class AuthController
 
     public function clientes(): array
     {
+        Guard::usuario(Guard::PERSONAL);
+        $filas = Db::lectura()->query("SELECT id, nombre, email, telefono, activo, bloqueado_hasta, created_at FROM usuarios
+                                        WHERE rol = 'cliente' ORDER BY id DESC LIMIT 2000")->fetchAll();
+        return [200, ['clientes' => array_map(fn($u) => self::clienteJson($u), $filas)]];
+    }
+
+    public function cliente(int $id): array
+    {
+        Guard::usuario(Guard::PERSONAL);
+        $consulta = Db::escritura()->prepare("SELECT id, nombre, email, telefono, activo, bloqueado_hasta, created_at FROM usuarios
+                                               WHERE id = ? AND rol = 'cliente'");
+        $consulta->execute([$id]);
+        $u = $consulta->fetch() ?: throw new ApiError(404, 'Cliente no encontrado');
+        return [200, ['cliente' => self::clienteJson($u)]];
+    }
+
+    /** Personal con acceso al panel (solo admin). */
+    public function personal(): array
+    {
         Guard::usuario(['admin']);
-        $filas = Db::lectura()->query("SELECT id, nombre, email, activo, bloqueado_hasta, created_at FROM usuarios
-                                        WHERE rol = 'cliente' ORDER BY id DESC LIMIT 500")->fetchAll();
-        return [200, ['clientes' => array_map(fn($u) => [
-            'id' => (int) $u['id'], 'nombre' => $u['nombre'], 'email' => $u['email'], 'activo' => (bool) $u['activo'],
+        $filas = Db::escritura()->query("SELECT id, nombre, email, rol, activo, mfa_activo FROM usuarios WHERE rol <> 'cliente' ORDER BY rol, nombre")->fetchAll();
+        return [200, ['personal' => array_map(fn($u) => $this->publico($u) + ['activo' => (bool) $u['activo']], $filas)]];
+    }
+
+    /**
+     * Asigna un rol (solo admin). E de STRIDE: nadie cambia su propio rol, y el cambio queda en la
+     * bitácora. El rol nuevo rige en el próximo inicio de sesión (el JWT vigente dura como máximo 1 h).
+     */
+    public function cambiarRol(int $id): array
+    {
+        $claims = Guard::usuario(['admin']);
+        $datos = Http::body();
+        $rol = $datos['rol'] ?? null;
+        if (!in_array($rol, ['cliente', ...Guard::PERSONAL], true)) {
+            throw new ApiError(422, 'Rol no válido', ['campo' => 'rol']);
+        }
+        if ($id === (int) $claims['sub']) {
+            throw new ApiError(409, 'No puedes cambiar tu propio rol');
+        }
+        $usuario = $this->usuarioPorId($id);
+        if ($usuario['rol'] === $rol) {
+            return [200, ['usuario' => $this->publico($usuario)]];
+        }
+        Db::escritura()->prepare('UPDATE usuarios SET rol = ? WHERE id = ?')->execute([$rol, $id]);
+        Auditoria::registrar('ROL_CAMBIADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_anterior' => ['usuario_id' => $id, 'email' => $usuario['email'], 'rol' => $usuario['rol']],
+            'dato_nuevo'    => ['usuario_id' => $id, 'email' => $usuario['email'], 'rol' => $rol],
+        ]);
+        return [200, ['usuario' => $this->publico($this->usuarioPorId($id))]];
+    }
+
+    private static function clienteJson(array $u): array
+    {
+        return [
+            'id' => (int) $u['id'], 'nombre' => $u['nombre'], 'email' => $u['email'], 'telefono' => $u['telefono'], 'activo' => (bool) $u['activo'],
             'bloqueado' => $u['bloqueado_hasta'] !== null && strtotime($u['bloqueado_hasta']) > time(), 'creado' => $u['created_at'],
-        ], $filas)]];
+        ];
+    }
+
+    private static function telefono(mixed $valor): string
+    {
+        $valor = is_string($valor) ? trim($valor) : '';
+        if (!preg_match('/^\+?[0-9 ()\-]{7,20}$/', $valor) || strlen(preg_replace('/\D/', '', $valor)) < 7) {
+            throw new ApiError(422, 'Teléfono no válido', ['campo' => 'telefono']);
+        }
+        return $valor;
     }
 
     /**
@@ -328,6 +408,7 @@ final class AuthController
 
     private function publico(array $u): array
     {
-        return ['id' => (int) $u['id'], 'nombre' => $u['nombre'], 'email' => $u['email'], 'rol' => $u['rol'], 'mfa' => (bool) ($u['mfa_activo'] ?? false)];
+        return ['id' => (int) $u['id'], 'nombre' => $u['nombre'], 'email' => $u['email'], 'telefono' => $u['telefono'] ?? null, 'rol' => $u['rol'],
+                'mfa' => (bool) ($u['mfa_activo'] ?? false)];
     }
 }

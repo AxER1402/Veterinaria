@@ -22,15 +22,21 @@ final class PedidosController
         'Paseadores y cuidadores – Sur · Calzada Aguilar Batres 34-70, zona 11',
     ];
 
-    /** Transiciones que puede hacer un administrador. pendiente_pago → pagado lo hace pagos-service. */
+    /**
+     * Transiciones del personal de tienda. pendiente_pago → pagado lo hace pagos-service.
+     * Retiro: preparando → listo_retiro → entregado. Domicilio: preparando → enviado → entregado.
+     */
     private const TRANSICIONES = [
         'pendiente_pago' => ['cancelado'],
         'pagado'         => ['preparando', 'cancelado'],
-        'preparando'     => ['enviado', 'entregado', 'cancelado'],
+        'preparando'     => ['listo_retiro', 'enviado', 'cancelado'],
+        'listo_retiro'   => ['entregado', 'cancelado'],
         'enviado'        => ['entregado'],
         'entregado'      => [],
         'cancelado'      => [],
     ];
+    /** Estados en los que el pedido ya está cobrado: cancelarlo deja un reembolso pendiente. */
+    private const COBRADOS = ['pagado', 'preparando', 'listo_retiro', 'enviado', 'entregado'];
 
     public function cupon(string $codigo): array
     {
@@ -56,7 +62,7 @@ final class PedidosController
 
     public function crear(): array
     {
-        $claims = Guard::usuario(['cliente', 'admin']);
+        $claims = Guard::usuario(['cliente', ...Guard::TIENDA]);
         $datos = Http::body();
         Validar::sinAtaques($datos);
 
@@ -166,7 +172,7 @@ final class PedidosController
         if ($dueno === false) {
             throw new ApiError(404, 'Pedido no encontrado');
         }
-        if ($claims['rol'] !== 'admin' && (int) $dueno !== (int) $claims['sub']) {
+        if (!in_array($claims['rol'], Guard::TIENDA, true) && (int) $dueno !== (int) $claims['sub']) {
             // A01: mismo 404 que si no existiera (no se confirma que el pedido existe), pero queda registrado.
             Auditoria::registrar('ACCESO_DENEGADO', 'FALLO', Auditoria::actor($claims) + [
                 'pedido_id'  => $id,
@@ -177,39 +183,90 @@ final class PedidosController
         return [200, ['pedido' => $this->detalle($id)]];
     }
 
+    /**
+     * Pedidos del panel con búsqueda (código, cliente, correo o teléfono), filtros por estado, fechas y
+     * reembolso pendiente, y paginación (devuelve el total para saber cuántas páginas hay).
+     */
     public function listarTodos(): array
     {
-        Guard::usuario(['admin']);
-        $where = '';
+        Guard::usuario(Guard::TIENDA);
+        $where = [];
         $params = [];
         if (isset($_GET['estado']) && isset(self::TRANSICIONES[$_GET['estado']])) {
-            $where = ' WHERE p.estado = ?';
+            $where[] = 'p.estado = ?';
             $params[] = $_GET['estado'];
         }
-        $limite = min(200, max(1, (int) ($_GET['limite'] ?? 50)));
+        if (($_GET['reembolso'] ?? '') === 'pendiente') {
+            $where[] = "p.reembolso = 'pendiente'";
+        }
+        foreach (['desde' => 'p.fecha >= ?', 'hasta' => 'p.fecha < ? + INTERVAL 1 DAY'] as $campo => $condicion) {
+            $valor = $_GET[$campo] ?? '';
+            if ($valor !== '') {
+                $f = is_string($valor) ? \DateTimeImmutable::createFromFormat('!Y-m-d', $valor) : false;
+                if (!$f || $f->format('Y-m-d') !== $valor) {
+                    throw new ApiError(422, 'Fecha no válida', ['campo' => $campo]);
+                }
+                $where[] = $condicion;
+                $params[] = $valor;
+            }
+        }
+        $texto = is_string($_GET['q'] ?? null) ? trim($_GET['q']) : '';
+        if ($texto !== '') {
+            if (mb_strlen($texto) > 60) {
+                throw new ApiError(422, 'Búsqueda demasiado larga', ['campo' => 'q']);
+            }
+            $patron = '%' . addcslashes($texto, '%_\\') . '%';
+            $where[] = '(p.id LIKE ? OR c.nombre LIKE ? OR c.email LIKE ? OR c.telefono LIKE ?)';
+            array_push($params, addcslashes(strtolower($texto), '%_\\') . '%', $patron, $patron, $patron);
+        }
+        $sqlWhere = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+        $limite = min(100, max(1, (int) ($_GET['limite'] ?? 50)));
         $pagina = max(1, (int) ($_GET['pagina'] ?? 1));
-        $consulta = Db::lectura()->prepare(self::SQL_RESUMEN . $where . ' GROUP BY p.id ORDER BY p.fecha DESC LIMIT ? OFFSET ?');
+        $db = Db::escritura();
+        $total = $db->prepare('SELECT COUNT(*) FROM pedidos p JOIN clientes c ON c.id_cliente = p.id_cliente' . $sqlWhere);
+        $total->execute($params);
+        $consulta = $db->prepare(self::SQL_RESUMEN . $sqlWhere . ' GROUP BY p.id ORDER BY p.fecha DESC LIMIT ? OFFSET ?');
         $consulta->execute([...$params, $limite, ($pagina - 1) * $limite]);
-        return [200, ['pedidos' => array_map([self::class, 'resumenJson'], $consulta->fetchAll()), 'pagina' => $pagina]];
+        return [200, ['pedidos' => array_map([self::class, 'resumenJson'], $consulta->fetchAll()), 'pagina' => $pagina,
+                      'limite' => $limite, 'total' => (int) $total->fetchColumn()]];
+    }
+
+    /** Pedidos de un cliente (ficha del cliente en el panel). */
+    public function deCliente(int $clienteId): array
+    {
+        Guard::usuario(Guard::PERSONAL);
+        $consulta = Db::escritura()->prepare(self::SQL_RESUMEN . ' WHERE p.id_cliente = ? GROUP BY p.id ORDER BY p.fecha DESC LIMIT 100');
+        $consulta->execute([$clienteId]);
+        return [200, ['pedidos' => array_map([self::class, 'resumenJson'], $consulta->fetchAll())]];
+    }
+
+    /** Lista de preparación: lo que hay que juntar de los pedidos pagados o en preparación. */
+    public function preparacion(): array
+    {
+        Guard::usuario(Guard::TIENDA);
+        $db = Db::escritura();
+        $pedidos = $db->query("SELECT p.id FROM pedidos p WHERE p.estado IN ('pagado','preparando') ORDER BY p.fecha LIMIT 100")->fetchAll(\PDO::FETCH_COLUMN);
+        return [200, ['pedidos' => array_map(fn($id) => $this->detalle($id), $pedidos)]];
     }
 
     /** Indicadores del panel: pedidos por estado, ventas cobradas y ventas por día (14 días). */
     /** Clima de la ciudad para planificar entregas. Lo trae notificaciones-service (el que tiene salida a Internet). */
     public function clima(): array
     {
-        Guard::usuario(['admin']);
+        Guard::usuario(Guard::TIENDA);
         return [200, Interno::exigir($this->servicio('NOTIFICACIONES_URL', 'http://notificaciones-service:8085', '/internal/notificaciones/clima'), [], 'clima')];
     }
 
     public function resumen(): array
     {
-        Guard::usuario(['admin']);
+        Guard::usuario(Guard::TIENDA);
         $db = Db::lectura();
         $porEstado = $db->query('SELECT estado, COUNT(*) AS pedidos, COALESCE(SUM(total), 0) AS monto FROM pedidos GROUP BY estado')->fetchAll();
         $porDia = $db->query("SELECT DATE(fecha) AS dia, COUNT(*) AS pedidos, COALESCE(SUM(total), 0) AS monto
                                 FROM pedidos WHERE estado IN ('pagado','preparando','enviado','entregado')
                                  AND fecha >= CURDATE() - INTERVAL 13 DAY GROUP BY DATE(fecha) ORDER BY dia")->fetchAll();
         $clientes = (int) $db->query('SELECT COUNT(*) FROM clientes')->fetchColumn();
+        $reembolsos = (int) Db::escritura()->query("SELECT COUNT(*) FROM pedidos WHERE reembolso = 'pendiente'")->fetchColumn();
         $cobrado = array_sum(array_map(fn($e) => in_array($e['estado'], ['pagado', 'preparando', 'enviado', 'entregado'], true) ? (float) $e['monto'] : 0, $porEstado));
 
         return [200, [
@@ -217,12 +274,13 @@ final class PedidosController
             'por_dia'     => array_map(fn($d) => ['dia' => $d['dia'], 'pedidos' => (int) $d['pedidos'], 'monto' => (float) $d['monto']], $porDia),
             'ventas'      => round($cobrado, 2),
             'clientes_con_pedidos' => $clientes,
+            'reembolsos_pendientes' => $reembolsos,
         ]];
     }
 
     public function cambiarEstado(string $id): array
     {
-        $claims = Guard::usuario(['admin']);
+        $claims = Guard::usuario(Guard::TIENDA);
         $id = self::uuid($id);
         $datos = Http::body();
         Validar::sinAtaques($datos);
@@ -231,6 +289,9 @@ final class PedidosController
             throw new ApiError(422, 'Estado no válido', ['campo' => 'estado']);
         }
         $comentario = isset($datos['comentario']) && $datos['comentario'] !== '' ? Validar::texto($datos, 'comentario', 1, 200) : null;
+        if ($nuevo === 'cancelado' && $comentario === null) {
+            throw new ApiError(422, 'Indica el motivo de la cancelación: le llega al cliente', ['campo' => 'comentario']);
+        }
 
         $db = Db::escritura();
         $db->beginTransaction();
@@ -244,12 +305,13 @@ final class PedidosController
             // Un pedido para retirar no pasa por "enviado"; uno a domicilio no se entrega sin enviarse.
             $permitidos = array_values(array_filter($permitidos, fn($e) =>
                 !($e === 'enviado' && $pedido['metodo_entrega'] === 'retiro')
-                && !($e === 'entregado' && $anterior === 'preparando' && $pedido['metodo_entrega'] === 'domicilio')));
+                && !($e === 'listo_retiro' && $pedido['metodo_entrega'] === 'domicilio')));
             if (!in_array($nuevo, $permitidos, true)) {
                 throw new ApiError(409, "No se puede pasar de $anterior a $nuevo", ['permitidos' => $permitidos]);
             }
 
-            $db->prepare('UPDATE pedidos SET estado = ? WHERE id = ?')->execute([$nuevo, $id]);
+            $reembolsar = $nuevo === 'cancelado' && in_array($anterior, self::COBRADOS, true);
+            $db->prepare('UPDATE pedidos SET estado = ?' . ($reembolsar ? ", reembolso = 'pendiente'" : '') . ' WHERE id = ?')->execute([$nuevo, $id]);
             $db->prepare('INSERT INTO historial_estados (pedido_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, ?, ?, ?, ?)')
                 ->execute([$id, $anterior, $nuevo, (int) $claims['sub'], $comentario]);
             $db->commit();
@@ -270,7 +332,84 @@ final class PedidosController
             'dato_anterior' => ['estado' => $anterior],
             'dato_nuevo'    => ['estado' => $nuevo, 'comentario' => $comentario, 'id_cliente' => (int) $pedido['id_cliente']],
         ]);
+        if ($reembolsar) {
+            Auditoria::registrar('REEMBOLSO_PENDIENTE', 'EXITO', Auditoria::actor($claims) + [
+                'pedido_id'  => $id,
+                'dato_nuevo' => ['motivo' => 'pedido cobrado y cancelado', 'estado_anterior' => $anterior, 'total' => $pedido['total']],
+            ]);
+        }
+        $detalle = $this->detalle($id);
+        $this->avisarEstado($detalle, $comentario);
+        return [200, ['pedido' => $detalle]];
+    }
+
+    /** Registra que el reembolso ya se hizo en la pasarela (con su referencia). */
+    public function registrarReembolso(string $id): array
+    {
+        $claims = Guard::usuario(Guard::TIENDA);
+        $id = self::uuid($id);
+        $datos = Http::body();
+        Validar::sinAtaques($datos);
+        $referencia = Validar::texto($datos, 'referencia', 3, 100);
+        $db = Db::escritura();
+        $db->beginTransaction();
+        try {
+            $consulta = $db->prepare('SELECT estado, reembolso FROM pedidos WHERE id = ? FOR UPDATE');
+            $consulta->execute([$id]);
+            $pedido = $consulta->fetch() ?: throw new ApiError(404, 'Pedido no encontrado');
+            if ($pedido['reembolso'] !== 'pendiente') {
+                throw new ApiError(409, 'Este pedido no tiene un reembolso pendiente');
+            }
+            $db->prepare("UPDATE pedidos SET reembolso = 'hecho', reembolso_ref = ? WHERE id = ?")->execute([$referencia, $id]);
+            $db->prepare('INSERT INTO historial_estados (pedido_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, ?, ?, ?, ?)')
+                ->execute([$id, $pedido['estado'], $pedido['estado'], (int) $claims['sub'], mb_substr("Reembolso hecho ($referencia)", 0, 200)]);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+        Auditoria::registrar('REEMBOLSO_REGISTRADO', 'EXITO', Auditoria::actor($claims) + ['pedido_id' => $id, 'dato_nuevo' => ['referencia' => $referencia]]);
         return [200, ['pedido' => $this->detalle($id)]];
+    }
+
+    /** El cliente cancela su propio pedido mientras siga pendiente de pago; el stock vuelve al catálogo. */
+    public function cancelarPropio(string $id): array
+    {
+        $claims = Guard::usuario(['cliente', ...Guard::TIENDA]);
+        $pedido = $this->propio($claims, self::uuid($id));
+        $db = Db::escritura();
+        $db->beginTransaction();
+        try {
+            $consulta = $db->prepare('SELECT estado FROM pedidos WHERE id = ? FOR UPDATE');
+            $consulta->execute([$pedido['id']]);
+            if ($consulta->fetchColumn() !== 'pendiente_pago') {
+                throw new ApiError(409, 'Este pedido ya no se puede cancelar desde aquí. Escríbenos si necesitas ayuda');
+            }
+            $db->prepare("UPDATE pedidos SET estado = 'cancelado' WHERE id = ?")->execute([$pedido['id']]);
+            $db->prepare('INSERT INTO historial_estados (pedido_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, ?, ?, ?, ?)')
+                ->execute([$pedido['id'], 'pendiente_pago', 'cancelado', (int) $claims['sub'], 'Cancelado por el cliente']);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+        [$codigo] = Interno::post($this->catalogo('/internal/catalogo/liberar'), ['pedido_id' => $pedido['id']]);
+        if ($codigo !== 200) {
+            error_log("No se pudo liberar el stock del pedido {$pedido['id']} (catálogo respondió $codigo)");
+        }
+        Auditoria::registrar('PEDIDO_ESTADO_CAMBIADO', 'EXITO', Auditoria::actor($claims) + [
+            'pedido_id'     => $pedido['id'],
+            'dato_anterior' => ['estado' => 'pendiente_pago'],
+            'dato_nuevo'    => ['estado' => 'cancelado', 'origen' => 'cliente', 'stock_liberado' => $codigo === 200],
+        ]);
+        return [200, ['pedido' => $this->detalle($pedido['id'])]];
+    }
+
+    /** Correo al cliente con el estado nuevo. No bloquea: si falla, queda en la bitácora (EMAIL_ENVIADO). */
+    private function avisarEstado(array $pedido, ?string $comentario): void
+    {
+        Interno::post($this->servicio('NOTIFICACIONES_URL', 'http://notificaciones-service:8085', '/internal/notificaciones/pedido-estado'),
+            ['pedido' => $pedido, 'comentario' => $comentario], 12);
     }
 
     /**
@@ -326,7 +465,7 @@ final class PedidosController
     /** Inicia el pago de un pedido propio. Entrada: {metodo: stripe|paypal} */
     public function iniciarPago(string $id): array
     {
-        $claims = Guard::usuario(['cliente', 'admin']);
+        $claims = Guard::usuario(['cliente', ...Guard::TIENDA]);
         $pedido = $this->propio($claims, self::uuid($id));
         if ($pedido['estado'] !== 'pendiente_pago') {
             throw new ApiError(409, 'Este pedido ya no está pendiente de pago');
@@ -349,7 +488,7 @@ final class PedidosController
     /** Entrada: {orden_id}. pagos-service captura y verifica el monto; si cuadra, el pedido queda pagado. */
     public function capturarPayPal(string $id): array
     {
-        $claims = Guard::usuario(['cliente', 'admin']);
+        $claims = Guard::usuario(['cliente', ...Guard::TIENDA]);
         $pedido = $this->propio($claims, self::uuid($id));
         $orden = Http::body()['orden_id'] ?? null;
         $r = Interno::exigir($this->servicio('PAGOS_URL', 'http://pagos-service:8084', '/internal/pagos/paypal/capturar'), [
@@ -380,11 +519,22 @@ final class PedidosController
             $consulta->execute([$id]);
             $pedido = $consulta->fetch() ?: throw new ApiError(404, 'Pedido no encontrado');
             if ($pedido['estado'] !== 'pendiente_pago') {
-                $db->rollBack();
                 if ($pedido['estado'] === 'cancelado') {
-                    // Cobrado después de cancelar: queda a la vista para reembolsarlo a mano.
-                    error_log("REEMBOLSO_PENDIENTE pedido=$id referencia=$referencia");
+                    // Cobrado después de cancelar: queda como reembolso pendiente, a la vista en el panel.
+                    // Solo la primera vez: la pasarela reintenta sus avisos y no debe repetirse en el historial.
+                    $marcar = $db->prepare("UPDATE pedidos SET reembolso = 'pendiente' WHERE id = ? AND reembolso IS NULL");
+                    $marcar->execute([$id]);
                 }
+                if ($pedido['estado'] === 'cancelado' && $marcar->rowCount() === 1) {
+                    $db->prepare('INSERT INTO historial_estados (pedido_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, ?, ?, NULL, ?)')
+                        ->execute([$id, 'cancelado', 'cancelado', mb_substr("Pago recibido después de cancelar ($referencia): reembolsar", 0, 200)]);
+                    error_log("REEMBOLSO_PENDIENTE pedido=$id referencia=$referencia");
+                    Auditoria::registrar('REEMBOLSO_PENDIENTE', 'EXITO', [
+                        'usuario_id' => (int) $pedido['id_cliente'], 'rol' => 'cliente', 'pedido_id' => $id,
+                        'dato_nuevo' => ['motivo' => 'pago recibido después de cancelar', 'metodo' => $metodo, 'referencia' => $referencia, 'monto' => $monto],
+                    ]);
+                }
+                $db->commit();
                 return $pedido['estado'];
             }
             if (Totales::centavos($monto) !== Totales::centavos($pedido['total'])) {
@@ -419,7 +569,7 @@ final class PedidosController
         $consulta = Db::escritura()->prepare('SELECT id, id_cliente, estado, total FROM pedidos WHERE id = ?');
         $consulta->execute([$id]);
         $pedido = $consulta->fetch();
-        if (!$pedido || ($claims['rol'] !== 'admin' && (int) $pedido['id_cliente'] !== (int) $claims['sub'])) {
+        if (!$pedido || (!in_array($claims['rol'], Guard::TIENDA, true) && (int) $pedido['id_cliente'] !== (int) $claims['sub'])) {
             if ($pedido) {
                 Auditoria::registrar('ACCESO_DENEGADO', 'FALLO', Auditoria::actor($claims) + [
                     'pedido_id' => $id, 'dato_nuevo' => ['recurso' => 'pago de pedido', 'motivo' => 'el pedido pertenece a otro cliente'],
@@ -438,7 +588,7 @@ final class PedidosController
     // ---------- Apoyo ----------
 
     private const SQL_RESUMEN = 'SELECT p.id, p.estado, p.metodo_entrega, p.total, p.fecha, p.id_cliente, c.nombre AS cliente,
-                                        SUM(d.cantidad) AS unidades, MIN(d.imagen_url) AS imagen
+                                        p.reembolso, SUM(d.cantidad) AS unidades, MIN(d.imagen_url) AS imagen
                                    FROM pedidos p
                                    JOIN clientes c ON c.id_cliente = p.id_cliente
                                    JOIN detalle_pedidos d ON d.pedido_id = p.id';
@@ -469,6 +619,7 @@ final class PedidosController
             'direccion'      => $p['direccion'] ? ['direccion' => $p['direccion'], 'ciudad' => $p['ciudad'], 'notas' => $p['notas']] : null,
             'contacto'       => ['nombre' => $p['nombre'], 'email' => $p['email'], 'telefono' => $p['telefono']],
             'cupon'          => $p['cupon'],
+            'reembolso'      => $p['reembolso'] ? ['estado' => $p['reembolso'], 'referencia' => $p['reembolso_ref']] : null,
             'subtotal'       => (float) $p['subtotal'],
             'descuento'      => (float) $p['descuento'],
             'envio'          => (float) $p['envio'],
@@ -492,7 +643,7 @@ final class PedidosController
         return [
             'id' => $p['id'], 'estado' => $p['estado'], 'metodo_entrega' => $p['metodo_entrega'], 'total' => (float) $p['total'],
             'fecha' => $p['fecha'], 'cliente' => $p['cliente'], 'id_cliente' => (int) $p['id_cliente'],
-            'unidades' => (int) $p['unidades'], 'imagen' => $p['imagen'],
+            'unidades' => (int) $p['unidades'], 'imagen' => $p['imagen'], 'reembolso' => $p['reembolso'],
         ];
     }
 

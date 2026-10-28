@@ -15,6 +15,7 @@ $router->add('GET',  '/salud', fn() => [200, ['estado' => 'ok', 'servicio' => 'n
 // Solo pedidos-service: el correo de confirmación sale cuando el pago ya está confirmado.
 $router->add('POST', '/internal/notificaciones/pedido-pagado', fn() => $notificaciones->pedidoPagado());
 // Solo citas-service: reserva, confirmación o cancelación de una cita.
+$router->add('POST', '/internal/notificaciones/pedido-estado', fn() => $notificaciones->pedidoEstado());
 $router->add('POST', '/internal/notificaciones/cita', fn() => $notificaciones->cita());
 $router->add('POST', '/internal/notificaciones/vacuna', fn() => $notificaciones->vacuna());
 $router->add('POST', '/internal/notificaciones/verificar', fn() => $notificaciones->verificar());
