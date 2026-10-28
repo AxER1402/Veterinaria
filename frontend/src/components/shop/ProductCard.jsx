@@ -38,7 +38,7 @@ export default function ProductCard({ product }) {
         <Rating value={product.rating} reviews={product.reviews} />
         <div className="product-card__footer">
           <span className="product-price">
-            {low === high ? formatPrice(low) : `${formatPrice(low)} – ${formatPrice(high)}`}
+            {low === high ? formatPrice(low) : <><small>Desde</small> {formatPrice(low)}</>}
             {product.variants.length === 1 && first.oldPrice && <del>{formatPrice(first.oldPrice)}</del>}
           </span>
           {product.variants.length > 1 ? (

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Heart, ShoppingBag, Truck, ShieldCheck, RotateCcw } from 'lucide-react'
 import Rating from '../../components/shop/Rating'
+import Reviews from '../../components/shop/Reviews'
 import QuantityInput from '../../components/shop/QuantityInput'
 import ProductCard from '../../components/shop/ProductCard'
 import SectionTitle from '../../components/SectionTitle'
@@ -52,7 +53,7 @@ function ProductView({ product }) {
             <div className="product-detail__info">
               <span className="product-card__brand">{product.brand}</span>
               <h1>{product.name}</h1>
-              <Rating value={product.rating} reviews={product.reviews} size={18} />
+              <a href="#resenas" className="product-detail__rating"><Rating value={product.rating} reviews={product.reviews} size={18} /></a>
 
               <p className="product-detail__price">
                 {formatPrice(variant.price)}
@@ -106,6 +107,8 @@ function ProductView({ product }) {
           </div>
         </div>
       </section>
+
+      <Reviews slug={product.slug} />
 
       {related.length > 0 && (
         <section className="section">

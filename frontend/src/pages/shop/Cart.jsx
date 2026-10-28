@@ -162,7 +162,6 @@ export function OrderSummary({ totals, lines, children }) {
         <p className="summary__hint">Agrega {formatPrice(totals.missingForFreeShipping)} más para envío gratis.</p>
       )}
       {children}
-      <p className="summary__hint">Prueba los cupones <strong>HUELLITAS10</strong> o <strong>FLASH50</strong>.</p>
     </aside>
   )
 }
