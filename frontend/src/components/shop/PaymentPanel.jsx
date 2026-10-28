@@ -31,28 +31,41 @@ async function waitPaid(id, tries = 15) {
   return null
 }
 
-export default function PaymentPanel({ order, onPaid }) {
-  const [method, setMethod] = useState(null)
+// Solo muestra los métodos con claves en pagos-service. Con `inicial` (elegido en el checkout) arranca directo.
+export default function PaymentPanel({ order, onPaid, inicial = null }) {
+  const [method, setMethod] = useState(inicial || null)
   const [error, setError] = useState('')
+  const [metodos, setMetodos] = useState(null)
+
+  useEffect(() => {
+    api('/api/pedidos/metodos-pago', { auth: false }).then((d) => setMetodos(d.metodos)).catch(() => setMetodos([]))
+  }, [])
 
   return (
     <div className="payment">
       <h3>Pagar {formatPrice(order.total)}</h3>
-      {!method && (
+      {!method && metodos?.length === 0 && (
+        <p className="form-alert form-alert--soft">El pago en línea no está disponible en este momento. Intenta más tarde o escríbenos.</p>
+      )}
+      {!method && metodos?.length > 0 && (
         <div className="payment__methods">
-          <button className="btn btn--primary" onClick={() => { setError(''); setMethod('stripe') }}>
-            <CreditCard size={18} /> Tarjeta
-          </button>
-          <button className="btn btn--paypal" onClick={() => { setError(''); setMethod('paypal') }}>
-            PayPal
-          </button>
+          {metodos.includes('stripe') && (
+            <button className="btn btn--primary" onClick={() => { setError(''); setMethod('stripe') }}>
+              <CreditCard size={18} /> Tarjeta
+            </button>
+          )}
+          {metodos.includes('paypal') && (
+            <button className="btn btn--paypal" onClick={() => { setError(''); setMethod('paypal') }}>
+              PayPal
+            </button>
+          )}
         </div>
       )}
       {method === 'stripe' && <StripeForm order={order} onPaid={onPaid} onError={(m) => { setError(m); setMethod(null) }} />}
       {method === 'paypal' && <PayPalButtons order={order} onPaid={onPaid} onError={(m) => { setError(m); setMethod(null) }} />}
       {error && <p className="form-alert" role="alert">{error}</p>}
       <p className="demo-note">
-        <Lock size={14} /> Los datos de tu tarjeta van directo a Stripe o PayPal. Huellitas no los ve ni los guarda.
+        <Lock size={14} /> El pago lo procesa directamente Stripe o PayPal: Huellitas no recibe ni guarda los datos de tu tarjeta o cuenta.
       </p>
     </div>
   )

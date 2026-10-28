@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
-import { CheckCircle2, CreditCard, Store, Truck, Lock, LogIn } from 'lucide-react'
+import { CheckCircle2, CreditCard, Store, Truck, Lock, LogIn, Wallet } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import { OrderSummary } from './Cart'
 import { useShop } from '../../context/useShop'
@@ -32,18 +32,22 @@ export default function Checkout() {
   const location = useLocation()
   const [order, setOrder] = useState(null)
 
-  if (order) return <OrderConfirmed order={order} />
+  if (order) return <OrderConfirmed order={order.pedido} metodo={order.metodo} />
   if (catalogLoading || checking) return <Loading />
   if (lines.length === 0) return <Navigate to="/carrito" replace />
   if (!user) return <LoginRequired from={location.pathname} />
 
-  return <CheckoutForm user={user} lines={lines} coupon={coupon} onDone={(o) => { setOrder(o); clearCart() }} />
+  return <CheckoutForm user={user} lines={lines} coupon={coupon} onDone={(pedido, metodo) => { setOrder({ pedido, metodo }); clearCart() }} />
 }
 
 function CheckoutForm({ user, lines, coupon, onDone }) {
   const [values, setValues] = useState({
-    nombre: user.nombre, telefono: '', metodo_entrega: 'domicilio', direccion: '', ciudad: '', notas: '', sede: '',
+    nombre: user.nombre, telefono: user.telefono || '', metodo_entrega: 'domicilio', direccion: '', ciudad: '', notas: '', sede: '',
   })
+  const { setPerfil } = useAuth()
+  // Solo se ofrecen los métodos que tienen claves en pagos-service (null mientras carga).
+  const [metodos, setMetodos] = useState(null)
+  const [metodo, setMetodo] = useState('')
   const [errors, setErrors] = useState({})
   const [sedes, setSedes] = useState([])
   const [quote, setQuote] = useState(null)
@@ -56,6 +60,9 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
 
   useEffect(() => {
     api('/api/pedidos/sedes', { auth: false }).then((d) => setSedes(d.sedes)).catch(() => setSedes([]))
+    api('/api/pedidos/metodos-pago', { auth: false })
+      .then((d) => { setMetodos(d.metodos); setMetodo(d.metodos[0] || '') })
+      .catch(() => setMetodos([]))
   }, [])
 
   // Cada cambio de carrito, cupón o entrega vuelve a pedir el total al servidor (es el que se cobra).
@@ -90,7 +97,13 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
       if (values.metodo_entrega === 'retiro') body.sede = values.sede
       else Object.assign(body, { direccion: values.direccion, ciudad: values.ciudad, notas: values.notas })
       const d = await api('/api/pedidos', { method: 'POST', body })
-      onDone(d.pedido)
+      // El teléfono queda en el perfil para la próxima compra o reserva.
+      if (values.telefono.trim() !== (user.telefono || '')) {
+        api('/api/auth/perfil', { method: 'PATCH', body: { telefono: values.telefono.trim() } })
+          .then((p) => setPerfil({ telefono: p.usuario.telefono }))
+          .catch(() => {})
+      }
+      onDone(d.pedido, metodo)
     } catch (err) {
       if (err.data?.campo) setErrors({ [err.data.campo]: err.message })
       else setProblem(err.message)
@@ -159,12 +172,25 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
             )}
 
             <h3>3. Pago</h3>
-            <div className="option-cards">
-              <OptionCard name="pago" value="tarjeta" current="tarjeta" onChange={() => {}} icon={CreditCard}
-                title="Tarjeta o PayPal" text="Al confirmar el pedido" />
-            </div>
+            {metodos === null ? <p className="summary__hint">Revisando los medios de pago…</p> : metodos.length === 0 ? (
+              <p className="form-alert form-alert--soft">
+                El pago en línea no está disponible en este momento. Puedes confirmar el pedido y pagarlo después desde «Mis pedidos»;
+                lo apartamos por unas horas.
+              </p>
+            ) : (
+              <div className="option-cards">
+                {metodos.includes('stripe') && (
+                  <OptionCard name="pago" value="stripe" current={metodo} onChange={() => setMetodo('stripe')} icon={CreditCard}
+                    title="Tarjeta" text="Débito o crédito, en quetzales" />
+                )}
+                {metodos.includes('paypal') && (
+                  <OptionCard name="pago" value="paypal" current={metodo} onChange={() => setMetodo('paypal')} icon={Wallet}
+                    title="PayPal" text="Se cobra en dólares al tipo de cambio del día" />
+                )}
+              </div>
+            )}
             <p className="demo-note">
-              <Lock size={14} /> Los datos de tu tarjeta los recibe directamente la pasarela de pago (Stripe/PayPal). Huellitas nunca los ve ni los guarda.
+              <Lock size={14} /> El pago lo procesa directamente {metodo === 'paypal' ? 'PayPal' : metodo === 'stripe' ? 'Stripe' : 'la pasarela'}: Huellitas no recibe ni guarda los datos de tu tarjeta o cuenta.
             </p>
             {problem && <p className="form-alert" role="alert">{problem}</p>}
           </form>
@@ -203,7 +229,7 @@ function LoginRequired({ from }) {
   )
 }
 
-function OrderConfirmed({ order: initial }) {
+function OrderConfirmed({ order: initial, metodo }) {
   const [order, setOrder] = useState(initial)
   const paid = order.estado !== 'pendiente_pago'
   return (
@@ -215,7 +241,7 @@ function OrderConfirmed({ order: initial }) {
           Tu pedido <strong className="mono">{order.id.slice(0, 8).toUpperCase()}</strong> por <strong>{formatPrice(order.total)}</strong>{' '}
           {paid ? <>está <strong>pagado</strong>. Te enviamos el comprobante a <strong>{order.contacto.email}</strong>.</> : <>quedó registrado. Solo falta el pago.</>}
         </p>
-        {!paid && <PaymentPanel order={order} onPaid={setOrder} />}
+        {!paid && <PaymentPanel order={order} onPaid={setOrder} inicial={metodo} />}
         <p>{order.metodo_entrega === 'retiro' ? `Lo retiras en: ${order.sede}.` : 'Te avisaremos cuando salga a reparto.'}</p>
         <div className="order-confirmed__actions">
           <Link to={`/cuenta/pedidos/${order.id}`} className="btn btn--primary">Ver mi pedido</Link>

@@ -3,6 +3,7 @@ import { Pencil, Plus, Search } from 'lucide-react'
 import Loading from '../../components/Loading'
 import { api } from '../../api'
 import ProductoForm from './ProductoForm'
+import AdminResenas from './AdminResenas'
 import { categories } from '../../data/shop'
 
 const normalizar = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
@@ -60,6 +61,7 @@ export default function AdminCatalogo() {
   if (!productos) return error ? <p className="form-alert">{error}</p> : <Loading />
 
   return (
+    <>
     <div className="admin-card">
       <div className="admin-card__head">
         <h2>Catálogo · precios y stock</h2>
@@ -93,6 +95,8 @@ export default function AdminCatalogo() {
         </table>
       </div>
     </div>
+    <AdminResenas />
+    </>
   )
 }
 

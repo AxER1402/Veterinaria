@@ -1140,3 +1140,26 @@ small.alert-badge { display: inline-flex; width: fit-content; margin-top: 4px; }
 .pedido__totales dt, .pedido__totales dd { margin: 0; }
 .order__cancel { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 @media print { .print-sheet__pedido { break-inside: avoid; border-top: 1px solid #000; padding-top: 6px; } }
+
+/* Tienda: reseñas reales y tarjetas parejas */
+.rating--empty { color: var(--gray); font-size: 0.82rem; }
+.product-card h3 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.8em; }
+.product-price { white-space: nowrap; }
+.product-price small { font-family: var(--font-body); font-weight: 300; font-size: 0.75rem; color: var(--gray); }
+.products-grid { align-items: stretch; }
+.product-detail__rating { display: inline-block; color: inherit; }
+.reviews h2 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.reviews h2 small { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-body); font-weight: 300; font-size: 0.9rem; color: var(--gray); }
+.reviews__list { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 14px; max-width: 760px; }
+.reviews__list li { padding: 14px 16px; border-radius: 14px; background: var(--soft); }
+.reviews__list li .rating { margin-right: 8px; }
+.reviews__list p { margin: 6px 0 0; }
+.reviews__list small { color: var(--gray); }
+.reviews__form { display: grid; gap: 10px; max-width: 560px; margin: 12px 0; }
+.reviews__form textarea { font: inherit; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.reviews__form .btn { justify-self: start; }
+.reviews__stars { display: inline-flex; gap: 4px; }
+.reviews__stars button { border: 0; background: none; padding: 2px; cursor: pointer; color: var(--line); }
+.reviews__stars button svg { fill: currentColor; }
+.reviews__stars button.on { color: var(--yellow-dark); }
+@media (max-width: 640px) { .product-price { font-size: 1rem; } }
