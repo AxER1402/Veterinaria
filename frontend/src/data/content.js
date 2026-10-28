@@ -208,3 +208,10 @@ export const gallery = [
   'photo-1543466835-00a7907e9de1',
 ].map((id) => unsplash(id, 400, 400))
 
+// Datos verificables de la clínica (antes eran cifras sin respaldo: años, mascotas, calificación).
+export const stats = [
+  { value: '3', label: 'Sedes en la ciudad' },
+  { value: '6', label: 'Servicios para tu mascota' },
+  { value: 'L–S', label: 'De 8:00 a 20:00' },
+  { value: 'En línea', label: 'Reservas y carné de vacunas' },
+]

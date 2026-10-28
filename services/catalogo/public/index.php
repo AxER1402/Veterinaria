@@ -16,6 +16,7 @@ $router->add('GET',   '/salud', fn() => [200, ['estado' => 'ok', 'servicio' => '
 
 // Público: el catálogo se ve sin registrarse.
 $router->add('GET',   '/api/catalogo/productos', fn() => $catalogo->listar());
+$router->add('GET',   '/api/catalogo/resenas/recientes', fn() => $catalogo->resenasRecientes());
 $router->add('GET',   '/api/catalogo/productos/{slug}', fn($p) => $catalogo->ver($p['slug']));
 $router->add('GET',   '/api/catalogo/productos/{slug}/resenas', fn($p) => $catalogo->resenas($p['slug']));
 $router->add('GET',   '/api/catalogo/productos/{slug}/resenas/mia', fn($p) => $catalogo->miResena($p['slug']));

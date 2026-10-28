@@ -1163,3 +1163,16 @@ small.alert-badge { display: inline-flex; width: fit-content; margin-top: 4px; }
 .reviews__stars button svg { fill: currentColor; }
 .reviews__stars button.on { color: var(--yellow-dark); }
 @media (max-width: 640px) { .product-price { font-size: 1rem; } }
+
+/* Sitio público (apartado 14) */
+@media (max-width: 960px) {
+  .header__actions .header__reservar { display: inline-flex; padding: 8px 14px; font-size: 0.82rem; }
+}
+@media (max-width: 380px) { .header__actions .header__reservar { padding: 7px 10px; } }
+.page-header--compact { padding: 28px 0 30px; text-align: left; }
+.page-header--compact h1 { font-size: clamp(1.6rem, 4vw, 2.2rem); margin: 4px 0; }
+.page-header--compact p { font-size: 1rem; margin: 0; max-width: none; }
+.page-header--compact .breadcrumb { justify-content: flex-start; }
+.page-header--compact .hero__paw { display: none; }
+p.hero__reviews { margin: 18px 0 0; }
+.flash__limit { margin: 0; font-weight: 500; }

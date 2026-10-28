@@ -1,13 +1,14 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, Truck, Store, BadgeCheck, Stethoscope, Sparkles, Copy } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Reveal from '../../components/Reveal'
 import SectionTitle from '../../components/SectionTitle'
 import ProductCard from '../../components/shop/ProductCard'
 import Rating from '../../components/shop/Rating'
 import Countdown from '../../components/shop/Countdown'
 import { PawIcon } from '../../components/Brand'
-import { pets, brands, tips, shopReviews, FREE_SHIPPING_FROM } from '../../data/shop'
+import { pets, brands, tips, formatPrice, FREE_SHIPPING_FROM } from '../../data/shop'
+import { api } from '../../api'
 import { useShop } from '../../context/useShop'
 import { locations } from '../../data/content'
 
@@ -36,7 +37,7 @@ export default function ShopHome() {
             <div className="shop-hero__circle" />
             <img src={heroImage} alt="Bulldog francés con sudadera amarilla" />
             <span className="shop-hero__tag">
-              <strong>-20%</strong> en tu primera compra
+              Envío <strong>gratis</strong> desde {formatPrice(FREE_SHIPPING_FROM)}
             </span>
           </div>
         </div>
@@ -173,37 +174,23 @@ export default function ShopHome() {
         </div>
       </section>
 
-      <section className="section section--tint">
-        <div className="container reviews-wall">
-          <div className="reviews-wall__score">
-            <h2>Excelente</h2>
-            <Rating value={4.8} size={24} />
-            <p>
-              <strong>4,8 de 5</strong> · basado en 20.921 reseñas
-            </p>
-          </div>
-          <div className="reviews-wall__list">
-            {shopReviews.map((r, i) => (
-              <Reveal key={r.title} className="review-card" delay={i * 80}>
-                <Rating value={5} />
-                <h3>{r.title}</h3>
-                <p>{r.text}</p>
-                <small>{r.author}</small>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
+      <ReviewsWall />
 
       <div className="free-shipping-strip">
-        <Truck size={20} /> Envío <strong>GRATIS</strong> en pedidos mayores a ${FREE_SHIPPING_FROM}
+        <Truck size={20} /> Envío <strong>GRATIS</strong> en pedidos desde {formatPrice(FREE_SHIPPING_FROM)}
       </div>
     </>
   )
 }
 
+// Oferta flash con el cupón real FLASH50: si no existe o venció, no se muestra; la cuenta regresiva
+// solo aparece si el cupón tiene fecha de vencimiento (antes se «reiniciaba» cada medianoche).
 function FlashSale() {
   const [copied, setCopied] = useState(false)
+  const [cupon, setCupon] = useState(undefined)
+  useEffect(() => {
+    api('/api/pedidos/cupones/FLASH50', { auth: false }).then((d) => setCupon(d.cupon)).catch(() => setCupon(null))
+  }, [])
   const copy = async () => {
     try {
       await navigator.clipboard.writeText('FLASH50')
@@ -213,6 +200,7 @@ function FlashSale() {
       // Portapapeles no disponible; el código sigue visible en pantalla.
     }
   }
+  if (!cupon) return null
 
   return (
     <section className="flash">
@@ -220,11 +208,11 @@ function FlashSale() {
         <div className="flash__percent">
           <span>Flash</span>
           <strong>
-            50<small>%</small>
+            {cupon.porcentaje}<small>%</small>
           </strong>
         </div>
         <div className="flash__text">
-          <h3>En todos los productos NutriHuella</h3>
+          <h3>{cupon.marca ? `En todos los productos ${cupon.marca}` : 'En toda la tienda'}</h3>
           <p>
             Usa el código{' '}
             <button className="coupon-code" onClick={copy}>
@@ -233,10 +221,42 @@ function FlashSale() {
             {copied && <em>¡Copiado!</em>}
           </p>
         </div>
-        <Countdown />
+        {cupon.vence ? <Countdown hasta={cupon.vence} /> : <p className="flash__limit">Por tiempo limitado</p>}
         <Link to="/tienda/productos?marca=NutriHuella" className="btn btn--dark">
           Aprovechar
         </Link>
+      </div>
+    </section>
+  )
+}
+
+// Reseñas reales de clientes que compraron (las más recientes). Sin reseñas, la sección no se muestra.
+function ReviewsWall() {
+  const [datos, setDatos] = useState(null)
+  useEffect(() => {
+    api('/api/catalogo/resenas/recientes', { auth: false }).then(setDatos).catch(() => setDatos(null))
+  }, [])
+  if (!datos || datos.resenas.length === 0) return null
+  return (
+    <section className="section section--tint">
+      <div className="container reviews-wall">
+        <div className="reviews-wall__score">
+          <h2>Opiniones de clientes</h2>
+          <Rating value={datos.promedio} size={24} />
+          <p>
+            <strong>{datos.promedio.toFixed(1)} de 5</strong> · {datos.total} {datos.total === 1 ? 'reseña' : 'reseñas'} de compras verificadas
+          </p>
+        </div>
+        <div className="reviews-wall__list">
+          {datos.resenas.map((r, i) => (
+            <Reveal key={r.id} className="review-card" delay={i * 80}>
+              <Rating value={r.calificacion} />
+              <h3><Link to={`/tienda/producto/${r.slug}`}>{r.producto}</Link></h3>
+              <p>{r.comentario}</p>
+              <small>{r.autor}</small>
+            </Reveal>
+          ))}
+        </div>
       </div>
     </section>
   )

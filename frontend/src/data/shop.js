@@ -70,13 +70,6 @@ export const tips = [
   },
 ]
 
-export const shopReviews = [
-  { title: 'Experiencia excelente', text: '¡El servicio fue maravilloso! Sin duda volveré a comprar sus productos.', author: 'Nadia R.' },
-  { title: 'Muy recomendados', text: 'Puedo recomendar esta tienda sin ninguna duda. ¡Buen trabajo, equipo!', author: 'Emma C.' },
-  { title: 'Tal como esperaba', text: 'Probé muchas tiendas, pero esta fue la mejor y cumplió todas mis expectativas.', author: 'Pedro J.' },
-  { title: 'Gran variedad para gatos', text: 'Mucha variedad de alimento para gatos y entregas rapidísimas. ¡Mis gatos felices!', author: 'Sara H.' },
-]
-
 export const minPrice = (p) => Math.min(...p.variants.map((v) => v.price))
 export const maxPrice = (p) => Math.max(...p.variants.map((v) => v.price))
 export const isOnSale = (p) => p.variants.some((v) => v.oldPrice)

@@ -324,6 +324,17 @@ final class CatalogoController
                       'resenas' => array_map(fn($r) => self::resenaJson($r), $q->fetchAll())]];
     }
 
+    /** Las reseñas visibles más recientes de toda la tienda, con su producto (portada de la tienda). */
+    public function resenasRecientes(): array
+    {
+        $q = Db::lectura()->query('SELECT r.id, r.autor, r.calificacion, r.comentario, r.created_at, p.nombre AS producto, p.slug
+                                     FROM resenas r JOIN productos p ON p.id = r.producto_id AND p.activo = 1
+                                    WHERE r.visible = 1 AND r.comentario IS NOT NULL ORDER BY r.created_at DESC LIMIT 4');
+        $total = Db::lectura()->query('SELECT COUNT(*) AS n, ROUND(AVG(calificacion), 1) AS promedio FROM resenas WHERE visible = 1')->fetch();
+        return [200, ['total' => (int) $total['n'], 'promedio' => $total['promedio'] !== null ? (float) $total['promedio'] : null,
+                      'resenas' => array_map(fn($r) => self::resenaJson($r) + ['producto' => $r['producto'], 'slug' => $r['slug']], $q->fetchAll())]];
+    }
+
     /** ¿Puede opinar el cliente (compró el producto)? Y su reseña, si ya dejó una. */
     public function miResena(string $slug): array
     {

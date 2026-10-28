@@ -236,3 +236,61 @@ Hay que arreglar:
 - Que el sistema use el maestro también cuando la réplica se atrasa, no solo cuando no responde.
 - Faltan las claves de PayPal, Stripe y Cloudinary en el .env.
 
+
+
+
+---
+
+Estado al 28 de octubre de 2026: qué falta de verdad (para el siguiente dev)
+
+Ya están hechos los apartados 1 a 12, 14 y 15. Del apartado 13 (Pagos) solo se hizo una parte. Abajo va lo que sigue pendiente, lo que no se pudo probar y cómo poner al día otro entorno.
+
+Cómo actualizar un entorno ya levantado
+- Correr `ops/migrar-v2.sh` y después `docker compose up -d --build --wait`. El script aplica, sin borrar datos, las migraciones `db/master/12` a `17` y `db/audit/02`, y se puede correr más de una vez.
+- Variables nuevas o cambiadas en el `.env` (ver `.env.example`):
+  - `PEDIDO_VENCE_HORAS=2`: antes era 24 y apartaba el stock un día entero.
+  - `CLOUDINARY_FETCH`: opcional, 0 por defecto. Con 1 sirve también las fotos de Unsplash por Cloudinary; antes hay que permitir "Fetched URL" en Settings → Security de Cloudinary.
+  - `DB_MAX_RETRASO_SEG`: opcional, 5 por defecto. Si la réplica va más atrasada que eso, se lee del maestro.
+- Cuentas del personal para probar cada rol (veterinario, recepción, tienda): están en `usuarios.md`, todas con la contraseña `Personal#2026`.
+
+Pendiente por apartado
+1. Reservar: los cupos ahora son por servicio, no por veterinario. Para repartir la agenda por profesional falta crear una tabla de veterinarios y sus horarios.
+2. Agenda:
+   - Para agendar desde el panel, la persona tiene que tener cuenta. Falta poder dar de alta un cliente desde el panel (correo, teléfono y una contraseña temporal o un enlace para crearla).
+   - Al reactivar un hospedaje cancelado no se revisa si sus noches se cruzan con otras estadías.
+   - La vista es por hora, con el consultorio en cada tarjeta. Falta una vista en columnas por consultorio.
+3. Historial clínico: los adjuntos (laboratorio y radiografías) se guardan como archivos privados en Cloudinary, pero nunca se probó una subida real. Hay que subir un PDF desde la ficha y abrir el enlace.
+9. Pedidos: el reembolso se hace a mano en la pasarela; el panel solo avisa y guarda la referencia. Falta pedirlo por la API de Stripe o de PayPal.
+10. Catálogo público:
+   - Las fotos siguen siendo de stock. La subida ya funciona desde Catálogo → Editar; falta tomar y cargar las fotos reales (es trabajo de contenido).
+   - Las reseñas se publican sin moderación previa: la tienda solo puede ocultarlas después.
+11. Catálogo en el panel: falta una subida real de prueba. Si responde "Invalid Signature", el `CLOUDINARY_API_SECRET` está mal copiado.
+12. Checkout: sin claves de pago, el paso 3 dice que el pago en línea no está disponible y deja crear el pedido para pagarlo después.
+13. Pagos, sin hacer salvo lo indicado:
+   - Ya hecho: el servidor informa qué métodos tienen claves y el checkout solo ofrece esos; también se cambió el texto sobre los datos de la tarjeta.
+   - Faltan las claves de prueba (sandbox) de PayPal y Stripe en el `.env`.
+   - Falta una opción para ocultar la tarjeta sin borrar Stripe, porque las pruebas CP-26 a CP-28 dependen de Stripe.
+   - Falta `disable-funding=card` en el SDK de PayPal.
+   - Falta comprobar si la política de seguridad del sitio (CSP) bloquea `*.paypalobjects.com`.
+   - Falta un mensaje cuando el cliente cierra la ventana de PayPal.
+   - Falta que el tipo de cambio se actualice solo.
+14. Sitio público:
+   - Los testimonios ya los firma la persona, pero siguen siendo textos de ejemplo. Hay que pedir testimonios reales o quitar la sección.
+   - "Envío el mismo día" (en la tienda) y "Devoluciones gratis durante 30 días" (en la página de producto) no están confirmados con el negocio.
+   - Los enlaces de "Privacidad" y "Términos" del pie de página apuntan a "#".
+   - FLASH50 no tiene fecha de vencimiento en la base, así que no se muestra cuenta regresiva. Si se quiere, hay que poner la fecha en `pedidos_db.cupones.vence`.
+15. Infraestructura:
+   - En el servidor hay que correr `ops/reparar-replica.sh` para resolver el error 1236 (se probó en local).
+   - Faltan las claves de PayPal y Stripe.
+   - En macOS con Docker Desktop, los scripts de inicio de la base (`db/master/01-*.sh` y `db/audit/01-*.sh`) fallan con "bad interpreter: Permission denied" y las bases quedan vacías. Con volúmenes nuevos hay que correrlos a mano o cambiar cómo se cargan. En Linux y en CI funcionan.
+
+Lo que no se probó
+- Nadie revisó en el navegador las pantallas nuevas: reservar, agenda, pacientes, clientes, pedidos, mis citas, mis mascotas, reseñas y checkout. Hay que revisarlas en escritorio y en celular, con cada rol.
+- No se corrió `tests/seguridad.sh` después de los cambios. Se actualizaron las pruebas afectadas: el límite ahora es de 3 citas por mascota, el motivo es obligatorio en consulta y el vencimiento de pedidos sale del `.env`. La prueba CP-36 necesita internet (clima).
+- Los correos nuevos (cita reprogramada, cambios de estado de pedidos) reutilizan la plantilla de citas de EmailJS. No se probaron con claves reales.
+
+Otros pendientes
+- Faltan en `docs/` (STRIDE, OWASP, ISO) los eventos nuevos de la bitácora: `HISTORIAL_CORREGIDO`, `CITA_REPROGRAMADA`, `ROL_CAMBIADO`, `PRODUCTO_ACTUALIZADO`, `REEMBOLSO_PENDIENTE`, `REEMBOLSO_REGISTRADO` y `RESENA_PUBLICADA`. Tampoco reflejan los roles nuevos: hoy dicen que solo el admin entra al panel.
+- El bundle del frontend pasa de 500 KB. Conviene cargar el panel (`/admin/*`) con `lazy()`.
+- La base local tiene datos de prueba de esta sesión: la mascota "Kiwi", citas del 3 de noviembre, dos pedidos cancelados con su reembolso y una reseña.
+- El archivo `env` (sin punto) tiene secretos y no está en `.gitignore`: no subirlo. La contraseña root de la base local se mostró en una sesión de trabajo; conviene cambiarla.
