@@ -68,7 +68,7 @@ export default function Footer() {
           <div>
             <h4>Contacto</h4>
             <ul className="footer__contact">
-              <li><Phone size={16} /> <a href={`tel:${business.phone}`}>{business.phone}</a></li>
+              <li><Phone size={16} /> <a href={`tel:${business.tel}`}>{business.phone}</a></li>
               <li><Mail size={16} /> <a href={`mailto:${business.email}`}>{business.email}</a></li>
               <li><Clock size={16} /> {business.hours}</li>
               <li className="footer__address">{locations[0].address}</li>

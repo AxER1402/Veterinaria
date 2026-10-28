@@ -34,6 +34,7 @@ final class AuditController
         'PAGO_CONFIRMADO'         => ['pagos-service'],
         'PAGO_FALLIDO'            => ['pagos-service'],
         'WEBHOOK_STRIPE_RECIBIDO' => ['pagos-service'],
+        'PRODUCTO_CREADO'         => ['catalogo-service'],
         'PRECIO_MODIFICADO'       => ['catalogo-service'],
         'PRODUCTO_AGOTADO'        => ['catalogo-service', 'pedidos-service'],
         'EMAIL_ENVIADO'           => ['notificaciones-service'],

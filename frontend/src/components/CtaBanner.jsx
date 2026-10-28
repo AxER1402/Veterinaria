@@ -14,7 +14,7 @@ export default function CtaBanner() {
             <Link to="/contacto#reservar" className="btn btn--primary">
               Reservar ahora
             </Link>
-            <a href={`tel:${business.phone}`} className="btn btn--ghost-light">
+            <a href={`tel:${business.tel}`} className="btn btn--ghost-light">
               <Phone size={18} /> {business.phone}
             </a>
           </div>

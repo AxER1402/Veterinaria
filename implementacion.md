@@ -118,6 +118,7 @@ Implementar y documentar (mínimo 5, ideal 7 incluyendo A08). Referenciar en el 
 | PAGO_CONFIRMADO | Stripe/PayPal confirma | pagos-service |
 | PAGO_FALLIDO | Pago rechazado | pagos-service |
 | PEDIDO_ESTADO_CAMBIADO | Admin cambia estado | pedidos-service |
+| PRODUCTO_CREADO | Admin da de alta un producto | catalogo-service |
 | PRECIO_MODIFICADO | Admin cambia precio | catalogo-service |
 | PRODUCTO_AGOTADO | Stock llega a 0 | catalogo-service |
 | EXPORTACION_CLIENTES | Admin exporta datos | admin panel |

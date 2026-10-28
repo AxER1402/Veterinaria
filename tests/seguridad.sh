@@ -189,7 +189,7 @@ CLIENTE2="compras$SUF@correo.gt"
 post /api/auth/registro "{\"nombre\":\"Compradora $SUF\",\"email\":\"$CLIENTE2\",\"password\":\"Segura123\"}" >/dev/null
 T2=$(login "$CLIENTE2" Segura123)
 T1=$(login cliente@huellitas.gt 'Cliente#2026')
-ENTREGA='"nombre":"Compradora Prueba","telefono":"5555-1234","metodo_entrega":"domicilio","direccion":"4a avenida 10-20, zona 1","ciudad":"Guatemala"'
+ENTREGA='"nombre":"Compradora Prueba","telefono":"+502 5512-3478","metodo_entrega":"domicilio","direccion":"4a avenida 10-20, zona 1","ciudad":"Guatemala"'
 
 caso "CP-18 El precio lo pone el servidor (T de STRIDE)"
 precio_real=$(jq '.productos[] | select(.slug=="alimento-seco-pollo-arroz") | .variantes[0].precio' <<<"$cat_json")
@@ -227,7 +227,7 @@ esperar "cliente no puede cambiar precios → 403" 403 "$(codigo -X PATCH -H "Au
 nuevo=$(jq -n "$precio_real+1")
 r=$(auth_json PATCH "$ADMIN" "/api/catalogo/admin/variantes/$var_id" "{\"precio\":$nuevo}")
 esperar "admin cambia el precio" "$nuevo" "$(jq --argjson v "$var_id" '.producto.variantes[] | select(.id==$v) | .precio' <<<"$r")"
-esperar "PRECIO_MODIFICADO guarda antes y después" "$precio_real→$nuevo" "$(evento_ultimo PRECIO_MODIFICADO | jq -r '"\(.dato_anterior.precio)→\(.dato_nuevo.precio)"')"
+esperar "PRECIO_MODIFICADO guarda antes y después" "${precio_real}→${nuevo}" "$(evento_ultimo PRECIO_MODIFICADO | jq -r '"\(.dato_anterior.precio)→\(.dato_nuevo.precio)"')"
 esperar "el catálogo público refleja el precio nuevo (caché invalidada)" "$nuevo" "$("${C[@]}" "$BASE/api/catalogo/productos" | jq --argjson v "$var_id" '.productos[].variantes[] | select(.id==$v) | .precio')"
 auth_json PATCH "$ADMIN" "/api/catalogo/admin/variantes/$var_id" "{\"precio\":$precio_real}" >/dev/null
 esperar "precio negativo → 422" 422 "$(codigo -X PATCH -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d '{"precio":-5}' "$BASE/api/catalogo/admin/variantes/$var_id")"
@@ -256,7 +256,7 @@ r=$(docker compose exec -T auth-service php -r '
 esperar "auth-service no puede reservar stock → 403" 403 "$r"
 
 caso "CP-24 Inyección en el checkout (A03)"
-esperar "SQLi en la dirección → 400" 400 "$(codigo -X POST -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d "{\"items\":[{\"variante_id\":$var_id,\"cantidad\":1}],\"nombre\":\"Ana\",\"telefono\":\"5555-1234\",\"metodo_entrega\":\"domicilio\",\"direccion\":\"x'; DROP TABLE pedidos; --\",\"ciudad\":\"Guatemala\"}" "$BASE/api/pedidos")"
+esperar "SQLi en la dirección → 400" 400 "$(codigo -X POST -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d "{\"items\":[{\"variante_id\":$var_id,\"cantidad\":1}],\"nombre\":\"Ana\",\"telefono\":\"+502 5512-3478\",\"metodo_entrega\":\"domicilio\",\"direccion\":\"x'; DROP TABLE pedidos; --\",\"ciudad\":\"Guatemala\"}" "$BASE/api/pedidos")"
 esperar "XSS en las notas → 400" 400 "$(codigo -X POST -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d "{\"items\":[{\"variante_id\":$var_id,\"cantidad\":1}],$ENTREGA,\"notas\":\"<img src=x onerror=alert(1)>\"}" "$BASE/api/pedidos")"
 esperar "cantidad inválida → 422" 422 "$(codigo -X POST -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d "{\"items\":[{\"variante_id\":$var_id,\"cantidad\":-3}],$ENTREGA}" "$BASE/api/pedidos")"
 [[ "$(codigo -X POST -H 'Content-Type: application/json' -d '{"items":[{"variante_id":"1 OR 1=1","cantidad":1}]}' "$BASE/api/pedidos/cotizar")" =~ ^(400|422)$ ]] \
@@ -277,9 +277,9 @@ fixture_pago() { # fixture_pago <pedido> <total> <pi>
     docker compose exec -T mariadb-master mariadb -uroot -p"$DB_ROOT_PASSWORD" pagos_db -e \
       "INSERT INTO pagos (id,id_pedido,id_cliente,monto,metodo,payment_intent_id,stripe_status) SELECT UUID(),'$1',id_cliente,total,'stripe','$3','requires_payment_method' FROM pedidos_db.pedidos WHERE id='$1'"
 }
-evento_stripe() { # evento_stripe <tipo> <pi> <centavos> <pedido>
-    jq -cn --arg t "$1" --arg pi "$2" --argjson c "$3" --arg p "$4" --arg e "evt_$RANDOM$RANDOM" \
-      '{id:$e,type:$t,data:{object:{id:$pi,amount_received:$c,currency:"usd",status:"succeeded",metadata:{pedido_id:$p},last_payment_error:{code:"card_declined"}}}}'
+evento_stripe() { # evento_stripe <tipo> <pi> <centavos> <pedido> [moneda]
+    jq -cn --arg t "$1" --arg pi "$2" --argjson c "$3" --arg p "$4" --arg m "${5:-gtq}" --arg e "evt_$RANDOM$RANDOM" \
+      '{id:$e,type:$t,data:{object:{id:$pi,amount_received:$c,currency:$m,status:"succeeded",metadata:{pedido_id:$p},last_payment_error:{code:"card_declined"}}}}'
 }
 firmar() { printf '%s' "$1.$2" | openssl dgst -sha256 -hmac "$STRIPE_WEBHOOK_SECRET" | awk '{print $2}'; }
 webhook() { "${C[@]}" -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' ${2:+-H "Stripe-Signature: $2"} -d "$1" "$BASE/api/pagos/webhook/stripe"; }
@@ -309,6 +309,9 @@ esperar "un pedido pagado no se puede volver a pagar → 409" 409 "$(codigo -X P
 caso "CP-27 Webhook con monto manipulado"
 read -r PED_F TOT_F <<<"$(nuevo_pedido)"
 PI_F="pi_fraude_$SUF$RANDOM"; fixture_pago "$PED_F" "$TOT_F" "$PI_F"
+EV=$(evento_stripe payment_intent.succeeded "$PI_F" "$(jq -n "$TOT_F*100|round")" "$PED_F" usd); TS=$(date +%s)
+webhook "$EV" "t=$TS,v1=$(firmar "$TS" "$EV")" >/dev/null
+esperar "el monto correcto pero en dólares no confirma el pedido" pendiente_pago "$(estado_pedido "$PED_F")"
 EV=$(evento_stripe payment_intent.succeeded "$PI_F" 1 "$PED_F"); TS=$(date +%s)
 webhook "$EV" "t=$TS,v1=$(firmar "$TS" "$EV")" >/dev/null
 esperar "cobro de 1 centavo no confirma el pedido" pendiente_pago "$(estado_pedido "$PED_F")"
@@ -477,7 +480,7 @@ esperar "servicio inexistente → 422" 422 "$(codigo "$BASE/api/citas/disponibil
 HORA=$(jq -r '[.turnos[] | select(.libres==2)][0].hora' <<<"$turnos")
 reservar() { # reservar <token> <mascota> <hora> [dia] → cuerpo<LF>código
     "${C[@]}" -w '\n%{http_code}' -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' \
-        -d "$(jq -nc --arg m "$2" --arg h "$3" --arg d "${4:-$DIA}" '{mascota_id:$m, servicio:"veterinaria", fecha:$d, hora:$h, nombre:"Compradora Prueba", telefono:"5555-1234"}')" "$BASE/api/citas"
+        -d "$(jq -nc --arg m "$2" --arg h "$3" --arg d "${4:-$DIA}" '{mascota_id:$m, servicio:"veterinaria", fecha:$d, hora:$h, nombre:"Compradora Prueba", telefono:"+502 5512-3478"}')" "$BASE/api/citas"
 }
 esperar "fuera de horario (07:00) → 422" 422 "$(reservar "$T2" "$M1" 07:00 | tail -1)"
 esperar "con la mascota de otro cliente → 404" 404 "$(reservar "$T3" "$M1" "$HORA" | tail -1)"
@@ -505,7 +508,7 @@ esperar "en la BD hay exactamente 2 citas activas en ese turno" 2 "$(docker comp
 caso "CP-40 Agenda del admin y estados de la cita (A01, A09)"
 esperar "cliente → agenda 403" 403 "$(codigo -H "Authorization: Bearer $T2" "$BASE/api/citas/admin/agenda?fecha=$DIA")"
 agenda=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/agenda?fecha=$DIA&sede=centro")
-esperar "el admin ve la cita con el teléfono del cliente" "5555-1234" "$(jq -r --arg c "$CITA" '.citas[] | select(.id==$c) | .cliente.telefono' <<<"$agenda")"
+esperar "el admin ve la cita con el teléfono del cliente" "+502 5512-3478" "$(jq -r --arg c "$CITA" '.citas[] | select(.id==$c) | .cliente.telefono' <<<"$agenda")"
 estado() { "${C[@]}" -w '\n%{http_code}' -X PATCH -H "Authorization: Bearer $2" -H 'Content-Type: application/json' -d "{\"estado\":\"$3\"}" "$BASE/api/citas/admin/$1/estado"; }
 esperar "un cliente no puede cambiar el estado → 403" 403 "$(estado "$CITA" "$T2" confirmada | tail -1)"
 esperar "pendiente → confirmada" "confirmada" "$(estado "$CITA" "$ADMIN" confirmada | head -n -1 | jq -r .cita.estado)"
@@ -580,7 +583,7 @@ cita_pasada() { # cita_pasada <mascota> <servicio> <hora> → id
     docker compose exec -T mariadb-master mariadb -uroot -p"$DB_ROOT_PASSWORD" citas_db -e "
         INSERT INTO citas (id, id_cliente, mascota_id, servicio, sede, inicio, cupo, estado, cliente_nombre, cliente_email, telefono)
         SELECT '$id', id_cliente, id, '$2', (SELECT sede FROM servicios WHERE slug='$2'), '$(gt -d yesterday +%F) $3:00',
-               $(( 10 + 10#$SUF % 240 )), 'confirmada', 'Compradora Prueba', '$CLIENTE2', '5555-1234' FROM mascotas WHERE id='$1'" && echo "$id"
+               $(( 10 + 10#$SUF % 240 )), 'confirmada', 'Compradora Prueba', '$CLIENTE2', '+502 5512-3478' FROM mascotas WHERE id='$1'" && echo "$id"
 }
 historial() { "${C[@]}" -w '\n%{http_code}' -X POST -H "Authorization: Bearer $2" -H 'Content-Type: application/json' -d "$3" "$BASE/api/citas/admin/$1/historial"; }
 CONSULTA=$(cita_pasada "$M1" veterinaria 10:00)
@@ -624,7 +627,7 @@ cita_bd() { # cita_bd <mascota> <servicio> <inicio> <creada> <email> → id   (c
     local id; id=$(cat /proc/sys/kernel/random/uuid); cupo_bd=$((cupo_bd + 1))
     sqlc "INSERT INTO citas (id, id_cliente, mascota_id, servicio, sede, inicio, cupo, estado, cliente_nombre, cliente_email, telefono, created_at)
           SELECT '$id', id_cliente, id, '$2', (SELECT sede FROM servicios WHERE slug='$2'), '$3', $((cupo_bd % 250 + 5)), 'confirmada',
-                 'Dueña Prueba', '$5', '5555-1234', '$4' FROM mascotas WHERE id='$1'" && echo "$id"
+                 'Dueña Prueba', '$5', '+502 5512-3478', '$4' FROM mascotas WHERE id='$1'" && echo "$id"
 }
 eventos() { "${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auditoria/eventos?accion=$1&limite=30" | jq -c '.eventos'; }
 MANANA=$(cita_bd "$P3" veterinaria "$(gt -d '+20 hour' '+%F %H:00:00')" "$(gt -d '-3 day' '+%F %T')" "$CLIENTE3")
@@ -663,6 +666,27 @@ for h in $(disp "$DIA" | jq -r '.turnos[].hora' | head -8); do
 done
 esperar "la 6.ª cita próxima → 409" "409|true" "$(tail -1 <<<"$ultimo")|$(head -n -1 <<<"$ultimo" | jq -r '.error | test("citas próximas")')"
 esperar "el cliente tiene 5 citas próximas" 5 "$("${C[@]}" -H "Authorization: Bearer $T2" "$BASE/api/citas" | jq '[.citas[] | select(.estado=="pendiente")] | length')"
+
+caso "CP-47 Alta de productos desde el panel (A01, A03, A09)"
+nuevo_producto() { # nuevo_producto <cambios jq sobre el cuerpo válido>
+    jq -nc --arg n "Producto de prueba $SUF" "{nombre:\$n, marca:\"Marca $SUF\", mascota:\"perro\", categoria:\"juguetes\",
+        descripcion:\"Juguete de prueba creado por tests/seguridad.sh.\",
+        imagen_url:\"https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=2000\",
+        variantes:[{etiqueta:\"M\", precio:95, stock:10}, {etiqueta:\"L\", precio:120, precio_anterior:150, stock:0}]} | $1"
+}
+esperar "cliente no puede crear productos → 403" 403 "$(codigo -X POST -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d "$(nuevo_producto .)" "$BASE/api/catalogo/admin/productos")"
+esperar "imagen de un dominio cualquiera → 422" 422 "$(codigo -X POST -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d "$(nuevo_producto '.imagen_url="https://evil.example/x.png"')" "$BASE/api/catalogo/admin/productos")"
+esperar "precio negativo en una presentación → 422" 422 "$(codigo -X POST -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d "$(nuevo_producto '.variantes[0].precio=-5')" "$BASE/api/catalogo/admin/productos")"
+esperar "presentaciones repetidas → 422" 422 "$(codigo -X POST -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d "$(nuevo_producto '.variantes[1].etiqueta="m"')" "$BASE/api/catalogo/admin/productos")"
+esperar "XSS en la descripción → 400" 400 "$(codigo -X POST -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d "$(nuevo_producto '.descripcion="<script>alert(1)</script> juguete"')" "$BASE/api/catalogo/admin/productos")"
+r=$(auth_json POST "$ADMIN" /api/catalogo/admin/productos "$(nuevo_producto '. + {slug:"hackeado", sku:"X-1"}')")
+PROD=$(jq '.producto.id' <<<"$r")
+esperar "admin crea el producto; el slug lo pone el servidor" "producto-de-prueba-$SUF" "$(jq -r .producto.slug <<<"$r")"
+esperar "los SKU los pone el servidor" "$(printf 'HU-%03d-1,HU-%03d-2' "$PROD" "$PROD")" "$(jq -r '[.producto.variantes[].sku] | join(",")' <<<"$r")"
+esperar "la imagen de Unsplash se normaliza al tamaño del catálogo" true "$(jq '.producto.imagen_url | endswith("w=600&h=600&q=75")' <<<"$r")"
+esperar "aparece en el catálogo público (caché invalidada)" "M,L" "$("${C[@]}" "$BASE/api/catalogo/productos" | jq -r --arg s "producto-de-prueba-$SUF" '.productos[] | select(.slug==$s) | [.variantes[].etiqueta] | join(",")')"
+esperar "PRODUCTO_CREADO con quién y qué" "$PROD|admin|2" "$(evento_ultimo PRODUCTO_CREADO | jq -r '"\(.dato_nuevo.producto_id)|\(.rol)|\(.dato_nuevo.variantes | length)"')"
+auth_json PATCH "$ADMIN" "/api/catalogo/admin/productos/$PROD" '{"activo":false}' >/dev/null  # no deja el producto de prueba en la tienda
 
 caso "CP-16 Rate limiting en /login (gateway, se corre al final)"
 codigos=$(for i in $(seq 1 15); do codigo -X POST -H 'Content-Type: application/json' -d '{"email":"flood@correo.gt","password":"x"}' "$BASE/api/auth/login"; echo; done)

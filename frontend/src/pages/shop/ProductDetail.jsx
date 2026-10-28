@@ -98,7 +98,7 @@ function ProductView({ product }) {
               </div>
 
               <ul className="guarantees">
-                <li><Truck size={18} /> Envío gratis en pedidos mayores a $50</li>
+                <li><Truck size={18} /> Envío gratis en pedidos desde Q400</li>
                 <li><RotateCcw size={18} /> Devoluciones gratis durante 30 días</li>
                 <li><ShieldCheck size={18} /> Producto recomendado por nuestros veterinarios</li>
               </ul>

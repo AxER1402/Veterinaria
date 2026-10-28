@@ -1,10 +1,10 @@
 const img = (id, w = 600) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=${w}&h=${w}&q=75`
 
 export const formatPrice = (value) =>
-  new Intl.NumberFormat('es-US', { style: 'currency', currency: 'USD' }).format(value)
+  new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(value)
 
-export const FREE_SHIPPING_FROM = 50
-export const SHIPPING_COST = 5.99
+export const FREE_SHIPPING_FROM = 400
+export const SHIPPING_COST = 35
 
 export const pets = [
   { slug: 'perro', label: 'Perros', image: img('photo-1537151625747-768eb6cf92b2', 300) },

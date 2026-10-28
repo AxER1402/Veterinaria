@@ -6,7 +6,7 @@ import { business } from '../data/content'
 
 export default function Contact() {
   const items = [
-    { icon: Phone, label: 'Llámanos', value: business.phone, href: `tel:${business.phone}` },
+    { icon: Phone, label: 'Llámanos', value: business.phone, href: `tel:${business.tel}` },
     { icon: Mail, label: 'Escríbenos', value: business.email, href: `mailto:${business.email}` },
     { icon: Clock, label: 'Horario', value: business.hours },
   ]

@@ -15,19 +15,32 @@ final class PayPal
         return Env::get('PAYPAL_CLIENT_ID') !== null && Env::get('PAYPAL_CLIENT_SECRET') !== null;
     }
 
-    public static function crearOrden(string $pedidoId, string $monto): array
+    /** Quetzales por dólar (PAYPAL_TIPO_CAMBIO). PayPal no acepta GTQ: se cobra en USD. */
+    public static function tipoCambio(): float
+    {
+        $tipo = (float) Env::get('PAYPAL_TIPO_CAMBIO', '7.75');
+        return $tipo > 0 ? $tipo : throw new ApiError(503, 'El pago con PayPal no está habilitado en este entorno');
+    }
+
+    /** "500.00" (GTQ) → "64.52" (USD) */
+    public static function aDolares(string $quetzales): string
+    {
+        return number_format(max(0.01, round((float) $quetzales / self::tipoCambio(), 2)), 2, '.', '');
+    }
+
+    public static function crearOrden(string $pedidoId, string $dolares): array
     {
         [$codigo, $json] = Pasarela::llamar('POST', self::base() . '/v2/checkout/orders', [
             'Authorization: Bearer ' . self::token(),
             'Content-Type: application/json',
-            "PayPal-Request-Id: orden-$pedidoId-$monto",   // idempotencia
+            "PayPal-Request-Id: orden-$pedidoId-$dolares",   // idempotencia
         ], json_encode([
             'intent'         => 'CAPTURE',
             'purchase_units' => [[
                 'reference_id' => $pedidoId,
                 'custom_id'    => $pedidoId,
                 'description'  => 'Pedido Huellitas ' . strtoupper(substr($pedidoId, 0, 8)),
-                'amount'       => ['currency_code' => 'USD', 'value' => $monto],
+                'amount'       => ['currency_code' => 'USD', 'value' => $dolares],
             ]],
         ]));
         if (!in_array($codigo, [200, 201], true) || !isset($json['id'])) {

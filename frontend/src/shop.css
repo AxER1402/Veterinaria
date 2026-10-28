@@ -901,13 +901,19 @@
 .agenda__actions .link-btn { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; }
 .clinical-form { display: grid; gap: 14px; }
 .clinical-form label { display: grid; gap: 6px; font-size: 0.88rem; font-weight: 500; color: var(--navy); }
-.clinical-form input, .clinical-form textarea { font: inherit; font-weight: 300; color: var(--navy); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; background: var(--white); width: 100%; resize: vertical; }
-.clinical-form input:focus, .clinical-form textarea:focus { outline: none; border-color: var(--yellow-dark); }
+.clinical-form input, .clinical-form textarea, .clinical-form select { font: inherit; font-weight: 300; color: var(--navy); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; background: var(--white); width: 100%; resize: vertical; }
+.clinical-form input:focus, .clinical-form textarea:focus, .clinical-form select:focus { outline: none; border-color: var(--yellow-dark); }
 .agenda__form-row--3 { grid-template-columns: repeat(3, 1fr); }
 .clinical-form__vaccines { border: 0; padding: 16px; margin: 0; border-radius: 16px; background: var(--soft); display: grid; gap: 12px; min-width: 0; }
 .clinical-form__vaccines legend { font-weight: 500; float: left; width: 100%; margin-bottom: 4px; padding: 0; }
 .clinical-form__vaccines .pet-picker__add { justify-self: start; padding: 8px 16px; font-size: 0.9rem; background: var(--white); }
 .vaccine-row { display: grid; grid-template-columns: 2fr 1fr 1.3fr auto; gap: 10px; align-items: end; }
+.variant-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; align-items: end; }
+.clinical-form label small { font-weight: 300; color: var(--gray); font-size: 0.8rem; }
+.clinical-form .check-row { display: flex; align-items: center; gap: 8px; align-self: end; padding-bottom: 10px; font-weight: 400; }
+.clinical-form .check-row input { width: auto; }
+.product-form__image { display: grid; grid-template-columns: 1fr 88px; gap: 12px; align-items: start; }
+.product-form__image img, .product-form__image > span { width: 88px; height: 88px; border-radius: 14px; object-fit: cover; background: var(--soft); }
 .clinical__pet { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
 .clinical__title { font-size: 1.05rem; margin: 22px 0 10px; }
 .clinical__list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
@@ -920,6 +926,8 @@
 @media (max-width: 640px) {
   .vaccine-row { grid-template-columns: 1fr 1fr; }
   .vaccine-row label:first-child { grid-column: 1 / -1; }
+  .variant-row { grid-template-columns: 1fr 1fr; }
+  .variant-row label:first-child { grid-column: 1 / -1; }
   .agenda__form-row--3 { grid-template-columns: 1fr; }
   .pet__carne { grid-column: 1 / -1; }
 }

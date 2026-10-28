@@ -124,7 +124,7 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
             <h3>2. Entrega</h3>
             <div className="option-cards">
               <OptionCard name="metodo_entrega" value="domicilio" current={values.metodo_entrega} onChange={set('metodo_entrega')} icon={Truck}
-                title="Envío a domicilio" text="Gratis desde $50" />
+                title="Envío a domicilio" text="Gratis desde Q400" />
               <OptionCard name="metodo_entrega" value="retiro" current={values.metodo_entrega} onChange={set('metodo_entrega')} icon={Store}
                 title="Retiro en sede" text="Gratis" />
             </div>

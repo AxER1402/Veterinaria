@@ -46,7 +46,7 @@ export default function Header() {
         </nav>
 
         <div className="header__actions">
-          <a href={`tel:${business.phone}`} className="header__phone">
+          <a href={`tel:${business.tel}`} className="header__phone">
             <Phone size={18} /> {business.phone}
           </a>
           {isAdmin && (

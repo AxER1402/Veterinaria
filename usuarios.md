@@ -9,6 +9,18 @@ Se crean con el seed `db/master/02-auth_db.sql` cada vez que se levanta el stack
 | Admin | `admin@huellitas.gt` | `Admin#2026` | `/admin` (panel) y la tienda |
 | Cliente | `cliente@huellitas.gt` | `Cliente#2026` | `/tienda`, carrito, checkout, `/cuenta/pedidos`, `/cuenta/citas` y `/cuenta/mascotas` (reservar desde `/contacto`) |
 
+**Datos de demostración** (`ops/seed-demo.sh`, no se cargan solos). La cuenta de arriba pasa a ser *Lucía Hernández Pineda*, con 2 mascotas, 5 citas y 4 pedidos. Además se crean estas cuentas, todas con la contraseña `Cliente#2026`. Usan `@example.com`, un dominio reservado, para que los correos de la app no le lleguen a nadie real:
+
+| Cliente | Correo | Qué tiene |
+|---|---|---|
+| María José López Castillo | `mariajose.lopez@example.com` | Luna (vacunas por vencer y cita de refuerzo) y Michi; un pedido con `FLASH50` |
+| Carlos Enrique Méndez Ruiz | `carlos.mendez@example.com` | Rocky (vacunas vencidas); un pedido cancelado con tarjeta rechazada |
+| Ana Lucía Pérez Morales | `analucia.perez@example.com` | Canela y Nube; retiro en la sede Norte |
+| José Roberto García Aldana | `jroberto.garcia@example.com` | Max y Kiara (esquema de cachorra completo); pedido pagado con `HUELLITAS10` |
+| Gabriela Fernanda Ramírez Soto | `gabriela.ramirez@example.com` | Toby (dermatitis y soplo, en control) |
+| Diego Alejandro Morales Chávez | `diego.morales@example.com` | Coco, un conejo |
+| Sofía Valentina Cifuentes Rivas | `sofia.cifuentes@example.com` | Pelusa y Thor; pedido pagado hace unas horas |
+
 - **Clientes nuevos:** cualquiera puede registrarse en `/cuenta` (pestaña de registro; API `POST /api/auth/registro`). El registro siempre crea el rol `cliente`; un admin solo se crea desde la BD.
 - **Bloqueo:** 5 contraseñas incorrectas bloquean la cuenta 15 min (A07). Si te bloqueas probando, espera o reinicia con volúmenes nuevos.
 - **MFA (TOTP):** opcional por usuario, en `/cuenta/seguridad` (al admin el panel le muestra el aviso → *Activar ahora*). En desarrollo **no** se activa en `admin@huellitas.gt` porque `tests/seguridad.sh` y `ops/simulacro-drp.sh` entran con él sin segundo paso.

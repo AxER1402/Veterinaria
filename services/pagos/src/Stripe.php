@@ -24,7 +24,7 @@ final class Stripe
     {
         $parametros = http_build_query([
             'amount'                             => $centavos,
-            'currency'                           => 'usd',
+            'currency'                           => 'gtq',   // Stripe sí cobra en quetzales
             'automatic_payment_methods[enabled]' => 'true',
             'description'                        => 'Pedido Huellitas ' . strtoupper(substr($pedidoId, 0, 8)),
             'metadata[pedido_id]'                => $pedidoId,

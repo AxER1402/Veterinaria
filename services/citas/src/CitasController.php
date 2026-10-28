@@ -21,9 +21,9 @@ use Huellitas\Validar;
 final class CitasController
 {
     public const SEDES = [
-        'centro' => 'Clínica veterinaria y peluquería · Av. Principal 954, Centro',
-        'norte'  => 'Guardería y hospedaje – Norte · Calle Los Robles 864, Zona Norte',
-        'sur'    => 'Paseadores y cuidadores – Sur · Blvd. Ribereño 180, Zona Sur',
+        'centro' => 'Clínica veterinaria y peluquería · 6a. avenida 9-35, zona 10',
+        'norte'  => 'Guardería y hospedaje – Norte · Calzada José Milla y Vidaurre 10-55, zona 6',
+        'sur'    => 'Paseadores y cuidadores – Sur · Calzada Aguilar Batres 34-70, zona 11',
     ];
     private const APERTURA = 8;          // lunes a sábado, 8:00–20:00
     private const CIERRE = 20;

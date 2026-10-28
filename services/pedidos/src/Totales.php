@@ -9,8 +9,8 @@ namespace App;
  */
 final class Totales
 {
-    public const ENVIO_GRATIS_DESDE = 5000;  // $50.00
-    public const COSTO_ENVIO = 599;          // $5.99
+    public const ENVIO_GRATIS_DESDE = 40000;  // Q400.00
+    public const COSTO_ENVIO = 3500;          // Q35.00
 
     /**
      * @param list<array{precio: string, cantidad: int, marca: string}> $lineas  líneas cotizadas por catalogo-service

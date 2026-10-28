@@ -10,17 +10,17 @@ CREATE TABLE IF NOT EXISTS servicios (
     slug          VARCHAR(30) PRIMARY KEY,
     nombre        VARCHAR(80) NOT NULL,
     sede          ENUM('centro','norte','sur') NOT NULL,
-    precio_desde  DECIMAL(10,2) NOT NULL,
+    precio_desde  DECIMAL(10,2) NOT NULL,  -- quetzales
     activo        TINYINT(1) NOT NULL DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO servicios (slug, nombre, sede, precio_desde) VALUES
-    ('veterinaria',   'Consulta veterinaria', 'centro', 35.00),
-    ('peluqueria',    'Peluquería',           'centro', 30.00),
-    ('guarderia',     'Guardería',            'norte',  28.00),
-    ('hospedaje',     'Hospedaje',            'norte',  45.00),
-    ('paseos',        'Paseos',               'sur',    18.00),
-    ('entrenamiento', 'Entrenamiento',        'sur',    40.00);
+    ('veterinaria',   'Consulta veterinaria', 'centro', 250.00),
+    ('peluqueria',    'Peluquería',           'centro', 200.00),
+    ('guarderia',     'Guardería',            'norte',  175.00),
+    ('hospedaje',     'Hospedaje',            'norte',  300.00),
+    ('paseos',        'Paseos',               'sur',    100.00),
+    ('entrenamiento', 'Entrenamiento',        'sur',    275.00);
 
 -- A.5.34: solo lo necesario para atender a la mascota.
 CREATE TABLE IF NOT EXISTS mascotas (

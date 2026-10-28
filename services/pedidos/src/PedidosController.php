@@ -17,9 +17,9 @@ final class PedidosController
 {
     /** Sedes donde se puede retirar (las mismas del sitio). */
     public const SEDES = [
-        'Clínica veterinaria y peluquería · Av. Principal 954, Centro',
-        'Guardería y hospedaje – Norte · Calle Los Robles 864, Zona Norte',
-        'Paseadores y cuidadores – Sur · Blvd. Ribereño 180, Zona Sur',
+        'Clínica veterinaria y peluquería · 6a. avenida 9-35, zona 10',
+        'Guardería y hospedaje – Norte · Calzada José Milla y Vidaurre 10-55, zona 6',
+        'Paseadores y cuidadores – Sur · Calzada Aguilar Batres 34-70, zona 11',
     ];
 
     /** Transiciones que puede hacer un administrador. pendiente_pago → pagado lo hace pagos-service. */

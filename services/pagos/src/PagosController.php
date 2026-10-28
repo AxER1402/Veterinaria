@@ -40,6 +40,7 @@ final class PagosController
         }
 
         $ref = ['metodo' => $metodo, 'monto' => $monto];
+        [$montoPasarela, $monedaPasarela] = [$monto, 'GTQ'];
         try {
             if ($metodo === 'stripe') {
                 if (!Stripe::configurado()) {
@@ -53,10 +54,12 @@ final class PagosController
                 if (!PayPal::configurado()) {
                     throw new ApiError(503, 'El pago con PayPal no está habilitado en este entorno');
                 }
-                $orden = PayPal::crearOrden($pedidoId, $monto);
+                [$montoPasarela, $monedaPasarela] = [PayPal::aDolares($monto), 'USD'];
+                $orden = PayPal::crearOrden($pedidoId, $montoPasarela);
                 $referencia = $orden['id'];
                 $estado = $orden['status'] ?? 'CREATED';
-                $respuesta = ['metodo' => 'paypal', 'orden_id' => $orden['id'], 'client_id' => Env::required('PAYPAL_CLIENT_ID')];
+                $respuesta = ['metodo' => 'paypal', 'orden_id' => $orden['id'], 'client_id' => Env::required('PAYPAL_CLIENT_ID'),
+                              'monto_cobro' => $montoPasarela, 'moneda_cobro' => 'USD', 'tipo_cambio' => PayPal::tipoCambio()];
             }
         } catch (ApiError $e) {
             Auditoria::registrar('PAGO_INICIADO', 'FALLO', $actor + ['pedido_id' => $pedidoId, 'dato_nuevo' => $ref + ['motivo' => $e->getMessage()]]);
@@ -66,17 +69,17 @@ final class PagosController
         // Un mismo PaymentIntent/orden (idempotencia de la pasarela) no crea filas duplicadas.
         $pagoId = Jwt::uuid();
         $db = Db::escritura();
-        $db->prepare('INSERT INTO pagos (id, id_pedido, id_cliente, monto, metodo, payment_intent_id, stripe_status)
-                      VALUES (?, ?, ?, ?, ?, ?, ?)
-                      ON DUPLICATE KEY UPDATE stripe_status = VALUES(stripe_status)')
-            ->execute([$pagoId, $pedidoId, $idCliente, $monto, $metodo, $referencia, $estado]);
+        $db->prepare("INSERT INTO pagos (id, id_pedido, id_cliente, monto, moneda, monto_pasarela, moneda_pasarela, metodo, payment_intent_id, stripe_status)
+                      VALUES (?, ?, ?, ?, 'GTQ', ?, ?, ?, ?, ?)
+                      ON DUPLICATE KEY UPDATE stripe_status = VALUES(stripe_status)")
+            ->execute([$pagoId, $pedidoId, $idCliente, $monto, $montoPasarela, $monedaPasarela, $metodo, $referencia, $estado]);
         $buscar = $db->prepare('SELECT id FROM pagos WHERE metodo = ? AND payment_intent_id = ?');
         $buscar->execute([$metodo, $referencia]);
         $pagoId = $buscar->fetchColumn();
 
         Auditoria::registrar('PAGO_INICIADO', 'EXITO', $actor + [
             'pedido_id' => $pedidoId, 'pago_id' => $pagoId,
-            'dato_nuevo' => $ref + ['referencia' => $referencia, 'estado_pasarela' => $estado],
+            'dato_nuevo' => $ref + ['referencia' => $referencia, 'estado_pasarela' => $estado, 'cobro' => "$montoPasarela $monedaPasarela"],
         ]);
         return [200, $respuesta + ['pago_id' => $pagoId]];
     }
@@ -102,7 +105,9 @@ final class PagosController
         $captura = PayPal::capturar($ordenId);
         $unidad = $captura['purchase_units'][0] ?? [];
         $cobro = $unidad['payments']['captures'][0] ?? [];
-        $montoOk = ($cobro['amount']['value'] ?? null) === $pago['monto'] && ($cobro['amount']['currency_code'] ?? null) === 'USD';
+        // Se compara con lo que se le pidió cobrar a PayPal (USD), no con el total en quetzales.
+        $montoOk = ($cobro['amount']['value'] ?? null) === ($pago['monto_pasarela'] ?? $pago['monto'])
+            && ($cobro['amount']['currency_code'] ?? null) === ($pago['moneda_pasarela'] ?? 'USD');
         $pedidoOk = ($cobro['custom_id'] ?? $unidad['custom_id'] ?? $unidad['reference_id'] ?? null) === $pedidoId;
 
         if (($captura['status'] ?? null) === 'COMPLETED' && $montoOk && $pedidoOk) {
@@ -162,9 +167,9 @@ final class PagosController
         $resultado = 'ignorado';
         $actor = $pago ? ['usuario_id' => (int) $pago['id_cliente'], 'rol' => 'cliente'] : ['rol' => 'anonimo'];
         if ($pago && $tipo === 'payment_intent.succeeded') {
-            $centavos = (int) round((float) $pago['monto'] * 100);
+            $centavos = (int) round((float) ($pago['monto_pasarela'] ?? $pago['monto']) * 100);
             $cuadra = ($objeto['amount_received'] ?? null) === $centavos
-                && ($objeto['currency'] ?? null) === 'usd'
+                && ($objeto['currency'] ?? null) === strtolower($pago['moneda_pasarela'] ?? $pago['moneda'])
                 && ($objeto['metadata']['pedido_id'] ?? null) === $pago['id_pedido'];
             if (!$cuadra) {
                 $this->fallar($pago, (string) ($objeto['status'] ?? 'succeeded'), $actor, 'FRAUDE', 'monto, moneda o pedido no coinciden con el pago');

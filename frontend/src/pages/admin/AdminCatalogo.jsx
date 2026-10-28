@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
+import { Plus } from 'lucide-react'
 import Loading from '../../components/Loading'
 import { api } from '../../api'
+import ProductoForm from './ProductoForm'
 
 export default function AdminCatalogo() {
   const [productos, setProductos] = useState(null)
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
+  const [nuevo, setNuevo] = useState(false)
 
   useEffect(() => {
     api('/api/catalogo/admin/productos').then((d) => setProductos(d.productos)).catch((e) => setError(e.message))
@@ -25,6 +28,13 @@ export default function AdminCatalogo() {
     }
   }
 
+  const creado = (producto) => {
+    setProductos((ps) => [...ps, producto])
+    setNuevo(false)
+    setError('')
+    setAviso(`Creado «${producto.nombre}» (${producto.variantes.map((v) => v.sku).join(', ')}). Queda registrado en la bitácora.`)
+  }
+
   const alternar = async (p, campo) => {
     try {
       const d = await api(`/api/catalogo/admin/productos/${p.id}`, { method: 'PATCH', body: { [campo]: !p[campo] } })
@@ -38,7 +48,11 @@ export default function AdminCatalogo() {
 
   return (
     <div className="admin-card">
-      <div className="admin-card__head"><h2>Catálogo · precios y stock</h2></div>
+      <div className="admin-card__head">
+        <h2>Catálogo · precios y stock</h2>
+        <button className="btn btn--primary btn--xs" onClick={() => setNuevo(true)}><Plus size={16} /> Nuevo producto</button>
+      </div>
+      {nuevo && <ProductoForm onClose={() => setNuevo(false)} onCreated={creado} />}
       {error && <p className="form-alert" role="alert">{error}</p>}
       {aviso && <p className="form-ok" role="status">{aviso}</p>}
       <div className="table-scroll">

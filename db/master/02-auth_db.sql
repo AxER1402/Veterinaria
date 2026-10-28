@@ -19,4 +19,4 @@ CREATE TABLE usuarios (
 --   cliente@huellitas.gt / Cliente#2026
 INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES
  ('Administración Huellitas', 'admin@huellitas.gt',   '$2y$12$aj.tR0aLCoLpyqJsZELX1uyxTvqoNi.As7hTi2H0SIwCGX9UOyhla', 'admin'),  -- nosemgrep: detected-bcrypt-hash (usuario de prueba; contraseña pública en el README)
- ('Cliente de Prueba',        'cliente@huellitas.gt', '$2y$12$E8pFqE9GppjA6fgIZ2qnHOr2eFhsvI2DJI.aUBDycNrQfnpNHNDpa', 'cliente');  -- nosemgrep: detected-bcrypt-hash (usuario de prueba)
+ ('Lucía Hernández Pineda',   'cliente@huellitas.gt', '$2y$12$E8pFqE9GppjA6fgIZ2qnHOr2eFhsvI2DJI.aUBDycNrQfnpNHNDpa', 'cliente');  -- nosemgrep: detected-bcrypt-hash (usuario de prueba)

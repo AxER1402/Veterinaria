@@ -19,8 +19,9 @@ const unsplash = (id, w = 800, h) =>
 export const business = {
   name: 'Huellitas',
   tagline: 'Clínica veterinaria y cuidado de mascotas',
-  phone: '+1-800-356-8933',
-  email: 'hola@huellitas.vet',
+  phone: '+502 2385-6420',
+  tel: '+50223856420',
+  email: 'hola@huellitas.gt',
   hours: 'Lun a Sáb · 8:00 – 20:00',
 }
 
@@ -49,7 +50,7 @@ export const services = [
     description:
       'Medicina preventiva, vacunación, desparasitación, análisis clínicos y seguimiento personalizado para cada etapa de vida de tu mascota.',
     image: unsplash('photo-1628009368231-7bb7cfcb0def', 700, 520),
-    price: 'Desde $35',
+    price: 'Desde Q250',
   },
   {
     slug: 'guarderia',
@@ -59,7 +60,7 @@ export const services = [
     description:
       'Grupos por tamaño y temperamento, zonas de descanso climatizadas y reportes con fotos durante el día.',
     image: unsplash('photo-1548199973-03cce0bbc87b', 700, 520),
-    price: 'Desde $28 / día',
+    price: 'Desde Q175 / día',
   },
   {
     slug: 'paseos',
@@ -69,7 +70,7 @@ export const services = [
     description:
       'Paseos individuales o en grupos pequeños de 30 o 60 minutos, con seguimiento GPS y notas al finalizar.',
     image: unsplash('photo-1477884213360-7e9d7dcc1e48', 700, 520),
-    price: 'Desde $18',
+    price: 'Desde Q100',
   },
   {
     slug: 'peluqueria',
@@ -79,7 +80,7 @@ export const services = [
     description:
       'Baños con productos hipoalergénicos, cortes de raza, limpieza de oídos, corte de uñas y tratamientos de pelaje.',
     image: unsplash('photo-1560807707-8cc77767d783', 700, 520),
-    price: 'Desde $30',
+    price: 'Desde Q200',
   },
   {
     slug: 'hospedaje',
@@ -89,7 +90,7 @@ export const services = [
     description:
       'Suites individuales, supervisión 24/7, alimentación según su dieta habitual y videollamadas contigo.',
     image: unsplash('photo-1576201836106-db1758fd1c97', 700, 520),
-    price: 'Desde $45 / noche',
+    price: 'Desde Q300 / noche',
   },
   {
     slug: 'entrenamiento',
@@ -99,7 +100,7 @@ export const services = [
     description:
       'Clases para cachorros, obediencia básica y avanzada, y corrección de conducta con entrenadores certificados.',
     image: unsplash('photo-1552053831-71594a27632d', 700, 520),
-    price: 'Desde $40',
+    price: 'Desde Q275',
   },
 ]
 
@@ -160,18 +161,18 @@ export const testimonials = [
 export const locations = [
   {
     title: 'Clínica veterinaria y peluquería',
-    address: 'Av. Principal 954, Centro',
-    map: 'https://maps.google.com/?q=Av.+Principal+954',
+    address: '6a. avenida 9-35, zona 10',
+    map: 'https://maps.google.com/?q=6a.+avenida+9-35+zona+10+Guatemala',
   },
   {
     title: 'Guardería y hospedaje – Norte',
-    address: 'Calle Los Robles 864, Zona Norte',
-    map: 'https://maps.google.com/?q=Calle+Los+Robles+864',
+    address: 'Calzada José Milla y Vidaurre 10-55, zona 6',
+    map: 'https://maps.google.com/?q=Calzada+José+Milla+y+Vidaurre+10-55+zona+6+Guatemala',
   },
   {
     title: 'Paseadores y cuidadores – Sur',
-    address: 'Blvd. Ribereño 180, Zona Sur',
-    map: 'https://maps.google.com/?q=Blvd.+Riberenio+180',
+    address: 'Calzada Aguilar Batres 34-70, zona 11',
+    map: 'https://maps.google.com/?q=Calzada+Aguilar+Batres+34-70+zona+11+Guatemala',
   },
 ]
 

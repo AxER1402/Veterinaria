@@ -43,6 +43,8 @@ export default function Catalog() {
       .filter((p) => !q || `${p.name} ${p.brand} ${p.description}`.toLowerCase().includes(q))
       .sort(sorts[sort].fn)
   }, [products, pet, category, brand, sale, query, sort])
+  // Las marcas conocidas más las de productos nuevos que el admin haya creado.
+  const brandList = useMemo(() => [...new Set([...brands, ...products.map((p) => p.brand)])], [products])
 
   const activeCount = [pet, category, brand, sale].filter(Boolean).length
   const petLabel = pets.find((p) => p.slug === pet)?.label
@@ -81,7 +83,7 @@ export default function Catalog() {
             <FilterGroup title="Marca">
               <select value={brand} onChange={(e) => update('marca', e.target.value)} className="select">
                 <option value="">Todas las marcas</option>
-                {brands.map((b) => (
+                {brandList.map((b) => (
                   <option key={b}>{b}</option>
                 ))}
               </select>

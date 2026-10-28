@@ -125,10 +125,12 @@ function StripeForm({ order, onPaid, onError }) {
   )
 }
 
+// PayPal no acepta quetzales: cobra en dólares al tipo de cambio de pagos-service.
 function PayPalButtons({ order, onPaid, onError }) {
   const mountRef = useRef(null)
   const onPaidRef = useLatest(onPaid)
   const onErrorRef = useLatest(onError)
+  const [cobro, setCobro] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -137,6 +139,7 @@ function PayPalButtons({ order, onPaid, onError }) {
         const { pago } = await api(`/api/pedidos/${order.id}/pago`, { method: 'POST', body: { metodo: 'paypal' } })
         await loadScript(`https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(pago.client_id)}&currency=USD&intent=capture&locale=es_ES`)
         if (cancelled) return
+        setCobro(pago)
         window.paypal
           .Buttons({
             createOrder: () => pago.orden_id,
@@ -156,5 +159,14 @@ function PayPalButtons({ order, onPaid, onError }) {
     }
   }, [order.id, onPaidRef, onErrorRef])
 
-  return <div ref={mountRef} className="payment__paypal" />
+  return (
+    <>
+      {cobro && (
+        <p className="summary__hint">
+          PayPal cobra en dólares: <strong>US${cobro.monto_cobro}</strong> (Q{Number(cobro.tipo_cambio).toFixed(2)} por dólar).
+        </p>
+      )}
+      <div ref={mountRef} className="payment__paypal" />
+    </>
+  )
 }

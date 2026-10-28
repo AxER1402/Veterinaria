@@ -124,7 +124,7 @@ function SalesChart({ days }) {
           x: { grid: { display: false }, ticks: { color: '#59606d', font: { size: 11 }, maxRotation: 0, autoSkip: true } },
           y: {
             beginAtZero: true, border: { display: false }, grid: { color: '#e8e8e6' },
-            ticks: { color: '#59606d', font: { size: 11 }, maxTicksLimit: 4, callback: (v) => `$${v}` },
+            ticks: { color: '#59606d', font: { size: 11 }, maxTicksLimit: 4, callback: (v) => `Q${v}` },
           },
         },
       },

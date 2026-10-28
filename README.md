@@ -42,7 +42,7 @@ Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 | `pedidos-service` | Pedidos con UUID, total calculado en el servidor, cupones, estados con historial | 8083 (interno) |
 | `pedidos-vencimientos` | Tarea periódica (cada 15 min): cancela los pedidos sin pagar tras `PEDIDO_VENCE_HORAS` (24 h) y devuelve el stock | — |
 | `citas-recordatorios` | Tarea periódica (cada 15 min): recordatorio de la cita un día antes, aviso 7 días antes de que venza una vacuna y cierre como «no asistió» de las citas que pasaron sin atenderse | — |
-| `pagos-service` | Stripe (PaymentIntent + webhook firmado) y PayPal (Orders v2, captura en servidor). Sin datos de tarjeta | 8084 (interno; solo el webhook es público) |
+| `pagos-service` | Stripe (PaymentIntent + webhook firmado, cobra en quetzales) y PayPal (Orders v2, captura en servidor; cobra en US$ al `PAYPAL_TIPO_CAMBIO` porque no acepta GTQ). Sin datos de tarjeta | 8084 (interno; solo el webhook es público) |
 | `notificaciones-service` | Correo de confirmación por EmailJS con código de verificación HMAC. Clima del panel admin (OpenWeatherMap u Open-Meteo) | 8085 (interno) |
 | `citas-service` | Mascotas de cada cliente y citas por sede en turnos de 30 min (2 cupos). La BD impide la doble reserva; máx. 5 citas próximas por cliente. Agenda del admin, bloqueo de turnos, historial clínico y carné de vacunas | 8087 (interno) |
 | `security-audit-service` | Bitácora `security_audit_logs`: append-only, con cadena de hashes | 8086 (interno) |
@@ -61,6 +61,8 @@ docker compose up -d --build
 
 ¿Ya lo tenías levantado antes del módulo de citas? Corre una vez `ops/migrar-citas.sh` (agrega `CITAS_DB_PASSWORD` al `.env` y crea `citas_db` sin borrar datos) y luego `docker compose up -d --build`.
 
+¿Lo tenías levantado con precios en dólares? Corre una vez `ops/migrar-quetzales.sh` y luego `docker compose up -d --build`. Agrega `PAYPAL_TIPO_CAMBIO` al `.env`, convierte el catálogo y los servicios a quetzales y vuelve a valorar los pedidos que ya existían, sin borrar datos.
+
 Abrir <https://localhost:8443>. En local el certificado es autofirmado y se genera solo. En producción se monta el de Let's Encrypt en `gateway/certs/`.
 
 ### Usuarios de prueba
@@ -69,6 +71,10 @@ Abrir <https://localhost:8443>. En local el certificado es autofirmado y se gene
 |---|---|---|
 | Admin | `admin@huellitas.gt` | `Admin#2026` |
 | Cliente | `cliente@huellitas.gt` | `Cliente#2026` |
+
+### Datos de demostración
+
+`ops/seed-demo.sh` carga 7 clientes más con sus mascotas, citas pasadas, de hoy y futuras, historial clínico, carné de vacunas, pedidos en todos los estados y sus pagos, todo relacionado (`db/seeds/`). No borra nada y se puede correr otra vez. No va en la instalación porque sus citas ocupan turnos que usan las pruebas.
 
 Todos los usuarios (app, BD y Redis) están en [`usuarios.md`](usuarios.md).
 
@@ -84,7 +90,7 @@ Todos los usuarios (app, BD y Redis) están en [`usuarios.md`](usuarios.md).
 | GET | `/api/auth/me` | usuario |
 | POST | `/api/auth/admin/acceso` | admin. Registra `ACCESO_ADMIN_PANEL` |
 | GET | `/api/catalogo/productos` · `/api/catalogo/productos/{slug}` | público, con caché |
-| GET/PATCH | `/api/catalogo/admin/productos[/{id}]` · `PATCH /api/catalogo/admin/variantes/{id}` | admin. Precio y stock auditados |
+| GET/POST/PATCH | `/api/catalogo/admin/productos[/{id}]` · `PATCH /api/catalogo/admin/variantes/{id}` | admin. Alta, precio y stock auditados |
 | POST | `/api/catalogo/admin/imagenes/firma` | admin. Upload firmado a Cloudinary |
 | GET | `/api/pedidos/sedes` · `/api/pedidos/cupones/{codigo}` | público |
 | POST | `/api/pedidos/cotizar` | público. Total autoritativo del carrito |
@@ -112,7 +118,7 @@ Todos los usuarios (app, BD y Redis) están en [`usuarios.md`](usuarios.md).
 tests/seguridad.sh
 ```
 
-Corre los casos CP-01 a CP-46 (263 comprobaciones) contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto manipulado), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2, vencimiento de pedidos sin pagar, verificación en dos pasos, IP del cliente no falsificable, clima del panel y el módulo de citas (mascotas y citas ajenas, doble reserva simultánea, agenda y estados, correo con código HMAC, bloqueos de turnos, historial clínico, carné de vacunas, recordatorios y límite de citas por cliente).
+Corre los casos CP-01 a CP-47 (274 comprobaciones) contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto o moneda manipulados), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2, vencimiento de pedidos sin pagar, verificación en dos pasos, IP del cliente no falsificable, clima del panel y el módulo de citas (mascotas y citas ajenas, doble reserva simultánea, agenda y estados, correo con código HMAC, bloqueos de turnos, historial clínico, carné de vacunas, recordatorios y límite de citas por cliente) y el alta de productos desde el panel.
 
 > La ráfaga del CP-16 agota el cupo de `/login` del gateway. Si se repite la prueba enseguida, la suite espera sola a que se recupere (hasta ~1 min).
 
@@ -123,7 +129,7 @@ Corre los casos CP-01 a CP-46 (263 comprobaciones) contra el stack levantado: TL
 - **Resumen:** ventas cobradas, pedidos pendientes, eventos de auditoría, integridad de la bitácora, clima de la ciudad y gráfica de ventas por día con Chart.js (con vista de tabla).
 - **Pedidos:** filtro por estado y cambio de estado según las transiciones permitidas.
 - **Agenda:** citas del día por sede, cambio de estado, bloqueo de turnos, *Registrar consulta* (peso, diagnóstico, tratamiento y vacunas) e historial de cada mascota. El resumen muestra la tarjeta «Citas de hoy».
-- **Catálogo:** precio, precio anterior, stock, activo y destacado. Los cambios generan `PRECIO_MODIFICADO` y `PRODUCTO_AGOTADO`.
+- **Catálogo:** alta de productos con sus presentaciones (botón *Nuevo producto*; el slug y los SKU los pone el servidor y la imagen debe ser de Unsplash o de la cuenta de Cloudinary de la tienda), precio, precio anterior, stock, activo y destacado. Generan `PRODUCTO_CREADO`, `PRECIO_MODIFICADO` y `PRODUCTO_AGOTADO`.
 - **Bitácora:** filtros, detalle con antes y después, y botón «Verificar integridad».
 - **Clientes:** listado y exportación a CSV (`EXPORTACION_CLIENTES`).
 
@@ -170,8 +176,9 @@ services/
   audit/             security-audit-service
 db/master/           usuarios por servicio + esquemas y datos de auth_db, catalogo_db (24 productos), pedidos_db, pagos_db, citas_db
 db/audit/            audit_db: tabla, triggers append-only, usuario INSERT/SELECT
+db/seeds/            datos de demostración (ops/seed-demo.sh), fuera de la instalación
 docs/                STRIDE/DFD, OWASP, PCI-DSS, BCP/DRP, ALE/ROSI, ISO 27001, despliegue, ZAP, PDF de SEC-1
-ops/                 generar-env.sh, migrar-citas.sh, backup.sh, backup-binlogs.sh, restore.sh, simulacro-drp.sh, evidencia.sh
+ops/                 generar-env.sh, migrar-citas.sh, migrar-quetzales.sh, seed-demo.sh, backup.sh, backup-binlogs.sh, restore.sh, simulacro-drp.sh, evidencia.sh
 .github/workflows/   CI: lint, build, npm audit, php -l, secretos, pruebas de seguridad y simulacro DRP
 docker-compose.prod.yml  producción: puertos 80/443 y Let's Encrypt (certbot)
 docker-compose.proxy.yml detrás del Nginx de otro sistema (VPS compartido); scripts en ops/vps/

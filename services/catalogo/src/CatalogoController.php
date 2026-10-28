@@ -9,10 +9,13 @@ use Huellitas\Cache;
 use Huellitas\Db;
 use Huellitas\Guard;
 use Huellitas\Http;
+use Huellitas\Validar;
 
 final class CatalogoController
 {
     private const CACHE_TTL = 300;
+    private const MASCOTAS = ['perro', 'gato', 'pequenos', 'peces', 'reptiles', 'aves'];
+    private const MAX_VARIANTES = 10;
 
     /**
      * Catálogo público. D de STRIDE: se sirve desde Redis y las lecturas van a la réplica,
@@ -48,6 +51,66 @@ final class CatalogoController
     {
         Guard::usuario(['admin']);
         return [200, ['productos' => $this->consultar(Db::escritura(), soloActivos: false, admin: true)]];
+    }
+
+    /**
+     * Alta de un producto con sus variantes. El slug y los SKU los pone el servidor; precios y stock
+     * se validan igual que al editarlos. Registra PRODUCTO_CREADO.
+     */
+    public function crearProducto(): array
+    {
+        $claims = Guard::usuario(['admin']);
+        $datos = Http::body();
+        Validar::sinAtaques($datos);
+
+        $nombre = Validar::texto($datos, 'nombre', 3, 150);
+        $marca = Validar::texto($datos, 'marca', 2, 60);
+        $mascota = in_array($datos['mascota'] ?? null, self::MASCOTAS, true)
+            ? $datos['mascota'] : throw new ApiError(422, 'Elige para qué mascota es', ['campo' => 'mascota']);
+        $descripcion = Validar::texto($datos, 'descripcion', 10, 2000);
+        $etiqueta = in_array($datos['etiqueta'] ?? null, [null, ''], true) ? null : Validar::texto($datos, 'etiqueta', 2, 40);
+        $imagen = self::imagen($datos['imagen_url'] ?? null);
+        $opciones = [];
+        foreach (['activo' => true, 'destacado' => false] as $campo => $omision) {
+            $valor = $datos[$campo] ?? $omision;
+            $opciones[$campo] = is_bool($valor) ? (int) $valor : throw new ApiError(422, "El campo $campo debe ser verdadero o falso", ['campo' => $campo]);
+        }
+        $variantes = self::variantesNuevas($datos['variantes'] ?? null);
+
+        $db = Db::escritura();
+        $categoria = $db->prepare('SELECT id FROM categorias WHERE slug = ?');
+        $categoria->execute([$datos['categoria'] ?? '']);
+        $categoriaId = $categoria->fetchColumn() ?: throw new ApiError(422, 'Elige una categoría', ['campo' => 'categoria']);
+
+        $db->beginTransaction();
+        try {
+            $slug = self::slugLibre($db, $nombre);
+            $db->prepare('INSERT INTO productos (slug, nombre, marca, mascota, categoria_id, descripcion, imagen_url, imagen_public_id,
+                                                 etiqueta, destacado, activo, updated_by)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                ->execute([$slug, $nombre, $marca, $mascota, $categoriaId, $descripcion, $imagen,
+                           Cloudinary::esPropia($imagen) && is_string($datos['imagen_public_id'] ?? null) ? mb_substr($datos['imagen_public_id'], 0, 200) : null,
+                           $etiqueta, $opciones['destacado'], $opciones['activo'], (int) $claims['sub']]);
+            $id = (int) $db->lastInsertId();
+            // Mismo formato que el catálogo inicial: HU-<producto>-<n>.
+            $insertar = $db->prepare('INSERT INTO producto_variantes (producto_id, etiqueta, sku, precio, precio_anterior, stock, updated_by)
+                                      VALUES (?, ?, ?, ?, ?, ?, ?)');
+            foreach ($variantes as $i => $v) {
+                $insertar->execute([$id, $v['etiqueta'], sprintf('HU-%03d-%d', $id, $i + 1), $v['precio'], $v['precio_anterior'], $v['stock'], (int) $claims['sub']]);
+            }
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+        self::invalidar();
+
+        $producto = $this->uno($id);
+        Auditoria::registrar('PRODUCTO_CREADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_nuevo' => ['producto_id' => $id, 'producto' => $nombre, 'slug' => $slug, 'activo' => (bool) $opciones['activo'],
+                             'variantes' => array_map(fn($v) => ['sku' => $v['sku'], 'etiqueta' => $v['etiqueta'], 'precio' => $v['precio'], 'stock' => $v['stock']], $producto['variantes'])],
+        ]);
+        return [201, ['producto' => $producto]];
     }
 
     /** Activar/desactivar, destacar o cambiar la imagen (solo Cloudinary propio). */
@@ -261,5 +324,71 @@ final class CatalogoController
     private static function num(mixed $valor): ?float
     {
         return $valor === null ? null : (float) $valor;
+    }
+
+    /**
+     * Solo orígenes que la CSP del gateway deja mostrar: la cuenta de Cloudinary de la tienda o
+     * una foto de Unsplash (se normaliza al tamaño del catálogo). Nada de URLs arbitrarias.
+     */
+    private static function imagen(mixed $url): string
+    {
+        $url = is_string($url) ? trim($url) : '';
+        if (Cloudinary::esPropia($url)) {
+            return $url;
+        }
+        if (preg_match('#^https://images\.unsplash\.com/(photo-[A-Za-z0-9\-]{10,80})(\?[^\s<>"\']*)?$#', $url, $m)) {
+            return "https://images.unsplash.com/{$m[1]}?auto=format&fit=crop&w=600&h=600&q=75";
+        }
+        throw new ApiError(422, 'La imagen debe ser una foto de images.unsplash.com o estar en la cuenta de Cloudinary de la tienda', ['campo' => 'imagen_url']);
+    }
+
+    /** @return list<array{etiqueta: string, precio: string, precio_anterior: ?string, stock: int}> */
+    private static function variantesNuevas(mixed $lista): array
+    {
+        if (!is_array($lista) || !array_is_list($lista) || count($lista) < 1 || count($lista) > self::MAX_VARIANTES) {
+            throw new ApiError(422, 'Agrega entre 1 y ' . self::MAX_VARIANTES . ' presentaciones', ['campo' => 'variantes']);
+        }
+        $variantes = [];
+        $vistas = [];
+        foreach ($lista as $i => $v) {
+            $n = $i + 1;
+            try {
+                if (!is_array($v)) {
+                    throw new ApiError(422, 'datos inválidos');
+                }
+                $etiqueta = Validar::texto($v, 'etiqueta', 1, 40);
+                $precio = self::dinero($v['precio'] ?? null, 'precio');
+                $antes = ($v['precio_anterior'] ?? null) === null ? null : self::dinero($v['precio_anterior'], 'precio_anterior');
+                if ($antes !== null && (float) $antes <= (float) $precio) {
+                    throw new ApiError(422, 'el precio anterior debe ser mayor que el precio');
+                }
+                $stock = $v['stock'] ?? null;
+                if (!is_int($stock) || $stock < 0 || $stock > 100000) {
+                    throw new ApiError(422, 'el stock debe ser un entero entre 0 y 100000');
+                }
+                if (isset($vistas[mb_strtolower($etiqueta)])) {
+                    throw new ApiError(422, "«{$etiqueta}» está repetida");
+                }
+            } catch (ApiError $e) {
+                throw new ApiError(422, "Presentación $n: " . $e->getMessage(), ['campo' => 'variantes', 'variante' => $n]);
+            }
+            $vistas[mb_strtolower($etiqueta)] = true;
+            $variantes[] = ['etiqueta' => $etiqueta, 'precio' => $precio, 'precio_anterior' => $antes, 'stock' => $stock];
+        }
+        return $variantes;
+    }
+
+    /** "Collar antipulgas (perro)" → "collar-antipulgas-perro", con -2, -3… si ya existe. */
+    private static function slugLibre(\PDO $db, string $nombre): string
+    {
+        $base = strtr(mb_strtolower($nombre), ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'n']);
+        $base = substr(trim(preg_replace('/[^a-z0-9]+/', '-', $base), '-'), 0, 100) ?: 'producto';
+        $existe = $db->prepare('SELECT 1 FROM productos WHERE slug = ?');
+        for ($n = 1, $slug = $base; ; $slug = "$base-" . ++$n) {
+            $existe->execute([$slug]);
+            if (!$existe->fetchColumn()) {
+                return $slug;
+            }
+        }
     }
 }
