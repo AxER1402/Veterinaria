@@ -16,7 +16,7 @@ export default function AdminPedidos() {
   const filtros = { q: params.get('q') || '', estado: params.get('estado') || '', desde: params.get('desde') || '', hasta: params.get('hasta') || '',
                     reembolso: params.get('reembolso') || '', pagina: Number(params.get('pagina')) || 1 }
   const [buscar, setBuscar] = useState(filtros.q)
-  const [datos, setDatos] = useState(null)
+  const [respuesta, setRespuesta] = useState(null)
   const [error, setError] = useState('')
   const [preparar, setPreparar] = useState(null)
   const [reembolsos, setReembolsos] = useState(0)
@@ -31,9 +31,9 @@ export default function AdminPedidos() {
   const cargar = useCallback(() => {
     const q = new URLSearchParams(clave)
     q.set('limite', POR_PAGINA)
-    setDatos(null)
-    api(`/api/pedidos/admin/todos?${q}`).then(setDatos).catch((e) => setError(e.message))
+    api(`/api/pedidos/admin/todos?${q}`).then((d) => setRespuesta({ clave, ...d })).catch((e) => setError(e.message))
   }, [clave])
+  const datos = respuesta?.clave === clave ? respuesta : null
   useEffect(cargar, [cargar])
   useEffect(() => {
     api('/api/pedidos/admin/resumen').then((d) => setReembolsos(d.reembolsos_pendientes)).catch(() => {})

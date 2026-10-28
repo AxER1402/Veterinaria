@@ -12,25 +12,28 @@ const DIAS_VISIBLES = 12
 // Abre en el primer día con lugar y marca los llenos con el calendario del servidor, que vuelve a
 // validar todo al reservar. `value` = { fecha, hora, salida }.
 export default function SlotPicker({ servicio, modalidad, value, onChange, numerado = true }) {
-  const [calendario, setCalendario] = useState(null)
-  const [turnos, setTurnos] = useState(null)
-  const [libresEstadia, setLibresEstadia] = useState(null)
+  // Cada respuesta guarda la consulta que la pidió: si llega tarde la de otro día o servicio, no se muestra.
+  const [cal, setCal] = useState(null)
+  const [disp, setDisp] = useState(null)
+  const [estadia, setEstadia] = useState(null)
   const { fecha, hora, salida } = value
+  const calendario = cal?.clave === servicio ? cal.datos : null
+  const turnos = disp?.clave === `${servicio}|${fecha}` ? disp.datos : null
+  const libresEstadia = estadia?.clave === `${servicio}|${fecha}|${salida}` ? estadia.datos : null
   const n = (paso) => (numerado ? `${paso}. ` : '')
 
   useEffect(() => {
     if (!servicio) return
     let vigente = true
-    setCalendario(null)
     api(`/api/citas/calendario?servicio=${encodeURIComponent(servicio)}`, { auth: false })
       .then((d) => {
         if (!vigente) return
-        setCalendario(d)
+        setCal({ clave: servicio, datos: d })
         // Si no hay fecha elegida (o ya no tiene lugar), se abre en el primer día libre.
         const elegido = d.dias.find((x) => x.fecha === fecha)
         if (!elegido || elegido.estado !== 'libre') onChange({ fecha: d.primer_dia_libre || '', hora: '', salida: '' })
       })
-      .catch(() => vigente && setCalendario({ dias: [], error: true }))
+      .catch(() => vigente && setCal({ clave: servicio, datos: { dias: [], error: true } }))
     return () => { vigente = false }
     // Solo al cambiar de servicio: la fecha elegida después no debe recargar el calendario.
   }, [servicio]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -38,20 +41,20 @@ export default function SlotPicker({ servicio, modalidad, value, onChange, numer
   useEffect(() => {
     if (!servicio || !fecha) return
     let vigente = true
-    setTurnos(null)
+    const clave = `${servicio}|${fecha}`
     api(`/api/citas/disponibilidad?servicio=${encodeURIComponent(servicio)}&fecha=${fecha}`, { auth: false })
-      .then((d) => vigente && setTurnos(d.turnos))
-      .catch((e) => vigente && setTurnos({ error: e.message }))
+      .then((d) => vigente && setDisp({ clave, datos: d.turnos }))
+      .catch((e) => vigente && setDisp({ clave, datos: { error: e.message } }))
     return () => { vigente = false }
   }, [servicio, fecha])
 
   useEffect(() => {
     if (modalidad !== 'estadia' || !fecha || !salida) return
     let vigente = true
-    setLibresEstadia(null)
+    const clave = `${servicio}|${fecha}|${salida}`
     api(`/api/citas/disponibilidad?servicio=${encodeURIComponent(servicio)}&fecha=${fecha}&salida=${salida}`, { auth: false })
-      .then((d) => vigente && setLibresEstadia(d.libres_estadia))
-      .catch((e) => vigente && setLibresEstadia({ error: e.message }))
+      .then((d) => vigente && setEstadia({ clave, datos: d.libres_estadia }))
+      .catch((e) => vigente && setEstadia({ clave, datos: { error: e.message } }))
     return () => { vigente = false }
   }, [servicio, modalidad, fecha, salida])
 
@@ -143,11 +146,3 @@ export default function SlotPicker({ servicio, modalidad, value, onChange, numer
     </>
   )
 }
-
-// ¿Está completa la elección para poder reservar?
-export const eleccionLista = (modalidad, { fecha, hora, salida }) =>
-  Boolean(fecha) && (modalidad === 'turno' ? Boolean(hora) : modalidad === 'estadia' ? Boolean(salida) : true)
-
-// Cuerpo de la petición según la modalidad.
-export const cuerpoReserva = (modalidad, { fecha, hora, salida }) =>
-  modalidad === 'estadia' ? { fecha, salida } : modalidad === 'dia' ? { fecha } : { fecha, hora }

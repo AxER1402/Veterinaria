@@ -5,7 +5,7 @@ import Loading from '../../components/Loading'
 import { api } from '../../api'
 import { formatPrice } from '../../data/shop'
 import { STATUS } from '../account/orderStatus'
-import { formatCita, formatDay, ymd } from '../account/citas'
+import { addDays, formatCita, formatDay, ymd } from '../account/citas'
 import { fechaCorta } from '../account/vacunas'
 import { useAuth } from '../../context/useAuth'
 
@@ -36,7 +36,7 @@ function ResumenClinico({ veterinario }) {
   }, [])
   if (error) return <p className="form-alert">{error}</p>
   if (!r) return <Loading />
-  const manana = ymd(new Date(Date.now() + 86400000))
+  const manana = ymd(addDays(new Date(), 1))
   const porConfirmar = r.pendientes.reduce((n, p) => n + p.citas, 0)
   const pe = r.hoy.por_estado
 

@@ -7,7 +7,12 @@ Se crean con el seed `db/master/02-auth_db.sql` cada vez que se levanta el stack
 | Rol | Correo | Contraseña | Dónde entra |
 |---|---|---|---|
 | Admin | `admin@huellitas.gt` | `Admin#2026` | `/admin` (panel) y la tienda |
-| Cliente | `cliente@huellitas.gt` | `Cliente#2026` | `/tienda`, carrito, checkout, `/cuenta/pedidos`, `/cuenta/citas` y `/cuenta/mascotas` (reservar desde `/contacto`) |
+| Veterinario | `veterinaria@huellitas.gt` | `Personal#2026` | Panel: Hoy, Agenda, Pacientes (historial clínico) y Clientes |
+| Recepción | `recepcion@huellitas.gt` | `Personal#2026` | Panel: Hoy, Agenda y Clientes (sin historial clínico) |
+| Tienda | `tienda@huellitas.gt` | `Personal#2026` | Panel: Hoy, Clientes, Pedidos y Catálogo |
+| Cliente | `cliente@huellitas.gt` | `Cliente#2026` | `/tienda`, carrito, checkout, `/cuenta/pedidos`, `/cuenta/citas` y `/cuenta/mascotas` (reservar en `/reservar`) |
+
+Las tres cuentas del personal las crea `db/master/13-roles-telefono.sql` (en un entorno ya levantado: `ops/migrar-v2.sh`). El admin puede dar o quitar roles desde **Clientes → Personal y roles** o desde la ficha de un cliente; cada cambio queda como `ROL_CAMBIADO` y rige en el siguiente inicio de sesión.
 
 **Datos de demostración** (`ops/seed-demo.sh`, no se cargan solos). La cuenta de arriba pasa a ser *Lucía Hernández Pineda*, con 2 mascotas, 5 citas y 4 pedidos. Además se crean estas cuentas, todas con la contraseña `Cliente#2026`. Usan `@example.com`, un dominio reservado, para que los correos de la app no le lleguen a nadie real:
 
@@ -21,7 +26,7 @@ Se crean con el seed `db/master/02-auth_db.sql` cada vez que se levanta el stack
 | Diego Alejandro Morales Chávez | `diego.morales@example.com` | Coco, un conejo |
 | Sofía Valentina Cifuentes Rivas | `sofia.cifuentes@example.com` | Pelusa y Thor; pedido pagado hace unas horas |
 
-- **Clientes nuevos:** cualquiera puede registrarse en `/cuenta` (pestaña de registro; API `POST /api/auth/registro`). El registro siempre crea el rol `cliente`; un admin solo se crea desde la BD.
+- **Clientes nuevos:** cualquiera puede registrarse en `/cuenta` (pestaña de registro; API `POST /api/auth/registro`). El registro siempre crea el rol `cliente`; los roles del personal los asigna un admin desde el panel.
 - **Bloqueo:** 5 contraseñas incorrectas bloquean la cuenta 15 min (A07). Si te bloqueas probando, espera o reinicia con volúmenes nuevos.
 - **MFA (TOTP):** opcional por usuario, en `/cuenta/seguridad` (al admin el panel le muestra el aviso → *Activar ahora*). En desarrollo **no** se activa en `admin@huellitas.gt` porque `tests/seguridad.sh` y `ops/simulacro-drp.sh` entran con él sin segundo paso.
 - **Producción:** estas contraseñas son públicas (están en el repo). Al desplegar hay que cambiar la del admin, activarle el MFA y no anotar la nueva aquí.

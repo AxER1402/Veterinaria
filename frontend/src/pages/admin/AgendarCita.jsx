@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Plus, Search } from 'lucide-react'
 import Modal from '../../components/Modal'
 import PetIcon from '../../components/PetIcon'
-import SlotPicker, { cuerpoReserva, eleccionLista } from '../../components/SlotPicker'
+import SlotPicker from '../../components/SlotPicker'
+import { cuerpoReserva, eleccionLista } from '../../components/reserva'
 import { api } from '../../api'
 import { ESPECIES, formatReserva } from '../account/citas'
 
@@ -25,16 +26,7 @@ export default function AgendarCita({ inicial = {}, onClose, onDone }) {
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
 
-  useEffect(() => {
-    api('/api/auth/admin/clientes').then((d) => {
-      setClientes(d.clientes)
-      const c = d.clientes.find((x) => x.id === inicial.clienteId)
-      if (c) elegirCliente(c)
-    }).catch((e) => setError(e.message))
-    api('/api/citas/servicios', { auth: false }).then((d) => setServicios(d.servicios)).catch((e) => setError(e.message))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const elegirCliente = (c) => {
+  function elegirCliente(c) {
     setCliente(c)
     setContacto((x) => ({ ...x, nombre: c.nombre, email: c.email, telefono: c.telefono || '' }))
     setMascotas(null)
@@ -46,6 +38,15 @@ export default function AgendarCita({ inicial = {}, onClose, onDone }) {
       if (!c.telefono && d.telefono) setContacto((x) => ({ ...x, telefono: x.telefono || d.telefono }))
     }).catch((e) => setError(e.message))
   }
+
+  useEffect(() => {
+    api('/api/auth/admin/clientes').then((d) => {
+      setClientes(d.clientes)
+      const c = d.clientes.find((x) => x.id === inicial.clienteId)
+      if (c) elegirCliente(c)
+    }).catch((e) => setError(e.message))
+    api('/api/citas/servicios', { auth: false }).then((d) => setServicios(d.servicios)).catch((e) => setError(e.message))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const encontrados = useMemo(() => {
     const t = normalizar(buscar.trim())
