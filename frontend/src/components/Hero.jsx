@@ -23,7 +23,7 @@ export default function Hero() {
             <Link to="/servicios" className="btn btn--outline">
               Conoce más
             </Link>
-            <Link to="/contacto#reservar" className="btn btn--primary">
+            <Link to="/reservar" className="btn btn--primary">
               Reservar cita <ArrowRight size={18} />
             </Link>
           </div>

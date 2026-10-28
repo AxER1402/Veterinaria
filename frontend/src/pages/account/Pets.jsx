@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Carne } from '../../components/VaccineTable'
-import { Navigate } from 'react-router-dom'
-import { PawPrint, Plus } from 'lucide-react'
+import { Link, Navigate } from 'react-router-dom'
+import { CalendarPlus, PawPrint, Plus, Syringe, CalendarClock } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import AccountBar from '../../components/AccountBar'
 import Loading from '../../components/Loading'
@@ -9,7 +9,8 @@ import PetForm from '../../components/PetForm'
 import { useAuth } from '../../context/useAuth'
 import { api } from '../../api'
 import PetIcon from '../../components/PetIcon'
-import { ESPECIES, edad } from './citas'
+import { ESPECIES, edad, formatCita } from './citas'
+import { fechaCorta } from './vacunas'
 
 export default function Pets() {
   const { user, checking } = useAuth()
@@ -88,6 +89,8 @@ function PetCard({ mascota: m, onEdit, onRemoved }) {
     m.sexo === 'macho' ? 'Macho' : m.sexo === 'hembra' ? 'Hembra' : null,
     edad(m.fecha_nacimiento),
     m.peso_kg ? `${m.peso_kg} kg` : null,
+    m.esterilizado === true ? 'Esterilizado' : m.esterilizado === false ? 'Sin esterilizar' : null,
+    m.color,
   ].filter(Boolean)
 
   const quitar = async () => {
@@ -116,6 +119,9 @@ function PetCard({ mascota: m, onEdit, onRemoved }) {
         {m.alergias && <small className="alert-badge">Alergias: {m.alergias}</small>}
         {m.enfermedades_cronicas && <small className="alert-badge alert-badge--soft">Crónico: {m.enfermedades_cronicas}</small>}
         {m.notas && <small className="pet__notes">{m.notas}</small>}
+        {m.microchip && <small>Microchip: <span className="mono">{m.microchip}</span></small>}
+        {m.proxima_cita && <small className="pet__next"><CalendarClock size={14} /> {m.proxima_cita.servicio}: {formatCita(m.proxima_cita.inicio)}</small>}
+        {m.proxima_vacuna && <small className="pet__next"><Syringe size={14} /> {m.proxima_vacuna.nombre}: {fechaCorta(m.proxima_vacuna.fecha)}</small>}
         {error && <small className="field-error">{error}</small>}
       </span>
       <span className="cita__side">
@@ -126,11 +132,12 @@ function PetCard({ mascota: m, onEdit, onRemoved }) {
             <button className="link-btn" onClick={() => setConfirming(false)}>No</button>
           </span>
         ) : (
-          <>
-            <button className="link-btn" onClick={verCarne} aria-expanded={Boolean(carne)}>{carne ? 'Ocultar carné' : 'Carné de vacunas'}</button>
-            <button className="link-btn" onClick={onEdit}>Editar</button>
-            <button className="link-btn" onClick={() => setConfirming(true)}>Quitar</button>
-          </>
+          <span className="pet__actions">
+            <Link to={`/reservar?mascota=${m.id}`} className="btn btn--primary btn--xs"><CalendarPlus size={14} /> Reservar para {m.nombre}</Link>
+            <button className="btn btn--ghost btn--xs" onClick={verCarne} aria-expanded={Boolean(carne)}>{carne ? 'Ocultar carné' : 'Carné'}</button>
+            <button className="btn btn--ghost btn--xs" onClick={onEdit}>Editar</button>
+            <button className="link-btn link-btn--danger" onClick={() => setConfirming(true)}>Quitar</button>
+          </span>
         )}
       </span>
       {carne && (

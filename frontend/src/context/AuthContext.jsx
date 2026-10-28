@@ -26,6 +26,9 @@ export function AuthProvider({ children }) {
       user,
       checking,
       isAdmin: user?.rol === 'admin',
+      // Personal del panel: cada rol ve sus secciones (el servidor vuelve a revisar cada acción).
+      isStaff: ['admin', 'veterinario', 'recepcion', 'tienda'].includes(user?.rol),
+      setPerfil: (cambios) => setUser((u) => (u ? { ...u, ...cambios } : u)),
       // Devuelve el usuario, o { mfa: true, desafio } si la cuenta tiene verificación en dos pasos.
       login: async (email, password) => {
         const d = await api('/api/auth/login', { method: 'POST', body: { email, password }, auth: false })

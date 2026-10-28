@@ -1,8 +1,6 @@
-import { Dog, Cat, Rabbit } from 'lucide-react'
-
-const ICONOS = { perro: Dog, gato: Cat }
+import { ESPECIES } from '../pages/account/citas'
 
 export default function PetIcon({ especie, ...props }) {
-  const Icon = ICONOS[especie] || Rabbit
+  const Icon = (ESPECIES.find((e) => e.value === especie) || ESPECIES.at(-1)).icon
   return <Icon {...props} />
 }

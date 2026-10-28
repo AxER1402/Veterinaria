@@ -11,7 +11,7 @@ export default function CtaBanner() {
           <h2>¿Listo para comenzar?</h2>
           <p>Reserva hoy y dale a tu mascota el cuidado que se merece.</p>
           <div className="cta__buttons">
-            <Link to="/contacto#reservar" className="btn btn--primary">
+            <Link to="/reservar" className="btn btn--primary">
               Reservar ahora
             </Link>
             <a href={`tel:${business.tel}`} className="btn btn--ghost-light">

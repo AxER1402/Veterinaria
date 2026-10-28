@@ -12,4 +12,7 @@ for f in db/master/12-historial-ampliado.sql db/master/13-roles-telefono.sql db/
     echo "→ $f"
     docker compose exec -T mariadb-master mariadb -uroot -p"$DB_ROOT_PASSWORD" < "$f"
 done
+docker compose up -d --wait mariadb-audit
+echo "→ db/audit/02-roles-personal.sql"
+docker compose exec -T mariadb-audit mariadb -uroot -p"$AUDIT_DB_ROOT_PASSWORD" < db/audit/02-roles-personal.sql
 echo "✔ Migraciones v2 aplicadas. Siguiente: docker compose up -d --build --wait"

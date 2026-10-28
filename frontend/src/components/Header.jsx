@@ -10,7 +10,7 @@ export default function Header() {
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const { totals, wishlist, openDrawer } = useShop()
-  const { user, isAdmin } = useAuth()
+  const { user, isStaff } = useAuth()
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20)
     onScroll()
@@ -35,12 +35,12 @@ export default function Header() {
               {link.label}
             </NavLink>
           ))}
-          {isAdmin && (
+          {isStaff && (
             <NavLink to="/admin" className="nav__link nav__admin-mobile">
-              Panel de administración
+              Panel de la clínica
             </NavLink>
           )}
-          <Link to="/contacto#reservar" className="btn btn--primary nav__cta-mobile">
+          <Link to="/reservar" className="btn btn--primary nav__cta-mobile">
             Reservar cita
           </Link>
         </nav>
@@ -49,9 +49,9 @@ export default function Header() {
           <a href={`tel:${business.tel}`} className="header__phone">
             <Phone size={18} /> {business.phone}
           </a>
-          {isAdmin && (
-            <Link to="/admin" className="header__icon header__icon--admin" aria-label="Panel de administración">
-              <ShieldCheck size={22} />
+          {isStaff && (
+            <Link to="/admin" className="header__panel" title="Panel de la clínica">
+              <ShieldCheck size={20} /> <span>Panel</span>
             </Link>
           )}
           <Link to={user ? '/cuenta/pedidos' : '/cuenta'} className="header__icon" aria-label={user ? `Mi cuenta (${user.nombre})` : 'Ingresar'}>
@@ -66,7 +66,7 @@ export default function Header() {
             <ShoppingBag size={22} />
             {totals.count > 0 && <span className="header__count">{totals.count}</span>}
           </button>
-          <Link to="/contacto#reservar" className="btn btn--primary btn--sm">
+          <Link to="/reservar" className="btn btn--primary btn--sm">
             Reservar
           </Link>
           <button

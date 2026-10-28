@@ -3,13 +3,13 @@ import Field from './Field'
 import { api } from '../api'
 import { ESPECIES, ymd } from '../pages/account/citas'
 
-const VACIA = { nombre: '', especie: 'perro', raza: '', sexo: '', fecha_nacimiento: '', peso_kg: '', alergias: '', enfermedades_cronicas: '', notas: '' }
+const VACIA = { nombre: '', especie: 'perro', raza: '', sexo: '', esterilizado: '', color: '', microchip: '', fecha_nacimiento: '', peso_kg: '', alergias: '', enfermedades_cronicas: '', notas: '' }
 
 // Alta o edición de una mascota. En la reserva va en versión corta (nombre, especie y notas):
 // lo demás se completa después en «Mis mascotas».
 export default function PetForm({ mascota, compact = false, onSaved, onCancel }) {
   const [values, setValues] = useState(() =>
-    mascota ? Object.fromEntries(Object.keys(VACIA).map((k) => [k, mascota[k] ?? ''])) : VACIA,
+    mascota ? Object.fromEntries(Object.keys(VACIA).map((k) => [k, k === 'esterilizado' ? (mascota[k] === null ? '' : mascota[k] ? 'si' : 'no') : mascota[k] ?? ''])) : VACIA,
   )
   const [errors, setErrors] = useState({})
   const [error, setError] = useState('')
@@ -24,7 +24,8 @@ export default function PetForm({ mascota, compact = false, onSaved, onCancel })
     setError('')
     setSending(true)
     try {
-      const body = { ...values, nombre: values.nombre.trim(), peso_kg: values.peso_kg === '' ? '' : Number(values.peso_kg) }
+      const body = { ...values, nombre: values.nombre.trim(), peso_kg: values.peso_kg === '' ? '' : Number(values.peso_kg),
+        esterilizado: values.esterilizado === '' ? null : values.esterilizado === 'si', microchip: values.microchip.trim() }
       const d = mascota
         ? await api(`/api/citas/mascotas/${mascota.id}`, { method: 'PATCH', body })
         : await api('/api/citas/mascotas', { method: 'POST', body })
@@ -66,6 +67,19 @@ export default function PetForm({ mascota, compact = false, onSaved, onCancel })
                 <option value="macho">Macho</option>
                 <option value="hembra">Hembra</option>
               </select>
+            </Field>
+            <Field label="¿Esterilizado?" error={errors.esterilizado}>
+              <select value={values.esterilizado} onChange={set('esterilizado')}>
+                <option value="">Sin indicar</option>
+                <option value="si">Sí</option>
+                <option value="no">No</option>
+              </select>
+            </Field>
+            <Field label="Color o señas (opcional)" error={errors.color}>
+              <input value={values.color} onChange={set('color')} maxLength={40} placeholder="Atigrado, mancha en el ojo…" />
+            </Field>
+            <Field label="Microchip (opcional)" error={errors.microchip}>
+              <input value={values.microchip} onChange={set('microchip')} maxLength={15} inputMode="numeric" placeholder="15 dígitos" />
             </Field>
             <Field label="Fecha de nacimiento" error={errors.fecha_nacimiento}>
               <input type="date" max={ymd(new Date())} value={values.fecha_nacimiento} onChange={set('fecha_nacimiento')} />

@@ -1,6 +1,6 @@
-import { Phone, Mail, Clock } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Phone, Mail, Clock, CalendarHeart } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
-import BookingForm from '../components/BookingForm'
 import Locations from '../components/Locations'
 import { business } from '../data/content'
 
@@ -29,7 +29,13 @@ export default function Contact() {
           ))}
         </div>
       </section>
-      <BookingForm />
+      <section className="section section--compact">
+        <div className="container contact-cta">
+          <CalendarHeart size={32} />
+          <p><strong>¿Quieres agendar?</strong> Reserva en línea y elige el día y la hora que te queden mejor.</p>
+          <Link to="/reservar" className="btn btn--primary">Reservar cita</Link>
+        </div>
+      </section>
       <Locations />
     </>
   )

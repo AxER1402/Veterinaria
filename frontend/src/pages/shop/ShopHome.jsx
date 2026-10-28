@@ -118,7 +118,7 @@ export default function ShopHome() {
               recomendaciones personalizadas.
             </p>
             <div className="promo-card__buttons">
-              <Link to="/contacto#reservar" className="btn btn--primary">
+              <Link to="/reservar" className="btn btn--primary">
                 Agendar cita
               </Link>
               <Link to="/servicios" className="btn btn--ghost-light">

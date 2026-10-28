@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
-import { CheckCircle2, MapPin, Plus, CalendarX2 } from 'lucide-react'
+import { CheckCircle2, MapPin, Plus, Phone } from 'lucide-react'
 import SectionTitle from './SectionTitle'
 import Field from './Field'
 import PetForm from './PetForm'
+import SlotPicker, { cuerpoReserva, eleccionLista } from './SlotPicker'
 import { api } from '../api'
 import { useAuth } from '../context/useAuth'
 import { formatPrice } from '../data/shop'
 import PetIcon from './PetIcon'
-import { MAX_DIAS, addDays, formatCita, formatDay, ymd } from '../pages/account/citas'
+import { TELEFONO_CLINICA, formatReserva } from '../pages/account/citas'
 
 // Lo elegido antes de ir a ingresar: al volver, la reserva sigue donde estaba.
 const DRAFT_KEY = 'huellitas-reserva'
@@ -28,17 +29,9 @@ const saveDraft = (d) => {
   }
 }
 
-// Próximos días que abre la clínica (lunes a sábado).
-function nextOpenDays(n) {
-  const days = []
-  for (let d = new Date(); days.length < n; d = addDays(d, 1)) {
-    if (d.getDay() !== 0) days.push(ymd(d))
-  }
-  return days
-}
-
 // Solo ayuda al usuario: el servidor vuelve a validar todo.
 const TELEFONO = /^\+?[0-9 ()-]{7,20}$/
+const MOTIVOS = ['Control o chequeo', 'Vacunación', 'Vómitos o diarrea', 'Problema de piel', 'Cojera', 'No quiere comer', 'Otro']
 
 export default function BookingForm() {
   const { user, checking } = useAuth()
@@ -49,14 +42,8 @@ export default function BookingForm() {
   const [servicios, setServicios] = useState(null)
   const [loadError, setLoadError] = useState('')
   const [servicio, setServicio] = useState(params.get('servicio') || draft.servicio || '')
-  const [fecha, setFecha] = useState(draft.fecha >= ymd(new Date()) ? draft.fecha : nextOpenDays(1)[0])
-  const [hora, setHora] = useState(draft.hora || '')
-  const [refresh, setRefresh] = useState(0)
+  const [eleccion, setEleccion] = useState({ fecha: draft.fecha || '', hora: draft.hora || '', salida: draft.salida || '' })
   const [cita, setCita] = useState(null)
-
-  const days = useMemo(() => nextOpenDays(12), [])
-  const today = ymd(new Date())
-  const maxDay = ymd(addDays(new Date(), MAX_DIAS))
 
   useEffect(() => {
     api('/api/citas/servicios', { auth: false })
@@ -67,27 +54,8 @@ export default function BookingForm() {
       .catch((e) => setLoadError(e.message))
   }, [])
 
-  // Turnos libres del día. Cada respuesta lleva la consulta que la pidió: si llega tarde la de
-  // otro día o servicio, no se muestra.
-  const consulta = `${servicio}|${fecha}|${refresh}`
-  const [respuesta, setRespuesta] = useState(null)
-  useEffect(() => {
-    if (!servicio || !fecha) return
-    let vigente = true
-    api(`/api/citas/disponibilidad?servicio=${encodeURIComponent(servicio)}&fecha=${encodeURIComponent(fecha)}`, { auth: false })
-      .then((d) => vigente && setRespuesta({ consulta, lista: d.turnos }))
-      .catch((e) => vigente && setRespuesta({ consulta, lista: [], error: e.message }))
-    return () => {
-      vigente = false
-    }
-  }, [servicio, fecha, consulta])
-  const turnos = respuesta?.consulta === consulta ? respuesta : null
-
-  // Solo cuenta la hora elegida si ese día sigue libre (la del borrador puede ya no estarlo).
-  const horaLibre = turnos && !turnos.error && turnos.lista.some((t) => t.hora === hora) ? hora : ''
-
   const elegido = servicios?.find((s) => s.slug === servicio)
-  const otraFecha = !days.includes(fecha)
+  const lista = elegido && eleccionLista(elegido.modalidad, eleccion)
 
   return (
     <section className="section booking" id="reservar">
@@ -98,15 +66,20 @@ export default function BookingForm() {
             title="¡Conozcámonos!"
             text="Elige el servicio, el día y un horario libre. La cita se paga en la sede y te la confirmamos por correo."
           />
-          <div className="promo">
-            <strong>¿Primera vez?</strong>
-            <p>Tu primer día de guardería es <span>gratis</span> 🐶</p>
-          </div>
+          <p className="booking__urgent">
+            <Phone size={18} /> ¿Es una urgencia? No esperes una cita: llámanos al <a href={`tel:${TELEFONO_CLINICA.replace(/[^+\d]/g, '')}`}>{TELEFONO_CLINICA}</a>.
+          </p>
+          {servicio === 'guarderia' && (
+            <div className="promo">
+              <strong>¿Primera vez?</strong>
+              <p>Tu primer día de guardería es <span>gratis</span> 🐶</p>
+            </div>
+          )}
         </div>
 
         <div className="booking__card">
           {cita ? (
-            <Success cita={cita} onReset={() => { setCita(null); setHora(''); setRefresh((r) => r + 1) }} />
+            <Success {...cita} onReset={() => { setCita(null); setEleccion({ fecha: '', hora: '', salida: '' }) }} />
           ) : loadError ? (
             <p className="form-alert" role="alert">No se pudieron cargar los servicios: {loadError}</p>
           ) : !servicios ? (
@@ -115,7 +88,7 @@ export default function BookingForm() {
             <div className="booking__steps">
               <div className="form-grid form-grid--tight">
                 <Field label="1. Servicio" full>
-                  <select value={servicio} onChange={(e) => { setServicio(e.target.value); setHora('') }}>
+                  <select value={servicio} onChange={(e) => { setServicio(e.target.value); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
                     {servicios.map((s) => (
                       <option key={s.slug} value={s.slug}>{s.nombre} · desde {formatPrice(s.precio_desde)}</option>
                     ))}
@@ -126,58 +99,20 @@ export default function BookingForm() {
                 <p className="booking__sede"><MapPin size={18} /> <span>Se atiende en <strong>{elegido.sede.nombre}</strong></span></p>
               )}
 
-              <fieldset className="booking__group">
-                <legend>2. Día</legend>
-                <div className="day-picker">
-                  {days.map((d) => (
-                    <button key={d} type="button" className={`day-chip ${fecha === d ? 'active' : ''}`} aria-pressed={fecha === d}
-                      onClick={() => { setFecha(d); setHora('') }}>
-                      {d === today ? 'Hoy' : formatDay(d, true)}
-                    </button>
-                  ))}
-                  <label className={`day-chip day-chip--input ${otraFecha ? 'active' : ''}`}>
-                    <span>Otra fecha</span>
-                    <input type="date" min={today} max={maxDay} value={otraFecha ? fecha : ''}
-                      onChange={(e) => { if (e.target.value) { setFecha(e.target.value); setHora('') } }} />
-                  </label>
-                </div>
-              </fieldset>
-
-              <fieldset className="booking__group">
-                <legend>3. Hora · {formatDay(fecha)}</legend>
-                {!turnos && <p className="booking__muted">Buscando horarios libres…</p>}
-                {turnos?.error && <p className="form-alert" role="alert">{turnos.error}</p>}
-                {turnos && !turnos.error && turnos.lista.length === 0 && (
-                  <p className="booking__empty">
-                    <CalendarX2 size={20} />
-                    {new Date(`${fecha}T12:00:00`).getDay() === 0
-                      ? 'Los domingos estamos cerrados. Elige otro día.'
-                      : 'No quedan horarios libres este día. Prueba con otro.'}
-                  </p>
-                )}
-                {turnos?.lista.length > 0 && (
-                  <div className="slot-grid">
-                    {turnos.lista.map((t) => (
-                      <button key={t.hora} type="button" className={`slot ${horaLibre === t.hora ? 'active' : ''}`} aria-pressed={horaLibre === t.hora}
-                        onClick={() => setHora(t.hora)}>
-                        {t.hora}
-                        {t.libres === 1 && <small>último cupo</small>}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </fieldset>
+              {elegido && <SlotPicker servicio={servicio} modalidad={elegido.modalidad} value={eleccion} onChange={setEleccion} />}
 
               {checking ? null : !user ? (
-                <LoginPrompt disabled={!horaLibre} onGo={() => saveDraft({ servicio, fecha, hora: horaLibre })} from={`${pathname}#reservar`} />
+                <LoginPrompt disabled={!lista} onGo={() => saveDraft({ servicio, ...eleccion })} from={pathname} />
               ) : (
                 <Confirm
                   key={user.id || user.email}
                   user={user}
-                  hora={horaLibre}
-                  reserva={{ servicio, fecha, hora: horaLibre }}
-                  onDone={(c) => { saveDraft(null); setCita(c) }}
-                  onTaken={() => { setHora(''); setRefresh((r) => r + 1) }}
+                  lista={lista}
+                  consulta={servicio === 'veterinaria'}
+                  mascotaInicial={params.get('mascota')}
+                  reserva={{ servicio, ...cuerpoReserva(elegido?.modalidad, eleccion) }}
+                  onDone={(r) => { saveDraft(null); setCita(r) }}
+                  onTaken={() => setEleccion((e) => ({ ...e, hora: '' }))}
                 />
               )}
             </div>
@@ -192,22 +127,23 @@ function LoginPrompt({ disabled, onGo, from }) {
   return (
     <div className="booking__login">
       <p>
-        <strong>4. Tu mascota y tus datos.</strong> Para confirmar la cita entra a tu cuenta o crea una: así puedes ver y
-        cancelar tus citas cuando quieras.
+        <strong>4. Tu mascota y tus datos.</strong> Para confirmar la cita entra a tu cuenta o crea una: así puedes ver,
+        cambiar y cancelar tus citas cuando quieras.
       </p>
       <Link to="/cuenta" state={{ from }} onClick={onGo} className={`btn btn--primary btn--block ${disabled ? 'btn--muted' : ''}`}>
         Ingresar o crear cuenta para confirmar
       </Link>
-      {disabled && <p className="booking__muted">Primero elige un horario.</p>}
+      {disabled && <p className="booking__muted">Primero elige el día{' '}y el horario.</p>}
     </div>
   )
 }
 
-function Confirm({ user, hora, reserva, onDone, onTaken }) {
+function Confirm({ user, lista, consulta, mascotaInicial, reserva, onDone, onTaken }) {
+  const { setPerfil } = useAuth()
   const [mascotas, setMascotas] = useState(null)
   const [mascotaId, setMascotaId] = useState('')
   const [adding, setAdding] = useState(false)
-  const [values, setValues] = useState({ nombre: user.nombre || '', telefono: '', notas: '' })
+  const [values, setValues] = useState({ nombre: user.nombre || '', telefono: user.telefono || '', motivo: '', notas: '' })
   const [errors, setErrors] = useState({})
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
@@ -217,35 +153,43 @@ function Confirm({ user, hora, reserva, onDone, onTaken }) {
     api('/api/citas/mascotas')
       .then((d) => {
         setMascotas(d.mascotas)
-        if (d.mascotas.length === 1) setMascotaId(d.mascotas[0].id)
+        const inicial = d.mascotas.find((m) => m.id === mascotaInicial)
+        if (inicial || d.mascotas.length === 1) setMascotaId((inicial || d.mascotas[0]).id)
         if (d.mascotas.length === 0) setAdding(true)
       })
       .catch((e) => setError(e.message))
-  }, [])
+  }, [mascotaInicial])
 
   const submit = async (e) => {
     e.preventDefault()
     const found = {}
-    if (!hora) found.hora = 'Elige un horario'
+    if (!lista) found.hora = 'Elige el día y el horario'
     if (!mascotaId) found.mascota_id = 'Elige qué mascota viene'
     if (values.nombre.trim().length < 2) found.nombre = 'Ingresa tu nombre'
     if (!TELEFONO.test(values.telefono.trim()) || values.telefono.replace(/\D/g, '').length < 7) found.telefono = 'Teléfono no válido'
+    if (consulta && !values.motivo) found.motivo = 'Elige el motivo de la consulta'
     setErrors(found)
     if (Object.keys(found).length) return
     setSending(true)
     setError('')
+    const notas = [consulta ? values.motivo : '', values.notas.trim()].filter(Boolean).join(': ')
     try {
       const d = await api('/api/citas', {
         method: 'POST',
-        body: { ...reserva, mascota_id: mascotaId, nombre: values.nombre.trim(), telefono: values.telefono.trim(), notas: values.notas.trim() },
+        body: { ...reserva, mascota_id: mascotaId, nombre: values.nombre.trim(), telefono: values.telefono.trim(), notas },
       })
-      onDone(d.cita)
+      // El teléfono queda en el perfil para la próxima reserva o compra.
+      if (values.telefono.trim() !== (user.telefono || '')) {
+        api('/api/auth/perfil', { method: 'PATCH', body: { telefono: values.telefono.trim() } })
+          .then((p) => setPerfil({ telefono: p.usuario.telefono }))
+          .catch(() => {})
+      }
+      onDone({ cita: d.cita, aviso: d.aviso })
     } catch (err) {
-      if (err.data?.campo && err.data.campo !== 'hora') setErrors({ [err.data.campo]: err.message })
+      if (err.data?.campo && !['hora', 'fecha', 'salida'].includes(err.data.campo)) setErrors({ [err.data.campo === 'notas' ? 'motivo' : err.data.campo]: err.message })
       else setError(err.message)
       // Otro cliente ganó el turno (o ya pasó la hora): se recargan los horarios.
-      if (err.status === 409 && /llenar/.test(err.message)) onTaken()
-      if (err.data?.campo === 'hora') onTaken()
+      if ((err.status === 409 && /llenar/.test(err.message)) || err.data?.campo === 'hora') onTaken()
     } finally {
       setSending(false)
     }
@@ -258,14 +202,12 @@ function Confirm({ user, hora, reserva, onDone, onTaken }) {
         {!mascotas && !error && <p className="booking__muted">Cargando tus mascotas…</p>}
         {mascotas?.length > 0 && (
           <div className="pet-picker pet-picker--list">
-            {mascotas.map((m) => {
-              return (
-                <label key={m.id} className={mascotaId === m.id ? 'active' : ''}>
-                  <input type="radio" name="mascota" value={m.id} checked={mascotaId === m.id} onChange={() => setMascotaId(m.id)} />
-                  <PetIcon especie={m.especie} size={22} /> {m.nombre}
-                </label>
-              )
-            })}
+            {mascotas.map((m) => (
+              <label key={m.id} className={mascotaId === m.id ? 'active' : ''}>
+                <input type="radio" name="mascota" value={m.id} checked={mascotaId === m.id} onChange={() => setMascotaId(m.id)} />
+                <PetIcon especie={m.especie} size={22} /> {m.nombre}
+              </label>
+            ))}
             {!adding && (
               <button type="button" className="pet-picker__add" onClick={() => setAdding(true)}>
                 <Plus size={18} /> Otra mascota
@@ -293,6 +235,19 @@ function Confirm({ user, hora, reserva, onDone, onTaken }) {
         )}
       </fieldset>
 
+      {consulta && (
+        <fieldset className="booking__group">
+          <legend>Motivo de la consulta</legend>
+          <div className="chips-row" role="radiogroup" aria-label="Motivo de la consulta">
+            {MOTIVOS.map((m) => (
+              <button key={m} type="button" role="radio" aria-checked={values.motivo === m}
+                className={`chip ${values.motivo === m ? 'chip--active' : ''}`} onClick={() => setValues((v) => ({ ...v, motivo: m }))}>{m}</button>
+            ))}
+          </div>
+          {errors.motivo && <small className="field-error">{errors.motivo}</small>}
+        </fieldset>
+      )}
+
       <div className="form-grid">
         <Field label="Nombre de quien la trae" error={errors.nombre}>
           <input value={values.nombre} onChange={set('nombre')} autoComplete="name" maxLength={100} />
@@ -300,20 +255,21 @@ function Confirm({ user, hora, reserva, onDone, onTaken }) {
         <Field label="Teléfono" error={errors.telefono}>
           <input type="tel" value={values.telefono} onChange={set('telefono')} autoComplete="tel" placeholder="5555 1234" maxLength={20} />
         </Field>
-        <Field label="Mensaje (opcional)" error={errors.notas} full>
-          <textarea rows="2" placeholder="Motivo de la consulta, indicaciones…" value={values.notas} onChange={set('notas')} maxLength={300} />
+        <Field label={consulta ? 'Cuéntanos más (opcional)' : 'Mensaje (opcional)'} error={errors.notas} full>
+          <textarea rows="2" placeholder={consulta ? 'Desde cuándo, qué notaste…' : 'Indicaciones, cuidados especiales…'} value={values.notas}
+            onChange={set('notas')} maxLength={250} />
         </Field>
       </div>
       {(error || errors.hora) && <p className="form-alert" role="alert">{error || errors.hora}</p>}
       <button type="submit" className="btn btn--primary btn--block" disabled={sending || adding}>
-        {sending ? 'Reservando…' : hora ? `Reservar a las ${hora}` : 'Reservar cita'}
+        {sending ? 'Reservando…' : reserva.hora ? `Reservar a las ${reserva.hora}` : 'Reservar'}
       </button>
-      <p className="account__hint">Se paga en la sede. Puedes cancelar hasta 2 horas antes desde «Mis citas».</p>
+      <p className="account__hint">Se paga en la sede. Puedes cambiarla o cancelarla hasta 2 horas antes desde «Mis citas».</p>
     </form>
   )
 }
 
-function Success({ cita, onReset }) {
+function Success({ cita, aviso, onReset }) {
   return (
     <div className="booking__success">
       <CheckCircle2 size={64} />
@@ -321,10 +277,11 @@ function Success({ cita, onReset }) {
       <p>
         <strong>{cita.servicio.nombre}</strong> para <PetIcon especie={cita.mascota.especie} size={16} className="inline-icon" /> {cita.mascota.nombre}
         <br />
-        {formatCita(cita.inicio)}
+        {formatReserva(cita)}
         <br />
         {cita.sede.nombre}
       </p>
+      {aviso && <p className="form-alert form-alert--soft">{aviso}</p>}
       <p className="booking__muted">Queda pendiente de confirmar. Te avisaremos por correo.</p>
       <div className="booking__success-actions">
         <Link to="/cuenta/citas" className="btn btn--dark">Ver mis citas</Link>
