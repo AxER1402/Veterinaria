@@ -4,6 +4,7 @@ import { LayoutDashboard, Package, Tags, ShieldCheck, Users, CalendarDays, PawPr
 import Loading from '../../components/Loading'
 import { useAuth } from '../../context/useAuth'
 import { api } from '../../api'
+import { ROLES } from './roles'
 
 // Primero el día a día de la clínica; la tienda después y la bitácora al final. Cada rol ve sus
 // secciones; esto solo ordena el menú: el servidor vuelve a revisar el rol en cada acción.
@@ -17,7 +18,6 @@ const tabs = [
   { to: '/admin/catalogo', label: 'Catálogo', icon: Tags, roles: ['admin', 'tienda'] },
   { to: '/admin/bitacora', label: 'Bitácora', icon: ShieldCheck, roles: ['admin'] },
 ]
-export const ROLES = { admin: 'Administración', veterinario: 'Veterinario', recepcion: 'Recepción', tienda: 'Tienda', cliente: 'Cliente' }
 
 export default function AdminLayout() {
   const { user, checking, isStaff } = useAuth()

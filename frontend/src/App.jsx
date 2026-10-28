@@ -34,6 +34,8 @@ import AdminClientes from './pages/admin/AdminClientes'
 import AdminAgenda from './pages/admin/AdminAgenda'
 import AdminPacientes from './pages/admin/AdminPacientes'
 import AdminPaciente from './pages/admin/AdminPaciente'
+import AdminCliente from './pages/admin/AdminCliente'
+import AdminPedido from './pages/admin/AdminPedido'
 import Loading from './components/Loading'
 
 // El resumen trae Chart.js: se descarga solo al abrir el panel, no en la tienda.
@@ -89,9 +91,11 @@ export default function App() {
                 <Route path="pacientes" element={<AdminPacientes />} />
                 <Route path="pacientes/:id" element={<AdminPaciente />} />
                 <Route path="pedidos" element={<AdminPedidos />} />
+                <Route path="pedidos/:id" element={<AdminPedido />} />
                 <Route path="catalogo" element={<AdminCatalogo />} />
                 <Route path="bitacora" element={<AdminBitacora />} />
                 <Route path="clientes" element={<AdminClientes />} />
+                <Route path="clientes/:id" element={<AdminCliente />} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Route>

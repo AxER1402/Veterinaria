@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { AlertTriangle, Plus, Printer, Trash2 } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { AlertTriangle, Paperclip, Plus, Printer, Trash2 } from 'lucide-react'
 import Modal from '../../components/Modal'
 import PetIcon from '../../components/PetIcon'
 import { api } from '../../api'
@@ -364,6 +364,14 @@ export function ConsultaItem({ consulta: c, onUpdated, onPrint }) {
       {c.indicaciones && <p><b>Indicaciones:</b> {c.indicaciones}</p>}
       {c.proximo_control && <p><b>Próximo control:</b> {fechaCorta(c.proximo_control)}</p>}
       {c.vacunas.length > 0 && <p><b>Aplicado:</b> {c.vacunas.map((v) => v.nombre).join(', ')}</p>}
+      {c.adjuntos.length > 0 && (
+        <p className="clinical__files">
+          <b>Adjuntos:</b>{' '}
+          {c.adjuntos.map((a) => (a.url
+            ? <a key={a.id} href={a.url} target="_blank" rel="noopener noreferrer"><Paperclip size={13} /> {a.nombre}</a>
+            : <span key={a.id}><Paperclip size={13} /> {a.nombre}</span>))}
+        </p>
+      )}
       {c.adendas.map((a) => (
         <p key={a.id} className="clinical__addendum"><b>Adenda · {formatCita(a.fecha)} · {a.registrado_por}:</b> {a.texto}</p>
       ))}
@@ -382,8 +390,65 @@ export function ConsultaItem({ consulta: c, onUpdated, onPrint }) {
         <div className="clinical__actions">
           <button className="link-btn" onClick={() => setAdenda('')}>Agregar adenda</button>
           <button className="link-btn" onClick={() => onPrint(c)}><Printer size={14} /> Receta e indicaciones</button>
+          <SubirAdjunto historialId={c.id} onUpdated={onUpdated} />
         </div>
       )}
     </li>
+  )
+}
+
+const TIPOS_ADJUNTO = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+const MAX_ADJUNTO_MB = 10
+
+// Resultado de laboratorio o radiografía. Se sube a Cloudinary como privado con la firma de
+// citas-service; solo se ve con el enlace firmado (10 min) que trae la ficha.
+function SubirAdjunto({ historialId, onUpdated }) {
+  const input = useRef(null)
+  const [tipo, setTipo] = useState('laboratorio')
+  const [estado, setEstado] = useState('') // '', 'eligiendo', 'subiendo' o un error
+
+  const subir = async (e) => {
+    const archivo = e.target.files[0]
+    e.target.value = ''
+    if (!archivo) return
+    if (!TIPOS_ADJUNTO.includes(archivo.type)) return setEstado('Usa un PDF o una imagen (JPG, PNG o WebP).')
+    if (archivo.size > MAX_ADJUNTO_MB * 1024 * 1024) return setEstado(`El archivo pesa más de ${MAX_ADJUNTO_MB} MB.`)
+    setEstado('subiendo')
+    try {
+      const f = await api('/api/citas/admin/adjuntos/firma', { method: 'POST' })
+      const datos = new FormData()
+      datos.append('file', archivo)
+      for (const k of ['api_key', 'timestamp', 'signature', 'folder', 'type']) datos.append(k, f[k])
+      const res = await fetch(f.upload_url, { method: 'POST', body: datos })
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json?.public_id) throw new Error(json?.error?.message || 'Cloudinary rechazó el archivo')
+      onUpdated(await api(`/api/citas/admin/historial/${historialId}/adjuntos`, {
+        method: 'POST',
+        body: { nombre: archivo.name.slice(0, 120), tipo, public_id: json.public_id, recurso: json.resource_type === 'image' ? 'image' : 'raw', formato: json.format || '' },
+      }))
+      setEstado('')
+    } catch (err) {
+      setEstado(err.message)
+    }
+  }
+
+  return (
+    <span className="clinical__upload">
+      <input ref={input} type="file" accept={TIPOS_ADJUNTO.join(',')} onChange={subir} hidden />
+      {estado === 'eligiendo' ? (
+        <>
+          <select value={tipo} onChange={(e) => setTipo(e.target.value)} aria-label="Tipo de archivo">
+            <option value="laboratorio">Laboratorio</option>
+            <option value="radiografia">Radiografía</option>
+            <option value="otro">Otro</option>
+          </select>
+          <button className="link-btn" onClick={() => input.current.click()}>Elegir archivo</button>
+          <button className="link-btn" onClick={() => setEstado('')}>Cancelar</button>
+        </>
+      ) : estado === 'subiendo' ? <span className="summary__hint">Subiendo…</span> : (
+        <button className="link-btn" onClick={() => setEstado('eligiendo')}><Paperclip size={14} /> Adjuntar resultado</button>
+      )}
+      {estado && !['eligiendo', 'subiendo'].includes(estado) && <small className="field-error">{estado}</small>}
+    </span>
   )
 }

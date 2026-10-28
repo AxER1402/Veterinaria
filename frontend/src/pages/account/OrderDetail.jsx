@@ -14,6 +14,8 @@ export default function OrderDetail() {
   const { user, checking } = useAuth()
   const [order, setOrder] = useState(null)
   const [error, setError] = useState(null)
+  const [cancelando, setCancelando] = useState(false)
+  const [cancelError, setCancelError] = useState('')
 
   useEffect(() => {
     if (!user) return
@@ -27,6 +29,16 @@ export default function OrderDetail() {
   if (!order) return <Loading />
 
   const status = STATUS[order.estado]
+  const cancelar = async () => {
+    setCancelError('')
+    try {
+      setOrder((await api(`/api/pedidos/${order.id}/cancelar`, { method: 'POST' })).pedido)
+    } catch (e) {
+      setCancelError(e.message)
+    } finally {
+      setCancelando(false)
+    }
+  }
   return (
     <>
       <PageHeader title={`Pedido #${shortId(order.id)}`} text={formatDate(order.fecha)} />
@@ -35,6 +47,23 @@ export default function OrderDetail() {
           <div>
             <p><span className={`status status--${status.tone}`}>{status.label}</span></p>
             {order.estado === 'pendiente_pago' && <PaymentPanel order={order} onPaid={setOrder} />}
+            {order.estado === 'pendiente_pago' && (
+              <p className="order__cancel">
+                {cancelando ? (
+                  <>¿Cancelar el pedido? Los productos vuelven a la tienda.{' '}
+                    <button className="btn btn--dark btn--xs" onClick={cancelar}>Sí, cancelar</button>{' '}
+                    <button className="link-btn" onClick={() => setCancelando(false)}>No</button></>
+                ) : <button className="link-btn link-btn--danger" onClick={() => setCancelando(true)}>Cancelar este pedido</button>}
+                {cancelError && <small className="field-error">{cancelError}</small>}
+              </p>
+            )}
+            {order.reembolso && (
+              <p className={order.reembolso.estado === 'hecho' ? 'form-ok' : 'form-alert form-alert--soft'}>
+                {order.reembolso.estado === 'hecho'
+                  ? `Te devolvimos ${formatPrice(order.total)} (referencia ${order.reembolso.referencia}). Según tu banco puede tardar unos días en verse.`
+                  : `Este pedido se canceló después de pagarse: te devolveremos ${formatPrice(order.total)} por el mismo medio de pago.`}
+              </p>
+            )}
             <ul className="summary__lines order-items">
               {order.items.map((i) => (
                 <li key={i.variante_id}>

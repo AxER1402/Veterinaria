@@ -9,6 +9,7 @@ import { api } from '../../api'
 import { CITA_STATUS, ESPECIES, edad, formatCita, ymd } from '../account/citas'
 import { fechaCorta } from '../account/vacunas'
 import { AlertasClinicas, ConsultaForm, ConsultaItem, VacunaExternaForm } from './ClinicalRecord'
+import AgendarCita from './AgendarCita'
 
 // Ficha del paciente. El servidor registra cada apertura como HISTORIAL_CONSULTADO.
 export default function AdminPaciente() {
@@ -16,7 +17,7 @@ export default function AdminPaciente() {
   const [data, setData] = useState(null)
   const [dueno, setDueno] = useState(null) // nombre de la cuenta (auth-service)
   const [error, setError] = useState('')
-  const [modal, setModal] = useState(null) // 'consulta' | 'vacuna' | null
+  const [modal, setModal] = useState(null) // 'consulta' | 'vacuna' | 'control' | null
   const [aviso, setAviso] = useState('')
   const [imprimir, setImprimir] = useState(null) // { tipo: 'receta', consulta } | { tipo: 'carne' }
 
@@ -70,6 +71,7 @@ export default function AdminPaciente() {
           <p className="patient__next">
             {proxima && <>Próxima cita: <strong>{formatCita(proxima.inicio)}</strong> ({proxima.servicio.nombre}). </>}
             {control && <>Control sugerido: <strong>{fechaCorta(control)}</strong>{!proxima && ' · todavía sin cita agendada'}.</>}
+            {control && !proxima && m.activa && <button className="btn btn--dark btn--xs" onClick={() => setModal('control')}>Agendar control</button>}
           </p>
         )}
         {aviso && <p className="form-ok" role="status">{aviso}</p>}
@@ -126,6 +128,10 @@ export default function AdminPaciente() {
           setAviso(h?.proximo_control ? `Consulta guardada. Control sugerido para el ${fechaCorta(h.proximo_control)}: recuerda agendarlo con el dueño.` : 'Consulta guardada.')
           cargar()
         }} />
+      )}
+      {modal === 'control' && (
+        <AgendarCita inicial={{ clienteId: data.dueno.id, mascotaId: m.id, servicio: 'veterinaria', fecha: control }} onClose={() => setModal(null)}
+          onDone={(c) => { setModal(null); setAviso(`Control agendado: ${formatCita(c.inicio)}.`); cargar() }} />
       )}
       {modal === 'vacuna' && (
         <VacunaExternaForm mascota={m} onClose={() => setModal(null)} onSaved={(h) => { setModal(null); actualizar(h) }} />
