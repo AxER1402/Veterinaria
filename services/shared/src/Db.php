@@ -20,19 +20,62 @@ final class Db
         return self::$escritura ??= self::conectar(Env::required('DB_HOST'));
     }
 
+    /**
+     * Réplica si está al día; si no responde, si la replicación está detenida o si va más de
+     * DB_MAX_RETRASO_SEG atrasada, el maestro: así nadie lee datos viejos (p. ej. un turno como libre).
+     */
     public static function lectura(): PDO
     {
+        if (self::$lectura !== null) {
+            return self::$lectura;
+        }
         $replica = Env::get('DB_READ_HOST');
         if ($replica === null) {
             return self::escritura();
         }
         try {
-            return self::$lectura ??= self::conectar($replica);
+            $pdo = self::conectar($replica);
         } catch (\PDOException $e) {
             // Si la réplica cae, se lee del maestro (continuidad del servicio).
             error_log('Réplica no disponible, se usa el maestro: ' . $e->getMessage());
-            return self::escritura();
+            return self::$lectura = self::escritura();
         }
+        return self::$lectura = self::replicaAlDia($pdo) ? $pdo : self::escritura();
+    }
+
+    /**
+     * Estado de la replicación (SHOW SLAVE STATUS, privilegio REPLICA MONITOR). Se guarda 5 s en Redis
+     * para no consultarlo en cada petición. Ante cualquier duda (sin permiso, sin Redis) se usa el maestro.
+     */
+    private static function replicaAlDia(PDO $pdo): bool
+    {
+        $clave = 'db:replica:' . Env::required('DB_NAME');
+        try {
+            $guardado = Cache::redis()->get($clave);
+            if ($guardado !== false) {
+                return $guardado === '1';
+            }
+        } catch (\Throwable) {
+            // sin caché: se consulta directo
+        }
+        $maximo = (int) Env::get('DB_MAX_RETRASO_SEG', '5');
+        try {
+            $estado = $pdo->query('SHOW SLAVE STATUS')->fetch();
+            $alDia = $estado && $estado['Slave_IO_Running'] === 'Yes' && $estado['Slave_SQL_Running'] === 'Yes'
+                && $estado['Seconds_Behind_Master'] !== null && (int) $estado['Seconds_Behind_Master'] <= $maximo;
+            if (!$alDia) {
+                error_log(sprintf('Réplica atrasada o detenida (IO=%s, SQL=%s, retraso=%s s): se usa el maestro',
+                    $estado['Slave_IO_Running'] ?? '?', $estado['Slave_SQL_Running'] ?? '?', $estado['Seconds_Behind_Master'] ?? '?'));
+            }
+        } catch (\PDOException $e) {
+            error_log('No se pudo leer el estado de la réplica, se usa el maestro: ' . $e->getMessage());
+            $alDia = false;
+        }
+        try {
+            Cache::redis()->set($clave, $alDia ? '1' : '0', ['ex' => 5]);
+        } catch (\Throwable) {
+        }
+        return $alDia;
     }
 
     private static function conectar(string $host): PDO
