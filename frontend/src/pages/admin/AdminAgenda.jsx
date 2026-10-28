@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Ban, Stethoscope, FileText } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ChevronLeft, ChevronRight, Ban, Stethoscope, FileText, StickyNote } from 'lucide-react'
 import Loading from '../../components/Loading'
 import PetIcon from '../../components/PetIcon'
 import { api } from '../../api'
-import { ConsultaForm, HistorialPanel } from './ClinicalRecord'
+import { AlertasClinicas, ConsultaForm, NotaForm } from './ClinicalRecord'
 import { CITA_STATUS, addDays, formatDay, ymd } from '../account/citas'
 
 const SEDES = [
@@ -35,7 +36,7 @@ export default function AdminAgenda() {
   const [error, setError] = useState('')
   const [proximos, setProximos] = useState(null)
   const [consulta, setConsulta] = useState(null) // cita cuya ficha se está llenando
-  const [historial, setHistorial] = useState(null) // mascota cuyo historial se está viendo
+  const [nota, setNota] = useState(null) // cita no clínica a la que se agrega una nota
 
   const cargar = useCallback(() => {
     api(`/api/citas/admin/agenda?fecha=${fecha}${sede ? `&sede=${sede}` : ''}`)
@@ -126,7 +127,7 @@ export default function AdminAgenda() {
                 {vigente.citas.map((c) => {
                   // En una consulta, «atendida» se marca al guardar la ficha clínica.
                   const opciones = NEXT[c.estado].filter((n) => (!['atendida', 'no_asistio'].includes(n) || fecha <= hoy) && !(n === 'atendida' && c.clinica))
-                  const puedeFicha = c.clinica && !c.tiene_historial && ['pendiente', 'confirmada', 'atendida'].includes(c.estado) && fecha <= hoy
+                  const puedeFicha = c.clinica && !c.tiene_historial && ['pendiente', 'confirmada', 'atendida', 'no_asistio'].includes(c.estado) && fecha <= hoy
                   return (
                     <tr key={c.id} className={c.estado === 'cancelada' ? 'is-muted' : ''}>
                       <td className="mono">{c.inicio.slice(11, 16)}</td>
@@ -135,6 +136,7 @@ export default function AdminAgenda() {
                       <td>
                         <span className="agenda__pet"><PetIcon especie={c.mascota.especie} size={16} /> {c.mascota.nombre}</span>
                         {(c.mascota.raza || c.mascota.notas) && <small>{[c.mascota.raza, c.mascota.notas].filter(Boolean).join(' · ')}</small>}
+                        <AlertasClinicas mascota={c.mascota} compact />
                       </td>
                       <td>
                         {c.cliente.nombre}
@@ -146,7 +148,10 @@ export default function AdminAgenda() {
                         {puedeFicha && (
                           <button className="btn btn--dark btn--xs" onClick={() => setConsulta(c)}><Stethoscope size={14} /> Registrar consulta</button>
                         )}
-                        <button className="link-btn" onClick={() => setHistorial(c.mascota)}><FileText size={14} /> Historial</button>
+                        {!c.clinica && c.estado !== 'cancelada' && (
+                          <button className="link-btn" onClick={() => setNota(c)}><StickyNote size={14} /> Nota</button>
+                        )}
+                        <Link className="link-btn" to={`/admin/pacientes/${c.mascota.id}`}><FileText size={14} /> Ficha</Link>
                       </td>
                       <td>
                         {opciones.length ? (
@@ -166,7 +171,7 @@ export default function AdminAgenda() {
       </div>
 
       {consulta && <ConsultaForm cita={consulta} onClose={() => setConsulta(null)} onSaved={() => { setConsulta(null); cargar() }} />}
-      {historial && <HistorialPanel mascota={historial} onClose={() => setHistorial(null)} />}
+      {nota && <NotaForm cita={nota} onClose={() => setNota(null)} onSaved={() => setNota(null)} />}
 
       <div className="admin-grid admin-grid--even">
         <BlockForm fecha={fecha >= hoy ? fecha : hoy} sede={sede} onSaved={() => { cargar(); cargarBloqueos() }} />

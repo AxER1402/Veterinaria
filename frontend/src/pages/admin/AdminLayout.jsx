@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, Package, Tags, ShieldCheck, Users, CalendarDays } from 'lucide-react'
+import { LayoutDashboard, Package, Tags, ShieldCheck, Users, CalendarDays, PawPrint } from 'lucide-react'
 import Loading from '../../components/Loading'
 import { useAuth } from '../../context/useAuth'
 import { api } from '../../api'
 
+// Primero el día a día de la clínica; la tienda después y la bitácora al final.
 const tabs = [
-  { to: '/admin', label: 'Resumen', icon: LayoutDashboard, end: true },
+  { to: '/admin', label: 'Hoy', icon: LayoutDashboard, end: true },
   { to: '/admin/agenda', label: 'Agenda', icon: CalendarDays },
+  { to: '/admin/pacientes', label: 'Pacientes', icon: PawPrint },
+  { to: '/admin/clientes', label: 'Clientes', icon: Users },
   { to: '/admin/pedidos', label: 'Pedidos', icon: Package },
   { to: '/admin/catalogo', label: 'Catálogo', icon: Tags },
   { to: '/admin/bitacora', label: 'Bitácora', icon: ShieldCheck },
-  { to: '/admin/clientes', label: 'Clientes', icon: Users },
 ]
 
 export default function AdminLayout() {

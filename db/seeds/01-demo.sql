@@ -206,8 +206,8 @@ INSERT INTO tmp_historial VALUES
  ('da38ced7-477a-479a-aee6-7c21d377b64f', 'e993d299-a47c-456d-993e-3d669ed4c87b', 24.80, 'Paciente sano.', 'Vacunas anuales aplicadas, incluida Bordetella.'),
  ('3468ea3d-ac33-4416-8dcd-6ba666cb8fdc', '2e1ee5f8-6dc8-4add-906b-c3506d71f997',  4.20, 'Paciente sana. Primera visita.', 'Vacunas aplicadas. Desparasitación interna.');
 
-INSERT IGNORE INTO citas_db.historial_clinico (id, cita_id, mascota_id, peso_kg, diagnostico, tratamiento, registrado_por, created_at)
-SELECT h.id, h.cita, c.mascota_id, h.peso, h.diagnostico, h.tratamiento, @admin, c.inicio + INTERVAL 45 MINUTE
+INSERT IGNORE INTO citas_db.historial_clinico (id, cita_id, mascota_id, fecha, peso_kg, diagnostico, tratamiento, registrado_por, registrado_email, created_at)
+SELECT h.id, h.cita, c.mascota_id, c.inicio, h.peso, h.diagnostico, h.tratamiento, @admin, 'admin@huellitas.gt', c.inicio + INTERVAL 45 MINUTE
 FROM tmp_historial h JOIN citas_db.citas c ON c.id = h.cita;
 
 -- ---------- Carné de vacunas ----------

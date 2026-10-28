@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import VaccineTable from '../../components/VaccineTable'
+import { Carne } from '../../components/VaccineTable'
 import { Navigate } from 'react-router-dom'
 import { PawPrint, Plus } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
@@ -9,18 +9,7 @@ import PetForm from '../../components/PetForm'
 import { useAuth } from '../../context/useAuth'
 import { api } from '../../api'
 import PetIcon from '../../components/PetIcon'
-import { ESPECIES } from './citas'
-
-function edad(fecha) {
-  if (!fecha) return null
-  const n = new Date(`${fecha}T12:00:00`)
-  const hoy = new Date()
-  let meses = (hoy.getFullYear() - n.getFullYear()) * 12 + hoy.getMonth() - n.getMonth()
-  if (hoy.getDate() < n.getDate()) meses--
-  if (meses < 12) return meses <= 1 ? 'menos de 2 meses' : `${meses} meses`
-  const anios = Math.floor(meses / 12)
-  return anios === 1 ? '1 año' : `${anios} años`
-}
+import { ESPECIES, edad } from './citas'
 
 export default function Pets() {
   const { user, checking } = useAuth()
@@ -124,6 +113,8 @@ function PetCard({ mascota: m, onEdit, onRemoved }) {
       <span className="cita__main">
         <strong>{m.nombre}</strong>
         <small>{detalle.join(' · ')}</small>
+        {m.alergias && <small className="alert-badge">Alergias: {m.alergias}</small>}
+        {m.enfermedades_cronicas && <small className="alert-badge alert-badge--soft">Crónico: {m.enfermedades_cronicas}</small>}
         {m.notas && <small className="pet__notes">{m.notas}</small>}
         {error && <small className="field-error">{error}</small>}
       </span>
@@ -144,8 +135,8 @@ function PetCard({ mascota: m, onEdit, onRemoved }) {
       </span>
       {carne && (
         <div className="pet__carne">
-          {carne === 'cargando' ? <Loading /> : <VaccineTable vacunas={carne} />}
-          <p className="summary__hint">Las vacunas las registra el veterinario en la consulta. Te avisaremos antes de cada refuerzo.</p>
+          {carne === 'cargando' ? <Loading /> : <Carne vacunas={carne} />}
+          <p className="summary__hint">Las vacunas y desparasitaciones las registra el veterinario. Te avisaremos antes de cada refuerzo.</p>
         </div>
       )}
     </li>

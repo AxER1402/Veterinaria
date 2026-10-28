@@ -3,7 +3,7 @@ import Field from './Field'
 import { api } from '../api'
 import { ESPECIES, ymd } from '../pages/account/citas'
 
-const VACIA = { nombre: '', especie: 'perro', raza: '', sexo: '', fecha_nacimiento: '', peso_kg: '', notas: '' }
+const VACIA = { nombre: '', especie: 'perro', raza: '', sexo: '', fecha_nacimiento: '', peso_kg: '', alergias: '', enfermedades_cronicas: '', notas: '' }
 
 // Alta o edición de una mascota. En la reserva va en versión corta (nombre, especie y notas):
 // lo demás se completa después en «Mis mascotas».
@@ -75,7 +75,17 @@ export default function PetForm({ mascota, compact = false, onSaved, onCancel })
             </Field>
           </>
         )}
-        <Field label="Notas (alergias, temperamento…)" error={errors.notas} full>
+        {!compact && (
+          <>
+            <Field label="Alergias (opcional)" error={errors.alergias} full>
+              <input value={values.alergias} onChange={set('alergias')} maxLength={300} placeholder="Medicamentos, alimentos, picaduras…" />
+            </Field>
+            <Field label="Enfermedades crónicas (opcional)" error={errors.enfermedades_cronicas} full>
+              <input value={values.enfermedades_cronicas} onChange={set('enfermedades_cronicas')} maxLength={300} placeholder="Diabetes, epilepsia, cardiopatía…" />
+            </Field>
+          </>
+        )}
+        <Field label={compact ? 'Notas (alergias, temperamento…)' : 'Notas (temperamento, cuidados…)'} error={errors.notas} full>
           <textarea rows="2" value={values.notas} onChange={set('notas')} maxLength={300} />
         </Field>
       </div>

@@ -60,13 +60,14 @@ final class Recordatorios
     {
         $db = Db::escritura();
         // Si la mascota ya recibió una dosis más nueva de esa vacuna, la anterior no se avisa.
+        // El contacto sale de la última cita del dueño: una vacuna de otra clínica o una consulta sin
+        // cita no tienen cita propia.
         $q = $db->prepare('SELECT v.id, v.nombre, v.proxima_dosis, m.nombre AS mascota, m.id_cliente, c.cliente_nombre, c.cliente_email
                              FROM vacunas v
                              JOIN mascotas m ON m.id = v.mascota_id AND m.activa = 1
-                             JOIN historial_clinico h ON h.id = v.historial_id
-                             JOIN citas c ON c.id = h.cita_id
+                             JOIN citas c ON c.id = (SELECT u.id FROM citas u WHERE u.id_cliente = m.id_cliente ORDER BY u.created_at DESC LIMIT 1)
                             WHERE v.aviso_at IS NULL AND v.proxima_dosis BETWEEN CURDATE() AND CURDATE() + INTERVAL ? DAY
-                              AND NOT EXISTS (SELECT 1 FROM vacunas n WHERE n.mascota_id = v.mascota_id AND n.nombre = v.nombre
+                              AND NOT EXISTS (SELECT 1 FROM vacunas n WHERE n.mascota_id = v.mascota_id AND n.tipo = v.tipo AND n.nombre = v.nombre
                                                                        AND n.fecha_aplicacion > v.fecha_aplicacion)
                             ORDER BY v.proxima_dosis LIMIT ' . self::LOTE);
         $q->execute([self::AVISO_VACUNA_DIAS]);

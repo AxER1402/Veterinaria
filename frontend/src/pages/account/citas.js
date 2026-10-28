@@ -39,3 +39,15 @@ export const formatDay = (fecha, corto = false) => (corto ? DIA_CORTO : DIA).for
 
 // «2026-10-20T09:30» (hora local de la clínica) → «martes, 20 de octubre · 09:30».
 export const formatCita = (inicio) => `${formatDay(inicio.slice(0, 10))} · ${inicio.slice(11, 16)}`
+
+// Edad a partir de la fecha de nacimiento: «8 meses», «3 años».
+export function edad(fecha) {
+  if (!fecha) return null
+  const n = new Date(`${fecha}T12:00:00`)
+  const hoy = new Date()
+  let meses = (hoy.getFullYear() - n.getFullYear()) * 12 + hoy.getMonth() - n.getMonth()
+  if (hoy.getDate() < n.getDate()) meses--
+  if (meses < 12) return meses <= 1 ? 'menos de 2 meses' : `${meses} meses`
+  const anios = Math.floor(meses / 12)
+  return anios === 1 ? '1 año' : `${anios} años`
+}

@@ -31,6 +31,8 @@ import AdminCatalogo from './pages/admin/AdminCatalogo'
 import AdminBitacora from './pages/admin/AdminBitacora'
 import AdminClientes from './pages/admin/AdminClientes'
 import AdminAgenda from './pages/admin/AdminAgenda'
+import AdminPacientes from './pages/admin/AdminPacientes'
+import AdminPaciente from './pages/admin/AdminPaciente'
 import Loading from './components/Loading'
 
 // El resumen trae Chart.js: se descarga solo al abrir el panel, no en la tienda.
@@ -82,6 +84,8 @@ export default function App() {
               <Route path="admin" element={<AdminLayout />}>
                 <Route index element={<Suspense fallback={<Loading />}><AdminResumen /></Suspense>} />
                 <Route path="agenda" element={<AdminAgenda />} />
+                <Route path="pacientes" element={<AdminPacientes />} />
+                <Route path="pacientes/:id" element={<AdminPaciente />} />
                 <Route path="pedidos" element={<AdminPedidos />} />
                 <Route path="catalogo" element={<AdminCatalogo />} />
                 <Route path="bitacora" element={<AdminBitacora />} />

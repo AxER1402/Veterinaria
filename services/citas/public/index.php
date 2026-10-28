@@ -30,7 +30,13 @@ $router->add('POST',   '/api/citas/admin/bloqueos', fn() => $citas->bloquear());
 $router->add('DELETE', '/api/citas/admin/bloqueos/{id}', fn($p) => $citas->desbloquear($p['id']));
 $router->add('PATCH',  '/api/citas/admin/{id}/estado', fn($p) => $citas->cambiarEstado($p['id']));
 $router->add('POST',   '/api/citas/admin/{id}/historial', fn($p) => $citas->registrarHistorial($p['id']));
+$router->add('POST',   '/api/citas/admin/{id}/notas', fn($p) => $citas->registrarNota($p['id']));
+$router->add('GET',    '/api/citas/admin/pacientes', fn() => $citas->pacientes());
 $router->add('GET',    '/api/citas/admin/mascotas/{id}/historial', fn($p) => $citas->historialAdmin($p['id']));
+$router->add('PATCH',  '/api/citas/admin/mascotas/{id}/alertas', fn($p) => $citas->actualizarAlertas($p['id']));
+$router->add('POST',   '/api/citas/admin/mascotas/{id}/consultas', fn($p) => $citas->registrarConsultaSinCita($p['id']));
+$router->add('POST',   '/api/citas/admin/mascotas/{id}/vacunas', fn($p) => $citas->registrarVacunaExterna($p['id']));
+$router->add('POST',   '/api/citas/admin/historial/{id}/adendas', fn($p) => $citas->agregarAdenda($p['id']));
 
 // Citas del cliente.
 $router->add('GET',    '/api/citas', fn() => $citas->misCitas());
