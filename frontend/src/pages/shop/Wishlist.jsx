@@ -10,7 +10,7 @@ export default function Wishlist() {
 
   return (
     <>
-      <PageHeader title="Favoritos" text="Los productos que guardaste para más tarde." />
+      <PageHeader compact title="Favoritos" text="Los productos que guardaste para más tarde." />
       <section className="section">
         <div className="container">
           {items.length ? (

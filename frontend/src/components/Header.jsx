@@ -54,7 +54,7 @@ export default function Header() {
               <ShieldCheck size={20} /> <span>Panel</span>
             </Link>
           )}
-          <Link to={user ? '/cuenta/pedidos' : '/cuenta'} className="header__icon" aria-label={user ? `Mi cuenta (${user.nombre})` : 'Ingresar'}>
+          <Link to={user ? '/cuenta/citas' : '/cuenta'} className="header__icon" aria-label={user ? `Mi cuenta (${user.nombre})` : 'Ingresar'}>
             <User size={22} />
             {user && <span className="header__dot" />}
           </Link>
@@ -66,7 +66,7 @@ export default function Header() {
             <ShoppingBag size={22} />
             {totals.count > 0 && <span className="header__count">{totals.count}</span>}
           </button>
-          <Link to="/reservar" className="btn btn--primary btn--sm">
+          <Link to="/reservar" className="btn btn--primary btn--sm header__reservar">
             Reservar
           </Link>
           <button

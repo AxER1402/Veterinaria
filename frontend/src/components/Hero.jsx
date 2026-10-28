@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { MapPin, ArrowRight } from 'lucide-react'
-import { PawIcon, Stars } from './Brand'
+import { PawIcon } from './Brand'
 import { images } from '../data/content'
 
 export default function Hero() {
@@ -27,12 +27,9 @@ export default function Hero() {
               Reservar cita <ArrowRight size={18} />
             </Link>
           </div>
-          <div className="hero__reviews">
-            <Stars />
-            <span>
-              <strong>4,9</strong> en más de 1.200 reseñas
-            </span>
-          </div>
+          <p className="hero__reviews">
+            <span>Lunes a sábado · 8:00 a 20:00 · 3 sedes en la Ciudad de Guatemala</span>
+          </p>
         </div>
 
         <div className="hero__media">
@@ -43,8 +40,8 @@ export default function Hero() {
               <PawIcon size={22} />
             </span>
             <div>
-              <strong>+8.500</strong>
-              <small>mascotas felices</small>
+              <strong>6 servicios</strong>
+              <small>consulta, peluquería, guardería y más</small>
             </div>
           </div>
         </div>

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Quote } from 'lucide-react'
 import SectionTitle from './SectionTitle'
-import { Stars } from './Brand'
 import { testimonials } from '../data/content'
 
 export default function Testimonials() {
@@ -21,22 +20,7 @@ export default function Testimonials() {
       <div className="container testimonials__inner">
         <div className="testimonials__intro">
           <SectionTitle eyebrow="Testimonios" title="Nuestros clientes dicen:" />
-          <div className="ratings">
-            <div className="rating-card">
-              <strong>4,9</strong>
-              <div>
-                <Stars />
-                <small>Reseñas en Yelp</small>
-              </div>
-            </div>
-            <div className="rating-card">
-              <strong>4,8</strong>
-              <div>
-                <Stars />
-                <small>Reseñas en Google</small>
-              </div>
-            </div>
-          </div>
+
         </div>
 
         <div
@@ -52,8 +36,8 @@ export default function Testimonials() {
                 <figcaption>
                   <img src={t.image} alt={t.pet} loading="lazy" />
                   <div>
-                    <strong>{t.pet}</strong>
-                    <span>Mascota de {t.owner}</span>
+                    <strong>{t.owner}</strong>
+                    <span>con {t.pet}</span>
                   </div>
                 </figcaption>
               </figure>

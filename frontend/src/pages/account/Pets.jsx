@@ -33,7 +33,7 @@ export default function Pets() {
 
   return (
     <>
-      <PageHeader title="Mis mascotas" text="Sus datos nos ayudan a atenderlas mejor. Solo tú y el equipo de Huellitas los ven." />
+      <PageHeader compact title="Mis mascotas" text="Sus datos nos ayudan a atenderlas mejor. Solo tú y el equipo de Huellitas los ven." />
       <section className="section">
         <div className="container">
           <AccountBar />

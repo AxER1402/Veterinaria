@@ -15,7 +15,7 @@ export default function Security() {
 
   return (
     <>
-      <PageHeader title="Seguridad de la cuenta" text="Verificación en dos pasos con una app de autenticación." />
+      <PageHeader compact title="Seguridad de la cuenta" text="Verificación en dos pasos con una app de autenticación." />
       <section className="section">
         <div className="container account">
           {user.mfa ? <Desactivar /> : <Activar />}

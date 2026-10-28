@@ -24,7 +24,7 @@ export default function Orders() {
 
   return (
     <>
-      <PageHeader title="Mis pedidos" text={`Hola, ${user.nombre.split(' ')[0]}. Aquí ves el estado de tus compras.`} />
+      <PageHeader compact title="Mis pedidos" text={`Hola, ${user.nombre.split(' ')[0]}. Aquí ves el estado de tus compras.`} />
       <section className="section">
         <div className="container">
           <AccountBar />

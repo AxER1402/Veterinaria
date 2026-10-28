@@ -41,7 +41,7 @@ export default function OrderDetail() {
   }
   return (
     <>
-      <PageHeader title={`Pedido #${shortId(order.id)}`} text={formatDate(order.fecha)} />
+      <PageHeader compact title={`Pedido #${shortId(order.id)}`} text={formatDate(order.fecha)} />
       <section className="section">
         <div className="container cart-layout">
           <div>

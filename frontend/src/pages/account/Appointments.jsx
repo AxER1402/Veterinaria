@@ -46,7 +46,7 @@ export default function Appointments() {
 
   return (
     <>
-      <PageHeader title="Mis citas" text="Tus reservas en la clínica, la guardería y con los paseadores." />
+      <PageHeader compact title="Mis citas" text="Tus reservas en la clínica, la guardería y con los paseadores." />
       <section className="section">
         <div className="container">
           <AccountBar />

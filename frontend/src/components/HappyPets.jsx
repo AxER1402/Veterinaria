@@ -15,8 +15,8 @@ export default function HappyPets() {
             <img src={images.happyPets} alt="Perro y gato descansando juntos" loading="lazy" />
           </div>
           <div className="sticker">
-            <strong>12+</strong>
-            <span>años cuidando mascotas</span>
+            <strong>3</strong>
+            <span>sedes en la ciudad</span>
           </div>
         </Reveal>
         <Reveal className="split__content" delay={150}>

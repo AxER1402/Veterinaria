@@ -76,25 +76,9 @@ export default function Footer() {
           </div>
 
           <div className="footer__newsletter">
-            <h4>Newsletter</h4>
-            <p>Suscríbete y obtén <strong>20% de descuento</strong> en tu primera visita.</p>
-            {subscribed ? (
-              <p className="footer__thanks">¡Gracias por suscribirte! 🐾</p>
-            ) : (
-              <form onSubmit={subscribe} className="newsletter">
-                <input
-                  type="email"
-                  required
-                  placeholder="Tu correo"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  aria-label="Correo electrónico"
-                />
-                <button type="submit" aria-label="Suscribirme">
-                  <Send size={18} />
-                </button>
-              </form>
-            )}
+            <h4>Reserva en línea</h4>
+            <p>Elige el servicio, el día y la hora. Te confirmamos por correo.</p>
+            <Link to="/reservar" className="btn btn--primary btn--sm">Reservar cita</Link>
           </div>
         </div>
 

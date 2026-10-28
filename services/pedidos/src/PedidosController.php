@@ -706,12 +706,13 @@ final class PedidosController
         if (!preg_match('/^[A-Z0-9]{3,30}$/', $codigo)) {
             return null;
         }
-        $consulta = Db::lectura()->prepare('SELECT codigo, descripcion, porcentaje, marca FROM cupones
+        $consulta = Db::lectura()->prepare('SELECT codigo, descripcion, porcentaje, marca, vence FROM cupones
                                              WHERE codigo = ? AND activo = 1 AND (vence IS NULL OR vence > NOW())');
         $consulta->execute([$codigo]);
         $cupon = $consulta->fetch();
         return $cupon ? ['codigo' => $cupon['codigo'], 'descripcion' => $cupon['descripcion'],
-                         'porcentaje' => (int) $cupon['porcentaje'], 'marca' => $cupon['marca']] : null;
+                         'porcentaje' => (int) $cupon['porcentaje'], 'marca' => $cupon['marca'],
+                         'vence' => $cupon['vence'] !== null ? str_replace(' ', 'T', $cupon['vence']) : null] : null;
     }
 
     private function catalogo(string $ruta): string

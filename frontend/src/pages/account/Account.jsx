@@ -9,14 +9,14 @@ export default function Account() {
   const { user, checking } = useAuth()
   const location = useLocation()
   const [tab, setTab] = useState('ingresar')
-  const from = location.state?.from || '/cuenta/pedidos'
+  const from = location.state?.from || '/cuenta/citas'
 
   if (checking) return <Loading />
   if (user) return <Navigate to={from} replace />
 
   return (
     <>
-      <PageHeader title="Mi cuenta" text="Ingresa para comprar y seguir tus pedidos." />
+      <PageHeader compact title="Mi cuenta" text="Ingresa para reservar citas, ver el carné de tus mascotas y seguir tus pedidos." />
       <section className="section">
         <div className="container account">
           <div className="account__tabs" role="tablist">

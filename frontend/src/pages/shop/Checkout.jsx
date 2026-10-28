@@ -117,7 +117,7 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
 
   return (
     <>
-      <PageHeader title="Finalizar compra" />
+      <PageHeader compact title="Finalizar compra" />
       <section className="section">
         <div className="container cart-layout">
           <form id="checkout-form" className="checkout-form" onSubmit={submit} noValidate>
@@ -214,7 +214,7 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
 function LoginRequired({ from }) {
   return (
     <>
-      <PageHeader title="Finalizar compra" />
+      <PageHeader compact title="Finalizar compra" />
       <section className="section">
         <div className="container empty-state">
           <LogIn size={56} />

@@ -13,7 +13,7 @@ export default function Cart() {
 
   return (
     <>
-      <PageHeader title="Carrito" />
+      <PageHeader compact title="Carrito" />
       <section className="section">
         <div className="container">
           {catalogLoading ? (
