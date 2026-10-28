@@ -68,9 +68,14 @@ final class CitasController
     public function servicios(): array
     {
         $filas = Db::lectura()->query('SELECT slug, nombre, sede, modalidad, precio_desde FROM servicios WHERE activo = 1 ORDER BY sede, nombre')->fetchAll();
+        $equipo = [];
+        foreach (Db::lectura()->query('SELECT id, servicio, nombre FROM profesionales WHERE activo = 1 ORDER BY nombre')->fetchAll() as $p) {
+            $equipo[$p['servicio']][] = ['id' => (int) $p['id'], 'nombre' => $p['nombre']];
+        }
         return [200, ['servicios' => array_map(fn($s) => [
             'slug' => $s['slug'], 'nombre' => $s['nombre'], 'precio_desde' => (float) $s['precio_desde'], 'modalidad' => $s['modalidad'],
             'sede' => ['codigo' => $s['sede'], 'nombre' => self::SEDES[$s['sede']]],
+            'profesionales' => $s['modalidad'] === 'turno' ? ($equipo[$s['slug']] ?? []) : [],
         ], $filas), 'telefono' => self::TELEFONO_CLINICA]];
     }
 
@@ -82,6 +87,7 @@ final class CitasController
     {
         $servicio = $this->servicio($_GET['servicio'] ?? null);
         $fecha = self::fecha($_GET['fecha'] ?? null);
+        $profesional = self::profesionalElegido($servicio, $_GET['profesional'] ?? null);
         $db = Db::escritura();
         $dia = $fecha->format('Y-m-d');
         $json = [
@@ -89,7 +95,7 @@ final class CitasController
             'modalidad' => $servicio['modalidad'],
             'sede'      => ['codigo' => $servicio['sede'], 'nombre' => self::SEDES[$servicio['sede']]],
             'fecha'     => $dia,
-            'turnos'    => $this->turnosDia($servicio, $dia, $this->ocupacion($db, $servicio, $dia, $dia), false, false),
+            'turnos'    => $this->turnosDia($servicio, $dia, $this->ocupacion($db, $servicio, $dia, $dia), false, false, $profesional),
         ];
         if ($servicio['modalidad'] === 'estadia' && isset($_GET['salida'])) {
             $salida = self::salida($_GET['salida'], $fecha);
@@ -103,13 +109,14 @@ final class CitasController
     public function calendario(): array
     {
         $servicio = $this->servicio($_GET['servicio'] ?? null);
+        $profesional = self::profesionalElegido($servicio, $_GET['profesional'] ?? null);
         $hoy = new \DateTimeImmutable('today');
         $hasta = $hoy->modify('+' . self::MAX_DIAS . ' days');
         $ocupacion = $this->ocupacion(Db::escritura(), $servicio, $hoy->format('Y-m-d'), $hasta->format('Y-m-d'));
         $dias = [];
         for ($d = $hoy; $d <= $hasta; $d = $d->modify('+1 day')) {
             $dia = $d->format('Y-m-d');
-            $turnos = $this->turnosDia($servicio, $dia, $ocupacion, false, false);
+            $turnos = $this->turnosDia($servicio, $dia, $ocupacion, false, false, $profesional);
             $libres = array_sum(array_column($turnos, 'libres'));
             $dias[] = ['fecha' => $dia, 'libres' => $libres,
                        'estado' => (int) $d->format('N') === 7 ? 'cerrado' : ($libres > 0 ? 'libre' : 'lleno')];
@@ -252,7 +259,8 @@ final class CitasController
             throw new ApiError(422, 'Esa mascota ya no está activa', ['campo' => 'mascota_id']);
         }
         $servicio = $this->servicio($datos['servicio'] ?? null);
-        [$inicio, $fin] = $this->horario($servicio, $datos, $personal);
+        $profesional = self::profesionalElegido($servicio, $datos['profesional_id'] ?? null);
+        [$inicio, $fin] = $this->horario($servicio, $datos, $personal, $profesional);
         $notas = isset($datos['notas']) && $datos['notas'] !== '' ? Validar::texto($datos, 'notas', 1, 300) : null;
         if ($servicio['slug'] === self::SERVICIO_CLINICO && $notas === null) {
             throw new ApiError(422, 'Cuéntanos el motivo de la consulta', ['campo' => 'notas']);
@@ -271,7 +279,7 @@ final class CitasController
         try {
             $this->asignarCupo($db, $servicio, $inicio, $fin, null, fn(int $cupo) => $insertar->execute([
                 $id, $clienteId, $mascota['id'], $servicio['slug'], $servicio['sede'], $inicio, $fin, $cupo,
-                $contacto['nombre'], $contacto['email'], $contacto['telefono'], $notas]), $mascota['nombre']);
+                $contacto['nombre'], $contacto['email'], $contacto['telefono'], $notas]), $mascota['nombre'], $profesional);
             // Si el personal bloqueó el turno mientras tanto, bloquear() tenía el rango y este INSERT esperó a
             // que terminara: la lectura con bloqueo ya ve el bloqueo confirmado y la reserva se deshace.
             if ($this->bloqueado($db, $servicio['sede'], substr($inicio, 0, 10), substr($inicio, 11, 5))) {
@@ -287,26 +295,26 @@ final class CitasController
 
         Auditoria::registrar('CITA_CREADA', 'EXITO', Auditoria::actor($claims) + [
             'dato_nuevo' => ['cita_id' => $id, 'servicio' => $servicio['slug'], 'sede' => $servicio['sede'], 'inicio' => $inicio, 'fin' => $fin,
-                             'mascota_id' => $mascota['id'], 'origen' => $personal ? 'personal' : 'cliente'],
+                             'mascota_id' => $mascota['id'], 'origen' => $personal ? 'personal' : 'cliente', 'profesional_id' => $profesional],
         ]);
         $this->notificar('reservada', $this->citaPorId($id));
         return ['cita' => self::citaJson($this->citaPorId($id), $personal), 'aviso' => $aviso];
     }
 
     /** @return array{0: string, 1: ?string} inicio y fin («Y-m-d H:i:s») según la modalidad del servicio */
-    private function horario(array $servicio, array $datos, bool $personal): array
+    private function horario(array $servicio, array $datos, bool $personal, ?int $profesional = null): array
     {
         $fecha = self::fecha($datos['fecha'] ?? null);
         $dia = $fecha->format('Y-m-d');
         $hora = $servicio['modalidad'] === 'turno' ? (is_string($datos['hora'] ?? null) ? $datos['hora'] : '') : '08:00';
         $db = Db::escritura();
-        $turno = array_values(array_filter($this->turnosDia($servicio, $dia, $this->ocupacion($db, $servicio, $dia, $dia), true, $personal),
+        $turno = array_values(array_filter($this->turnosDia($servicio, $dia, $this->ocupacion($db, $servicio, $dia, $dia), true, $personal, $profesional),
             fn($t) => $t['hora'] === $hora))[0] ?? null;
         if ($turno === null) {
             throw new ApiError(422, $servicio['modalidad'] === 'turno' ? 'Ese turno no está disponible' : 'Ese día no está disponible', ['campo' => 'hora']);
         }
         if ($turno['libres'] === 0) {
-            throw new ApiError(409, 'Ese turno se acaba de llenar. Elige otro');
+            throw new ApiError(409, $profesional !== null ? 'Ese profesional ya tiene ese turno ocupado. Elige otro' : 'Ese turno se acaba de llenar. Elige otro');
         }
         $fin = null;
         if ($servicio['modalidad'] === 'estadia') {
@@ -364,8 +372,24 @@ final class CitasController
      * Prueba los cupos del servicio con $guardar(cupo) hasta que el índice único acepte uno. En hospedaje
      * se toma la fila del servicio con FOR UPDATE y se elige un cupo libre en todas las noches.
      */
-    private function asignarCupo(\PDO $db, array $servicio, string $inicio, ?string $fin, ?string $excluir, callable $guardar, string $mascota): void
+    private function asignarCupo(\PDO $db, array $servicio, string $inicio, ?string $fin, ?string $excluir, callable $guardar, string $mascota,
+                                 ?int $profesional = null, ?int $preferido = null): void
     {
+        if ($servicio['profesionales']) {
+            // Quienes atienden ese turno (el elegido, o todos con el preferido primero); el índice único decide.
+            $dia = substr($inicio, 0, 10);
+            $hora = substr($inicio, 11, 5);
+            $candidatos = $profesional !== null ? [$profesional] : self::profesionalesDelTurno($servicio, $dia, $hora, []);
+            if ($preferido !== null && in_array($preferido, $candidatos, true)) {
+                $candidatos = [$preferido, ...array_values(array_diff($candidatos, [$preferido]))];
+            }
+            foreach ($candidatos as $id) {
+                if ($this->guardarCupo($guardar, $id, $mascota)) {
+                    return;
+                }
+            }
+            throw new ApiError(409, $profesional !== null ? 'Ese profesional ya tiene ese turno ocupado. Elige otro' : 'Ese turno se acaba de llenar. Elige otro');
+        }
         if ($servicio['modalidad'] === 'estadia') {
             $db->prepare('SELECT slug FROM servicios WHERE slug = ? FOR UPDATE')->execute([$servicio['slug']]);
             $q = $db->prepare('SELECT cupo FROM citas WHERE servicio = ? AND ocupa = 1 AND inicio < ? AND fin > ? AND id <> ?');
@@ -445,8 +469,9 @@ final class CitasController
         }
         $servicio = $this->servicio($cita['servicio']);
         $mascota = $this->mascotaPorId($cita['mascota_id']);
-        [$inicio, $fin] = $this->horario($servicio, $datos + ['servicio' => $servicio['slug']], $personal);
-        if ($inicio === $cita['inicio'] && $fin === $cita['fin']) {
+        $profesional = self::profesionalElegido($servicio, $datos['profesional_id'] ?? null);
+        [$inicio, $fin] = $this->horario($servicio, $datos + ['servicio' => $servicio['slug']], $personal, $profesional);
+        if ($inicio === $cita['inicio'] && $fin === $cita['fin'] && ($profesional === null || $profesional === (int) $cita['cupo'])) {
             throw new ApiError(422, 'Elige un día u hora distintos', ['campo' => 'hora']);
         }
         $aviso = $this->choques(Db::escritura(), $mascota, $servicio, $inicio, $id);
@@ -462,7 +487,8 @@ final class CitasController
             if ($q->fetchColumn() !== $cita['estado']) {
                 throw new ApiError(409, 'La cita cambió mientras tanto, recarga');
             }
-            $this->asignarCupo($db, $servicio, $inicio, $fin, $id, fn(int $cupo) => $actualizar->execute([$inicio, $fin, $cupo, $estado, $id]), $mascota['nombre']);
+            $this->asignarCupo($db, $servicio, $inicio, $fin, $id, fn(int $cupo) => $actualizar->execute([$inicio, $fin, $cupo, $estado, $id]), $mascota['nombre'],
+                $profesional, $servicio['profesionales'] ? (int) $cita['cupo'] : null);
             if ($this->bloqueado($db, $servicio['sede'], substr($inicio, 0, 10), substr($inicio, 11, 5))) {
                 throw new ApiError(422, 'Ese turno no está disponible', ['campo' => 'hora']);
             }
@@ -687,11 +713,126 @@ final class CitasController
         if ($reversion && $comentario === null) {
             throw new ApiError(422, 'Explica por qué se corrige el estado', ['campo' => 'comentario']);
         }
+        if ($cita['estado'] === 'cancelada' && $cita['modalidad'] === 'estadia') {
+            $this->recolocarEstadia($cita);
+        }
         $this->moverEstado($cita, $nuevo, $claims, $comentario, 'CITA_ESTADO_CAMBIADO');
         if (in_array($nuevo, ['confirmada', 'cancelada'], true) && $cita['inicio'] > date('Y-m-d H:i:s')) {
             $this->notificar($nuevo, $this->citaPorId($id), $comentario);
         }
         return [200, ['cita' => self::citaJson($this->citaPorId($id), true)]];
+    }
+
+    /**
+     * Antes de reactivar un hospedaje cancelado: si su lugar ya lo ocupa otra estadía en alguna de sus
+     * noches, se le busca otro; si no hay ninguno libre, no se reactiva.
+     */
+    private function recolocarEstadia(array $cita): void
+    {
+        $servicio = $this->servicio($cita['servicio']);
+        $q = Db::escritura()->prepare('SELECT cupo FROM citas WHERE servicio = ? AND ocupa = 1 AND inicio < ? AND fin > ? AND id <> ?');
+        $q->execute([$servicio['slug'], $cita['fin'], $cita['inicio'], $cita['id']]);
+        $usados = array_map('intval', $q->fetchAll(\PDO::FETCH_COLUMN));
+        if (!in_array((int) $cita['cupo'], $usados, true)) {
+            return;
+        }
+        for ($cupo = 1; $cupo <= (int) $servicio['cupos']; $cupo++) {
+            if (!in_array($cupo, $usados, true)) {
+                Db::escritura()->prepare("UPDATE citas SET cupo = ? WHERE id = ? AND estado = 'cancelada'")->execute([$cupo, $cita['id']]);
+                return;
+            }
+        }
+        throw new ApiError(409, 'Ya no quedan lugares para esas noches: reprograma la estadía en vez de reactivarla');
+    }
+
+    // ---------- Equipo (profesionales y horarios) ----------
+
+    /** Equipo de todos los servicios por turnos, con sus citas próximas. */
+    public function equipo(): array
+    {
+        Guard::usuario(Guard::CLINICA);
+        $q = Db::escritura()->query("SELECT p.*, s.nombre AS servicio_nombre,
+                                            (SELECT COUNT(*) FROM citas c WHERE c.servicio = p.servicio AND c.cupo = p.id
+                                               AND c.estado IN " . self::ACTIVAS . " AND c.inicio > NOW()) AS proximas
+                                       FROM profesionales p JOIN servicios s ON s.slug = p.servicio ORDER BY p.servicio, p.activo DESC, p.nombre");
+        $servicios = Db::escritura()->query("SELECT slug, nombre FROM servicios WHERE activo = 1 AND modalidad = 'turno' ORDER BY nombre")->fetchAll();
+        return [200, ['profesionales' => array_map(fn($p) => self::profesionalJson($p) + ['proximas' => (int) $p['proximas']], $q->fetchAll()),
+                      'servicios' => $servicios]];
+    }
+
+    /**
+     * Alta o cambio de un profesional (solo admin). Si al quitarle días u horas (o al desactivarlo) le
+     * quedarían citas próximas fuera de su horario, se rechaza con cuántas: primero se reprograman.
+     */
+    public function guardarProfesional(?int $id = null): array
+    {
+        $claims = Guard::usuario(['admin']);
+        $d = Http::body();
+        Validar::sinAtaques($d);
+        $db = Db::escritura();
+        $actual = null;
+        if ($id !== null) {
+            $q = $db->prepare('SELECT * FROM profesionales WHERE id = ?');
+            $q->execute([$id]);
+            $actual = $q->fetch() ?: throw new ApiError(404, 'Profesional no encontrado');
+        }
+        $servicio = $actual['servicio'] ?? (is_string($d['servicio'] ?? null) ? $d['servicio'] : '');
+        $q = $db->prepare("SELECT slug FROM servicios WHERE slug = ? AND modalidad = 'turno'");
+        $q->execute([$servicio]);
+        if (!$q->fetchColumn()) {
+            throw new ApiError(422, 'Elige un servicio por turnos', ['campo' => 'servicio']);
+        }
+        $dias = $d['dias'] ?? (isset($actual) ? array_map('intval', explode(',', $actual['dias'])) : [1, 2, 3, 4, 5, 6]);
+        if (!is_array($dias) || !$dias || array_diff($dias, [1, 2, 3, 4, 5, 6])) {
+            throw new ApiError(422, 'Elige al menos un día de lunes a sábado', ['campo' => 'dias']);
+        }
+        sort($dias);
+        $inicio = self::horaTurno($d['hora_inicio'] ?? substr($actual['hora_inicio'] ?? '08:00', 0, 5), 'hora_inicio');
+        $fin = self::horaTurno($d['hora_fin'] ?? substr($actual['hora_fin'] ?? '20:00', 0, 5), 'hora_fin');
+        if ($fin <= $inicio) {
+            throw new ApiError(422, 'La hora de salida debe ser después de la de entrada', ['campo' => 'hora_fin']);
+        }
+        $activo = $d['activo'] ?? (bool) ($actual['activo'] ?? true);
+        if (!is_bool($activo)) {
+            throw new ApiError(422, 'Indica si está activo', ['campo' => 'activo']);
+        }
+        $nuevo = [
+            'servicio' => $servicio, 'nombre' => isset($d['nombre']) ? Validar::texto($d, 'nombre', 3, 80) : ($actual['nombre'] ?? Validar::texto($d, 'nombre', 3, 80)),
+            'usuario_id' => array_key_exists('usuario_id', $d) ? (is_int($d['usuario_id']) && $d['usuario_id'] > 0 ? $d['usuario_id'] : null) : ($actual['usuario_id'] ?? null),
+            'dias' => implode(',', $dias), 'hora_inicio' => "$inicio:00", 'hora_fin' => "$fin:00", 'activo' => (int) $activo,
+        ];
+
+        if ($actual) {
+            // Citas próximas que quedarían fuera del horario nuevo (o todas, si se desactiva).
+            $q = $db->prepare('SELECT inicio FROM citas WHERE servicio = ? AND cupo = ? AND estado IN ' . self::ACTIVAS . ' AND inicio > NOW()');
+            $q->execute([$servicio, $id]);
+            $fuera = array_filter($q->fetchAll(\PDO::FETCH_COLUMN), fn($i) => !$activo || !in_array((int) date('N', strtotime($i)), $dias, true)
+                || substr($i, 11, 8) < "$inicio:00" || substr($i, 11, 8) >= "$fin:00");
+            if ($fuera) {
+                $n = count($fuera);
+                throw new ApiError(409, "Tiene $n " . ($n === 1 ? 'cita próxima' : 'citas próximas') . ' fuera de ese horario. Reprográmalas primero en la agenda', ['citas' => $n]);
+            }
+            $db->prepare('UPDATE profesionales SET nombre = ?, usuario_id = ?, dias = ?, hora_inicio = ?, hora_fin = ?, activo = ? WHERE id = ?')
+                ->execute([$nuevo['nombre'], $nuevo['usuario_id'], $nuevo['dias'], $nuevo['hora_inicio'], $nuevo['hora_fin'], $nuevo['activo'], $id]);
+        } else {
+            $db->prepare('INSERT INTO profesionales (servicio, nombre, usuario_id, dias, hora_inicio, hora_fin, activo) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                ->execute([$servicio, $nuevo['nombre'], $nuevo['usuario_id'], $nuevo['dias'], $nuevo['hora_inicio'], $nuevo['hora_fin'], $nuevo['activo']]);
+            $id = (int) $db->lastInsertId();
+        }
+        Auditoria::registrar('PROFESIONAL_ACTUALIZADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_anterior' => $actual ? array_intersect_key($actual, $nuevo) + ['profesional_id' => $id] : null,
+            'dato_nuevo'    => $nuevo + ['profesional_id' => $id],
+        ]);
+        return [$actual ? 200 : 201, $this->equipo()[1]];
+    }
+
+    private static function profesionalJson(array $p): array
+    {
+        return [
+            'id' => (int) $p['id'], 'servicio' => ['slug' => $p['servicio'], 'nombre' => $p['servicio_nombre'] ?? $p['servicio']], 'nombre' => $p['nombre'],
+            'usuario_id' => $p['usuario_id'] !== null ? (int) $p['usuario_id'] : null, 'dias' => array_map('intval', explode(',', $p['dias'])),
+            'hora_inicio' => substr($p['hora_inicio'], 0, 5), 'hora_fin' => substr($p['hora_fin'], 0, 5), 'activo' => (bool) $p['activo'],
+        ];
     }
 
     // ---------- Clientes y resumen clínico ----------
@@ -1265,9 +1406,10 @@ final class CitasController
     // ---------- Apoyo ----------
 
     private const SQL_CITA = 'SELECT c.*, m.nombre AS mascota_nombre, m.especie, m.raza, m.notas AS mascota_notas, m.alergias, m.enfermedades_cronicas,
-                                     s.nombre AS servicio_nombre, s.modalidad,
+                                     s.nombre AS servicio_nombre, s.modalidad, pr.nombre AS profesional_nombre,
                                      h.id AS historial_id
                                 FROM citas c JOIN mascotas m ON m.id = c.mascota_id JOIN servicios s ON s.slug = c.servicio
+                                LEFT JOIN profesionales pr ON pr.servicio = c.servicio AND pr.id = c.cupo
                                 LEFT JOIN historial_clinico h ON h.cita_id = c.id';
 
     /** Cambio de estado con bloqueo de fila: dos personas no pisan el mismo cambio. */
@@ -1321,10 +1463,13 @@ final class CitasController
                 }
             }
         } else {
-            $q = $db->prepare('SELECT DATE_FORMAT(inicio, "%Y-%m-%d %H:%i") AS turno, COUNT(*) AS n FROM citas
-                               WHERE servicio = ? AND inicio >= ? AND inicio < ? + INTERVAL 1 DAY AND ocupa = 1 GROUP BY inicio');
+            $q = $db->prepare('SELECT DATE_FORMAT(inicio, "%Y-%m-%d %H:%i") AS turno, cupo FROM citas
+                               WHERE servicio = ? AND inicio >= ? AND inicio < ? + INTERVAL 1 DAY AND ocupa = 1');
             $q->execute([$servicio['slug'], $desde, $hasta]);
-            $citas = array_map('intval', array_column($q->fetchAll(), 'n', 'turno'));
+            foreach ($q->fetchAll() as $f) {
+                $citas[$f['turno']] = ($citas[$f['turno']] ?? 0) + 1;
+                $ocupados[$f['turno']][] = (int) $f['cupo'];
+            }
         }
         $q = $db->prepare('SELECT fecha, hora_inicio, hora_fin FROM turnos_bloqueados WHERE sede = ? AND fecha BETWEEN ? AND ? AND activo = 1');
         $q->execute([$servicio['sede'], $desde, $hasta]);
@@ -1332,7 +1477,34 @@ final class CitasController
         foreach ($q->fetchAll() as $b) {
             $bloqueos[$b['fecha']][] = $b;
         }
-        return ['citas' => $citas, 'bloqueos' => $bloqueos];
+        return ['citas' => $citas, 'ocupados' => $ocupados ?? [], 'bloqueos' => $bloqueos];
+    }
+
+    /** Ids de los profesionales del servicio que trabajan ese día y hora, sin los de $ocupados. */
+    private static function profesionalesDelTurno(array $servicio, string $dia, string $hora, array $ocupados): array
+    {
+        $n = date('N', strtotime($dia));
+        $ids = [];
+        foreach ($servicio['profesionales'] as $p) {
+            if (in_array($n, explode(',', $p['dias']), true) && "$hora:00" >= $p['hora_inicio'] && "$hora:00" < $p['hora_fin']
+                && !in_array((int) $p['id'], $ocupados, true)) {
+                $ids[] = (int) $p['id'];
+            }
+        }
+        return $ids;
+    }
+
+    /** Profesional pedido (id) si pertenece al servicio; null = cualquiera. */
+    private static function profesionalElegido(array $servicio, mixed $valor): ?int
+    {
+        if ($valor === null || $valor === '' || !$servicio['profesionales']) {
+            return null;
+        }
+        $id = is_int($valor) || (is_string($valor) && ctype_digit($valor)) ? (int) $valor : 0;
+        if (!in_array($id, array_map(fn($p) => (int) $p['id'], $servicio['profesionales']), true)) {
+            throw new ApiError(422, 'Ese profesional no atiende este servicio', ['campo' => 'profesional_id']);
+        }
+        return $id;
     }
 
     /**
@@ -1341,7 +1513,7 @@ final class CitasController
      * en curso (la persona ya está en la clínica), el cliente necesita 1 h de anticipación.
      * @return list<array{hora: string, libres: int}>
      */
-    private function turnosDia(array $servicio, string $dia, array $ocupacion, bool $llenos, bool $personal): array
+    private function turnosDia(array $servicio, string $dia, array $ocupacion, bool $llenos, bool $personal, ?int $profesional = null): array
     {
         if ((int) date('N', strtotime($dia)) === 7) {
             return []; // domingo cerrado
@@ -1367,7 +1539,20 @@ final class CitasController
                     continue 2;
                 }
             }
-            $libres = (int) $servicio['cupos'] - ($ocupacion['citas']["$dia $hora"] ?? 0);
+            if ($servicio['profesionales']) {
+                $trabajan = self::profesionalesDelTurno($servicio, $dia, $hora, []);
+                if ($profesional !== null) {
+                    $trabajan = array_values(array_intersect($trabajan, [$profesional]));
+                }
+                if (!$trabajan) {
+                    continue; // nadie atiende a esa hora: no es un turno
+                }
+                $tomados = $ocupacion['ocupados']["$dia $hora"] ?? [];
+                $ajenos = count(array_diff($tomados, array_map(fn($p) => (int) $p['id'], $servicio['profesionales'])));
+                $libres = max(0, count(array_diff($trabajan, $tomados)) - $ajenos);
+            } else {
+                $libres = (int) $servicio['cupos'] - ($ocupacion['citas']["$dia $hora"] ?? 0);
+            }
             if ($libres > 0 || $llenos) {
                 $turnos[] = ['hora' => $hora, 'libres' => max(0, $libres)];
             }
@@ -1468,6 +1653,10 @@ final class CitasController
             $q = Db::escritura()->prepare('SELECT slug, nombre, sede, modalidad, cupos FROM servicios WHERE slug = ? AND activo = 1');
             $q->execute([$slug]);
             if ($s = $q->fetch()) {
+                // Solo los servicios por turnos tienen equipo; sin profesionales activos, cupos numéricos.
+                $q = Db::escritura()->prepare('SELECT id, nombre, dias, hora_inicio, hora_fin FROM profesionales WHERE servicio = ? AND activo = 1 ORDER BY id');
+                $q->execute([$slug]);
+                $s['profesionales'] = $s['modalidad'] === 'turno' ? $q->fetchAll() : [];
                 return $s;
             }
         }
@@ -1613,6 +1802,7 @@ final class CitasController
             'fin'      => $c['fin'] !== null ? str_replace(' ', 'T', substr($c['fin'], 0, 16)) : null,
             'servicio' => ['slug' => $c['servicio'], 'nombre' => $c['servicio_nombre'], 'modalidad' => $c['modalidad']],
             'sede'     => ['codigo' => $c['sede'], 'nombre' => self::SEDES[$c['sede']]],
+            'profesional' => $c['profesional_nombre'],
             'mascota'  => ['id' => $c['mascota_id'], 'nombre' => $c['mascota_nombre'], 'especie' => $c['especie']],
             'notas'    => $c['notas'],
             'codigo_verificacion' => $c['codigo_verificacion'],

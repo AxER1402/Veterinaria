@@ -50,6 +50,7 @@ final class AuditController
         'CITA_CANCELADA'          => ['citas-service'],
         'CITA_ESTADO_CAMBIADO'    => ['citas-service'],
         'CITA_REPROGRAMADA'       => ['citas-service'],
+        'PROFESIONAL_ACTUALIZADO' => ['citas-service'],
         'TURNO_BLOQUEADO'         => ['citas-service'],
         'TURNO_DESBLOQUEADO'      => ['citas-service'],
         'HISTORIAL_REGISTRADO'    => ['citas-service'],
