@@ -37,6 +37,8 @@ import AdminPaciente from './pages/admin/AdminPaciente'
 import AdminCliente from './pages/admin/AdminCliente'
 import AdminPedido from './pages/admin/AdminPedido'
 import Loading from './components/Loading'
+import CambiarPassword from './components/CambiarPassword'
+import { useAuth } from './context/useAuth'
 
 // El resumen trae Chart.js: se descarga solo al abrir el panel, no en la tienda.
 const AdminResumen = lazy(() => import('./pages/admin/AdminResumen'))
@@ -46,8 +48,11 @@ const NO_CTA = ['/carrito', '/checkout', '/cuenta', '/admin']
 
 function Layout() {
   const { pathname } = useLocation()
+  const { user } = useAuth()
   return (
     <>
+      {/* Cuenta creada por el personal: hasta cambiar la contraseña temporal no se usa nada más. */}
+      {user?.cambiar_password && <CambiarPassword obligatorio />}
       <ScrollManager />
       <Header />
       <main>

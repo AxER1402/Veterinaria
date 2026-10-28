@@ -73,7 +73,7 @@ INSERT INTO tmp_mascotas VALUES
  ('b0e9eacc-2ebe-45e0-9e7a-56fe7272e3db',    'jroberto.garcia@example.com',  'Max',    'perro', 'Pastor alemán',           'macho',  '2018-09-12', 34.70, 'Displasia de cadera leve, en control'),
  ('798a8681-e0ef-4bd0-86ba-40089a137729',  'jroberto.garcia@example.com',  'Kiara',  'perro', 'Labrador Retriever',      'hembra', '2026-03-10', 14.50, 'Cachorra: esquema de vacunación completo'),
  ('b7d682b3-6b5b-4288-b1a5-46442018c75c',   'gabriela.ramirez@example.com', 'Toby',   'perro', 'Shih Tzu',                'macho',  '2017-04-03',  7.90, 'Dermatitis atópica y soplo cardíaco leve, en control'),
- ('03403aee-8e49-459b-82ed-6d18f4fa2cb0',   'diego.morales@example.com',    'Coco',   'otro',  'Conejo cabeza de león',   'hembra', '2023-06-18',  1.60, 'Dieta de heno y verduras; no tolera el baño'),
+ ('03403aee-8e49-459b-82ed-6d18f4fa2cb0',   'diego.morales@example.com',    'Coco',   'conejo', 'Conejo cabeza de león',   'hembra', '2023-06-18',  1.60, 'Dieta de heno y verduras; no tolera el baño'),
  ('24f97723-194d-4ce9-b6c8-19fb3099cf51', 'sofia.cifuentes@example.com',  'Pelusa', 'gato',  'Siamés',                  'hembra', '2020-10-05',  4.10, NULL),
  ('dff43f87-4ad9-4f3c-a21a-138d54b689e8',   'sofia.cifuentes@example.com',  'Thor',   'perro', 'Husky siberiano',         'macho',  '2022-12-01', 24.80, 'Muy activo: necesita paseos largos');
 

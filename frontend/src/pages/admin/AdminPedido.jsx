@@ -27,6 +27,7 @@ export default function AdminPedido() {
   const [error, setError] = useState('')
   const [dialogo, setDialogo] = useState(null)
   const [referencia, setReferencia] = useState('')
+  const [enPasarela, setEnPasarela] = useState(false)
 
   useEffect(() => {
     api(`/api/pedidos/${id}`).then((d) => setPedido(d.pedido)).catch((e) => setError(e.message))
@@ -41,6 +42,17 @@ export default function AdminPedido() {
     const d = await api(`/api/pedidos/admin/${p.id}/estado`, { method: 'PATCH', body: { estado: nuevo, comentario } })
     setPedido(d.pedido)
     setDialogo(null)
+  }
+  const reembolsarPasarela = async () => {
+    setError('')
+    setEnPasarela(true)
+    try {
+      setPedido((await api(`/api/pedidos/admin/${p.id}/reembolso/pasarela`, { method: 'POST' })).pedido)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setEnPasarela(false)
+    }
   }
   const reembolsar = async (e) => {
     e.preventDefault()
@@ -73,7 +85,11 @@ export default function AdminPedido() {
           )}
           {p.reembolso?.estado === 'pendiente' && (
             <form className="pedido__reembolso" onSubmit={reembolsar}>
-              <p><strong>Reembolso pendiente.</strong> El pedido se cobró y se canceló: devuelve {formatPrice(p.total)} en la pasarela y anota la referencia.</p>
+              <p><strong>Reembolso pendiente.</strong> El pedido se cobró y se canceló: devuelve {formatPrice(p.total)}.</p>
+              <button type="button" className="btn btn--dark btn--xs" onClick={reembolsarPasarela} disabled={enPasarela}>
+                {enPasarela ? 'Reembolsando…' : 'Reembolsar en la pasarela'}
+              </button>
+              <span className="summary__hint">o, si lo hiciste a mano, anota la referencia:</span>
               <input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Referencia del reembolso" minLength={3} maxLength={100} required />
               <button className="btn btn--dark btn--xs">Registrar reembolso</button>
             </form>

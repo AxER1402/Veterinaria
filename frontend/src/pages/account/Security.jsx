@@ -3,6 +3,7 @@ import { Link, Navigate } from 'react-router-dom'
 import { ShieldCheck, ShieldAlert } from 'lucide-react'
 import qrcode from 'qrcode-generator'
 import PageHeader from '../../components/PageHeader'
+import CambiarPassword from '../../components/CambiarPassword'
 import Field from '../../components/Field'
 import Loading from '../../components/Loading'
 import { useAuth } from '../../context/useAuth'
@@ -19,7 +20,8 @@ export default function Security() {
       <section className="section">
         <div className="container account">
           {user.mfa ? <Desactivar /> : <Activar />}
-          <Link to="/cuenta/pedidos" className="link-arrow">← Mis pedidos</Link>
+          <CambiarPassword />
+          <Link to="/cuenta/citas" className="link-arrow">← Mis citas</Link>
         </div>
       </section>
     </>

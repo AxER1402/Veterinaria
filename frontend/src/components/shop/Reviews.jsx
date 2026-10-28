@@ -7,7 +7,7 @@ import { useAuth } from '../../context/useAuth'
 import { fechaCorta } from '../../pages/account/vacunas'
 
 // Reseñas de un producto. Solo opina quien lo compró (lo verifica el servidor con pedidos-service);
-// cada cliente tiene una reseña por producto y la puede editar.
+// cada cliente tiene una reseña por producto y la puede editar. La tienda la revisa antes de publicarla.
 export default function Reviews({ slug }) {
   const { user } = useAuth()
   const { pathname } = useLocation()
@@ -65,7 +65,7 @@ function ReviewForm({ slug, actual, onSaved }) {
     setSending(true)
     try {
       onSaved(await api(`/api/catalogo/productos/${slug}/resenas`, { method: 'POST', body: { calificacion, comentario: comentario.trim() } }))
-      setOk('¡Gracias! Tu reseña ya está publicada.')
+      setOk('¡Gracias! Tu reseña quedó en revisión: la publicamos en cuanto la revisemos.')
       setAbierto(false)
     } catch (err) {
       setError(err.message)
@@ -77,7 +77,8 @@ function ReviewForm({ slug, actual, onSaved }) {
   if (!abierto) {
     return (
       <p className="summary__hint">
-        {ok || 'Ya opinaste sobre este producto.'} <button className="link-btn" onClick={() => { setOk(''); setAbierto(true) }}>Editar mi reseña</button>
+        {ok || (actual?.estado === 'en_revision' ? 'Tu reseña está en revisión.' : actual?.estado === 'oculta' ? 'Tu reseña no se publicó.' : 'Ya opinaste sobre este producto.')}{' '}
+        <button className="link-btn" onClick={() => { setOk(''); setAbierto(true) }}>Editar mi reseña</button>
       </p>
     )
   }

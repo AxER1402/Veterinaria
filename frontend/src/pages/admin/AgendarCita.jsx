@@ -25,6 +25,8 @@ export default function AgendarCita({ inicial = {}, onClose, onDone }) {
   const [eleccion, setEleccion] = useState({ fecha: inicial.fecha || '', hora: '', salida: '' })
   const [contacto, setContacto] = useState({ nombre: '', email: '', telefono: '', notas: '' })
   const [error, setError] = useState('')
+  const [nuevoCliente, setNuevoCliente] = useState(null) // { nombre, email, telefono } al crear la cuenta
+  const [temporal, setTemporal] = useState(null) // contraseña temporal, se muestra una sola vez
   const [sending, setSending] = useState(false)
 
   function elegirCliente(c) {
@@ -58,6 +60,19 @@ export default function AgendarCita({ inicial = {}, onClose, onDone }) {
   const elegido = servicios?.find((s) => s.slug === servicio)
   const listo = cliente && mascotaId && elegido && eleccionLista(elegido.modalidad, eleccion) && contacto.telefono.trim()
     && (servicio !== 'veterinaria' || contacto.notas.trim().length >= 3)
+
+  const crearCliente = async () => {
+    setError('')
+    try {
+      const d = await api('/api/auth/admin/clientes', { method: 'POST', body: nuevoCliente })
+      setClientes((l) => [d.cliente, ...(l || [])])
+      setTemporal({ email: d.cliente.email, password: d.password_temporal })
+      setNuevoCliente(null)
+      elegirCliente(d.cliente)
+    } catch (e) {
+      setError(e.message)
+    }
+  }
 
   const registrarMascota = async () => {
     setError('')
@@ -114,13 +129,44 @@ export default function AgendarCita({ inicial = {}, onClose, onDone }) {
                   ))}
                 </ul>
               )}
-              {buscar.trim().length >= 2 && clientes && encontrados.length === 0 && (
-                <p className="summary__hint">No hay clientes con «{buscar}». La persona debe crear su cuenta en la página (solo correo y contraseña) para poder agendarle.</p>
+              {buscar.trim().length >= 2 && clientes && encontrados.length === 0 && !nuevoCliente && (
+                <p className="summary__hint">
+                  No hay clientes con «{buscar}».{' '}
+                  <button type="button" className="link-btn" onClick={() => setNuevoCliente({ nombre: buscar.includes('@') ? '' : buscar, email: buscar.includes('@') ? buscar : '', telefono: '' })}>
+                    Crear su cuenta
+                  </button>
+                </p>
+              )}
+              {nuevoCliente && (
+                <div className="agendar__nuevo-cliente">
+                  <div className="agenda__form-row agenda__form-row--3">
+                    <label>Nombre
+                      <input value={nuevoCliente.nombre} onChange={(e) => setNuevoCliente((n) => ({ ...n, nombre: e.target.value }))} maxLength={100} />
+                    </label>
+                    <label>Correo
+                      <input type="email" value={nuevoCliente.email} onChange={(e) => setNuevoCliente((n) => ({ ...n, email: e.target.value }))} maxLength={120} />
+                    </label>
+                    <label>Teléfono
+                      <input type="tel" value={nuevoCliente.telefono} onChange={(e) => setNuevoCliente((n) => ({ ...n, telefono: e.target.value }))} maxLength={20} />
+                    </label>
+                  </div>
+                  <span className="pet-form__actions">
+                    <button type="button" className="btn btn--dark btn--xs" onClick={crearCliente}
+                      disabled={nuevoCliente.nombre.trim().length < 2 || !nuevoCliente.email.includes('@')}>Crear cuenta</button>
+                    <button type="button" className="link-btn" onClick={() => setNuevoCliente(null)}>Cancelar</button>
+                  </span>
+                </div>
               )}
             </>
           )}
         </fieldset>
 
+        {temporal && (
+          <p className="form-ok agendar__temporal">
+            Cuenta creada. Dale al cliente su correo <strong>{temporal.email}</strong> y esta contraseña temporal:{' '}
+            <strong className="mono">{temporal.password}</strong>. Al entrar por primera vez deberá cambiarla. No se vuelve a mostrar.
+          </p>
+        )}
         {cliente && (
           <fieldset className="clinical-form__group">
             <legend>Mascota</legend>

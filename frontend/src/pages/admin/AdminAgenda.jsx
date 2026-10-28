@@ -8,6 +8,7 @@ import { api } from '../../api'
 import { useAuth } from '../../context/useAuth'
 import { AlertasClinicas, ConsultaForm, NotaForm } from './ClinicalRecord'
 import AgendarCita from './AgendarCita'
+import Equipo from './Equipo'
 import { Reprogramar } from '../account/Appointments'
 import { CITA_STATUS, addDays, formatCita, formatDay, formatReserva, ymd } from '../account/citas'
 
@@ -59,6 +60,7 @@ export default function AdminAgenda() {
   const [aviso, setAviso] = useState('')
   const [proximos, setProximos] = useState(null)
   const [canceladas, setCanceladas] = useState(false)
+  const [vista, setVista] = useState('hora') // 'hora' o 'columnas' (por consultorio o profesional)
   const [buscar, setBuscar] = useState('')
   const [resultados, setResultados] = useState(null)
   const [dialogo, setDialogo] = useState(null) // { tipo, cita?, … }
@@ -193,12 +195,19 @@ export default function AdminAgenda() {
               <p className="summary__hint">No hay citas este día{sede ? ' en esta sede' : ''}.</p>
             ) : (
               <>
-                {nCanceladas > 0 && (
-                  <button className="link-btn agenda__toggle" onClick={() => setCanceladas((v) => !v)}>
-                    {canceladas ? 'Ocultar canceladas' : `Mostrar canceladas (${nCanceladas})`}
-                  </button>
-                )}
-                {Object.entries(porHora).map(([hora, citas]) => (
+                <div className="agenda__view">
+                  <div className="tabs" role="tablist" aria-label="Vista">
+                    <button role="tab" aria-selected={vista === 'hora'} className={`tab ${vista === 'hora' ? 'tab--active' : ''}`} onClick={() => setVista('hora')}>Por hora</button>
+                    <button role="tab" aria-selected={vista === 'columnas'} className={`tab ${vista === 'columnas' ? 'tab--active' : ''}`} onClick={() => setVista('columnas')}>Por consultorio</button>
+                  </div>
+                  {nCanceladas > 0 && (
+                    <button className="link-btn agenda__toggle" onClick={() => setCanceladas((v) => !v)}>
+                      {canceladas ? 'Ocultar canceladas' : `Mostrar canceladas (${nCanceladas})`}
+                    </button>
+                  )}
+                </div>
+                {vista === 'columnas' && <AgendaColumnas citas={visibles} fecha={fecha} onAccion={setDialogo} />}
+                {vista === 'hora' && Object.entries(porHora).map(([hora, citas]) => (
                   <section key={hora} className="agenda-hour">
                     <h3 className="agenda-hour__label">{hora}</h3>
                     <ul className="agenda-cards">
@@ -234,6 +243,7 @@ export default function AdminAgenda() {
           )}
         </div>
       </div>
+      <Equipo editable={user.rol === 'admin'} />
 
       {dialogo?.tipo === 'estado' && (() => {
         const { cita, nuevo } = dialogo
@@ -383,5 +393,39 @@ function BlockForm({ fecha, sede, onSaved, onConflicto }) {
       {error && <p className="form-alert" role="alert">{error}</p>}
       <button className="btn btn--dark btn--sm" disabled={sending}>{sending ? 'Guardando…' : 'Bloquear'}</button>
     </form>
+  )
+}
+
+// Una columna por consultorio, mesa o profesional (de cada servicio) y una fila por turno: se ve de un
+// vistazo quién está libre. Para cambiar una cita se usa la vista por hora o su tarjeta.
+function AgendaColumnas({ citas, fecha, onAccion }) {
+  const columnas = [...new Set(citas.map((c) => `${c.servicio.nombre} · ${lugar(c)}`))].sort()
+  const filas = [...new Set(citas.map((c) => (c.inicio.slice(0, 10) === fecha ? c.inicio.slice(11, 16) : 'Estadías')))].sort()
+  const celda = (fila, col) => citas.filter((c) => `${c.servicio.nombre} · ${lugar(c)}` === col
+    && (c.inicio.slice(0, 10) === fecha ? c.inicio.slice(11, 16) : 'Estadías') === fila)
+  return (
+    <div className="table-scroll">
+      <table className="admin-table agenda-grid">
+        <thead><tr><th>Hora</th>{columnas.map((col) => <th key={col}>{col}</th>)}</tr></thead>
+        <tbody>
+          {filas.map((f) => (
+            <tr key={f}>
+              <td className="mono">{f}</td>
+              {columnas.map((col) => (
+                <td key={col}>
+                  {celda(f, col).map((c) => (
+                    <button key={c.id} className={`agenda-grid__cita agenda-card--${c.estado}`} onClick={() => onAccion({ tipo: 'reprogramar', cita: c })}
+                      title={`${c.cliente.nombre} · ${CITA_STATUS[c.estado].label}. Clic para reprogramar`}>
+                      <PetIcon especie={c.mascota.especie} size={14} /> {c.mascota.nombre}
+                      <small>{CITA_STATUS[c.estado].label}</small>
+                    </button>
+                  ))}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
