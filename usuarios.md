@@ -26,6 +26,8 @@ Las tres cuentas del personal las crea `db/master/13-roles-telefono.sql` (en un 
 | Diego Alejandro Morales Chávez | `diego.morales@example.com` | Coco, un conejo |
 | Sofía Valentina Cifuentes Rivas | `sofia.cifuentes@example.com` | Pelusa y Thor; pedido pagado hace unas horas |
 
+La demo también carga 14 reseñas publicadas (`db/seeds/02-resenas.sql`), escritas por estos clientes sobre productos de pedidos entregados. La consulta veterinaria tiene dos profesionales: la **Dra. Andrea Morales** (cuenta `veterinaria@huellitas.gt`) y el **Dr. Luis Pérez**; el horario de cada uno se edita en **Agenda → Equipo y horarios**.
+
 - **Clientes nuevos:** cualquiera puede registrarse en `/cuenta` (pestaña de registro; API `POST /api/auth/registro`). El registro siempre crea el rol `cliente`; los roles del personal los asigna un admin desde el panel.
 - **Bloqueo:** 5 contraseñas incorrectas bloquean la cuenta 15 min (A07). Si te bloqueas probando, espera o reinicia con volúmenes nuevos.
 - **MFA (TOTP):** opcional por usuario, en `/cuenta/seguridad` (al admin el panel le muestra el aviso → *Activar ahora*). En desarrollo **no** se activa en `admin@huellitas.gt` porque `tests/seguridad.sh` y `ops/simulacro-drp.sh` entran con él sin segundo paso.

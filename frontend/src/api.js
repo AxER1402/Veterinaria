@@ -42,7 +42,17 @@ export async function api(path, { method = 'GET', body, auth = true } = {}) {
   try {
     res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
   } catch {
-    throw new ApiError(0, { error: 'Sin conexión con el servidor' })
+    // Un corte breve (p. ej. mientras se reinicia el gateway) no debe verse: una lectura se reintenta una
+    // vez al segundo. Un POST/PATCH no se repite solo, para no duplicar una operación que sí llegó.
+    if (method === 'GET') {
+      await new Promise((r) => setTimeout(r, 1000))
+      try {
+        res = await fetch(path, { method, headers })
+      } catch {
+        // sigue sin conexión
+      }
+    }
+    if (!res) throw new ApiError(0, { error: 'No hay conexión con el servidor. Revisa tu internet e intenta de nuevo en unos segundos.' })
   }
   const data = await res.json().catch(() => null)
   if (!res.ok) {

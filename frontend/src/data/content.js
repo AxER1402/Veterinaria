@@ -137,24 +137,25 @@ export const reasons = [
   },
 ]
 
+// Testimonios de demostración: los firman clientes de la demo (db/seeds) y hablan de sus mascotas.
 export const testimonials = [
   {
-    pet: 'Rocky',
-    owner: 'Susana',
-    text: 'Amables, cercanos y muy profesionales. Lo mejor de todo es que Rocky los adora. Recomiendo Huellitas a cualquiera que busque cuidado para su perro.',
-    image: unsplash('photo-1543466835-00a7907e9de1', 200, 200),
+    pet: 'Toby',
+    owner: 'Gabriela R.',
+    text: 'A Toby le encontraron dermatitis y un soplo en un chequeo de rutina. Nos explicaron todo con calma y ahora lo controlamos cada mes; hasta nos recomendaron el shampoo correcto.',
+    image: unsplash('photo-1587300003388-59208cc962cb', 200, 200),
   },
   {
     pet: 'Luna',
-    owner: 'Victoria',
-    text: '¡Gracias Huellitas por cuidar tan bien a Luna! La atención fue excelente y me dejó completamente tranquila. ¡Mil gracias!',
+    owner: 'María José L.',
+    text: 'Me llega un correo antes de cada refuerzo de vacuna de Luna, así que ya no se me pasan las fechas. Reservo en línea en un minuto.',
     image: unsplash('photo-1561037404-61cd46aa615b', 200, 200),
   },
   {
-    pet: 'Toby',
-    owner: 'Andrés',
-    text: 'El equipo veterinario detectó a tiempo un problema en la piel de Toby. Explicaron todo con paciencia y el seguimiento fue impecable.',
-    image: unsplash('photo-1587300003388-59208cc962cb', 200, 200),
+    pet: 'Coco',
+    owner: 'Diego M.',
+    text: 'No es fácil encontrar quién atienda bien a un conejo. Con Coco tuvieron paciencia, la revisaron sin estresarla y me dieron una dieta clara.',
+    image: unsplash('photo-1425082661705-1834bfd09dca', 200, 200),
   },
 ]
 
