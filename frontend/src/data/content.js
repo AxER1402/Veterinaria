@@ -208,9 +208,3 @@ export const gallery = [
   'photo-1543466835-00a7907e9de1',
 ].map((id) => unsplash(id, 400, 400))
 
-export const stats = [
-  { value: '12+', label: 'Años de experiencia' },
-  { value: '8,500', label: 'Mascotas felices' },
-  { value: '25', label: 'Profesionales' },
-  { value: '4.9', label: 'Calificación promedio' },
-]

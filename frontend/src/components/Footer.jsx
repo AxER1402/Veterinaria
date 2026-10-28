@@ -1,20 +1,9 @@
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Mail, Phone, Clock, Send } from 'lucide-react'
+import { Mail, Phone, Clock } from 'lucide-react'
 import { Logo, InstagramIcon, FacebookIcon } from './Brand'
 import { business, navLinks, services, locations } from '../data/content'
 
 export default function Footer() {
-  const [email, setEmail] = useState('')
-  const [subscribed, setSubscribed] = useState(false)
-
-  const subscribe = (e) => {
-    e.preventDefault()
-    if (!email) return
-    setSubscribed(true)
-    setEmail('')
-  }
-
   return (
     <footer className="footer">
       <div className="container">
