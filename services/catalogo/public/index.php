@@ -22,6 +22,7 @@ $router->add('GET',   '/api/catalogo/productos/{slug}', fn($p) => $catalogo->ver
 $router->add('GET',   '/api/catalogo/admin/productos', fn() => $catalogo->listarAdmin());
 $router->add('POST',  '/api/catalogo/admin/productos', fn() => $catalogo->crearProducto());
 $router->add('PATCH', '/api/catalogo/admin/productos/{id}', fn($p) => $catalogo->actualizarProducto((int) $p['id']));
+$router->add('POST',  '/api/catalogo/admin/productos/{id}/variantes', fn($p) => $catalogo->agregarVariantes((int) $p['id']));
 $router->add('PATCH', '/api/catalogo/admin/variantes/{id}', fn($p) => $catalogo->actualizarVariante((int) $p['id']));
 $router->add('POST',  '/api/catalogo/admin/imagenes/firma', fn() => $catalogo->firmaCloudinary());
 

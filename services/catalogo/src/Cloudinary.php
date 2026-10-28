@@ -20,7 +20,16 @@ final class Cloudinary
     public static function url(string $origen, int $ancho = 600): string
     {
         $nube = Env::get('CLOUDINARY_CLOUD_NAME');
-        if ($nube === null || str_starts_with($origen, "https://res.cloudinary.com/$nube/")) {
+        if ($nube === null) {
+            return $origen;
+        }
+        // Las subidas propias se piden ya recortadas y en el formato más liviano que acepte el navegador.
+        if (self::esPropia($origen)) {
+            return str_replace('/image/upload/', "/image/upload/f_auto,q_auto,c_fill,w_$ancho,h_$ancho/", $origen);
+        }
+        // El modo «fetch» viene bloqueado en las cuentas nuevas de Cloudinary (responde 401): solo se usa
+        // si se activó en la cuenta (Settings → Security) y se pidió con CLOUDINARY_FETCH=1.
+        if (Env::get('CLOUDINARY_FETCH') !== '1') {
             return $origen;
         }
         return "https://res.cloudinary.com/$nube/image/fetch/f_auto,q_auto,c_fill,w_$ancho,h_$ancho/" . rawurlencode($origen);

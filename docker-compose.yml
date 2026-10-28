@@ -93,6 +93,7 @@ services:
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      CLOUDINARY_FETCH: ${CLOUDINARY_FETCH:-0}
     depends_on:
       mariadb-master: { condition: service_healthy }
       redis: { condition: service_healthy }

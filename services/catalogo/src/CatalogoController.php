@@ -113,11 +113,15 @@ final class CatalogoController
         return [201, ['producto' => $producto]];
     }
 
-    /** Activar/desactivar, destacar o cambiar la imagen (solo Cloudinary propio). */
+    /**
+     * Edición del producto: datos, imagen, categoría, visible y destacado. Solo cambia lo que viene en
+     * la petición y registra PRODUCTO_ACTUALIZADO con el antes y el después de cada campo.
+     */
     public function actualizarProducto(int $id): array
     {
         $claims = Guard::usuario(['admin']);
         $datos = Http::body();
+        Validar::sinAtaques($datos);
 
         $cambios = [];
         foreach (['activo', 'destacado'] as $campo) {
@@ -128,30 +132,105 @@ final class CatalogoController
                 $cambios[$campo] = $datos[$campo] ? 1 : 0;
             }
         }
-        if (array_key_exists('imagen_url', $datos)) {
-            if (!is_string($datos['imagen_url']) || !Cloudinary::esPropia($datos['imagen_url'])) {
-                throw new ApiError(422, 'La imagen debe estar subida a la cuenta de Cloudinary de la tienda', ['campo' => 'imagen_url']);
+        $textos = ['nombre' => [3, 150], 'marca' => [2, 60], 'descripcion' => [10, 2000]];
+        foreach ($textos as $campo => [$min, $max]) {
+            if (array_key_exists($campo, $datos)) {
+                $cambios[$campo] = Validar::texto($datos, $campo, $min, $max);
             }
-            $cambios['imagen_url'] = $datos['imagen_url'];
-            $cambios['imagen_public_id'] = is_string($datos['imagen_public_id'] ?? null) ? mb_substr($datos['imagen_public_id'], 0, 200) : null;
+        }
+        if (array_key_exists('etiqueta', $datos)) {
+            $cambios['etiqueta'] = in_array($datos['etiqueta'], [null, ''], true) ? null : Validar::texto($datos, 'etiqueta', 2, 40);
+        }
+        if (array_key_exists('mascota', $datos)) {
+            $cambios['mascota'] = in_array($datos['mascota'], self::MASCOTAS, true)
+                ? $datos['mascota'] : throw new ApiError(422, 'Elige para qué mascota es', ['campo' => 'mascota']);
+        }
+        $db = Db::escritura();
+        if (array_key_exists('categoria', $datos)) {
+            $categoria = $db->prepare('SELECT id FROM categorias WHERE slug = ?');
+            $categoria->execute([is_string($datos['categoria']) ? $datos['categoria'] : '']);
+            $cambios['categoria_id'] = (int) ($categoria->fetchColumn() ?: throw new ApiError(422, 'Elige una categoría', ['campo' => 'categoria']));
+        }
+        if (array_key_exists('imagen_url', $datos)) {
+            $cambios['imagen_url'] = self::imagen($datos['imagen_url']);
+            $cambios['imagen_public_id'] = Cloudinary::esPropia($cambios['imagen_url']) && is_string($datos['imagen_public_id'] ?? null)
+                ? mb_substr($datos['imagen_public_id'], 0, 200) : null;
         }
         if (!$cambios) {
             throw new ApiError(422, 'No hay cambios que aplicar');
         }
 
-        $db = Db::escritura();
-        $antes = $db->prepare('SELECT activo, destacado, imagen_url FROM productos WHERE id = ?');
-        $antes->execute([$id]);
-        if (!$antes->fetch()) {
-            throw new ApiError(404, 'Producto no encontrado');
+        $consulta = $db->prepare('SELECT ' . implode(', ', array_keys($cambios)) . ', nombre AS _nombre FROM productos WHERE id = ?');
+        $consulta->execute([$id]);
+        $antes = $consulta->fetch() ?: throw new ApiError(404, 'Producto no encontrado');
+        $distintos = array_filter($cambios, fn($v, $c) => (string) $antes[$c] !== (string) $v, ARRAY_FILTER_USE_BOTH);
+        if (!$distintos) {
+            return [200, ['producto' => $this->uno($id)]];
         }
         // Las columnas salen de una lista fija; los valores van como parámetros.
-        $set = implode(', ', array_map(fn($c) => "$c = ?", array_keys($cambios)));
+        $set = implode(', ', array_map(fn($c) => "$c = ?", array_keys($distintos)));
         $db->prepare("UPDATE productos SET $set, updated_by = ? WHERE id = ?")
-            ->execute([...array_values($cambios), (int) $claims['sub'], $id]);
+            ->execute([...array_values($distintos), (int) $claims['sub'], $id]);
         self::invalidar();
 
+        // La descripción va resumida: la bitácora registra que cambió, no copia el texto entero.
+        $resumen = fn(array $fila) => array_map(fn($v) => is_string($v) && mb_strlen($v) > 120 ? mb_substr($v, 0, 117) . '…' : $v,
+            array_intersect_key($fila, $distintos));
+        $ref = ['producto_id' => $id, 'producto' => $antes['_nombre']];
+        Auditoria::registrar('PRODUCTO_ACTUALIZADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_anterior' => $ref + $resumen($antes),
+            'dato_nuevo'    => $ref + $resumen($distintos),
+        ]);
         return [200, ['producto' => $this->uno($id)]];
+    }
+
+    /** Presentaciones nuevas para un producto que ya existe (SKU HU-<producto>-<n> siguiente). */
+    public function agregarVariantes(int $id): array
+    {
+        $claims = Guard::usuario(['admin']);
+        $datos = Http::body();
+        Validar::sinAtaques($datos);
+        $nuevas = self::variantesNuevas($datos['variantes'] ?? null);
+
+        $db = Db::escritura();
+        $db->beginTransaction();
+        try {
+            $q = $db->prepare('SELECT nombre FROM productos WHERE id = ? FOR UPDATE');
+            $q->execute([$id]);
+            $nombre = $q->fetchColumn() ?: throw new ApiError(404, 'Producto no encontrado');
+            $q = $db->prepare('SELECT etiqueta, sku FROM producto_variantes WHERE producto_id = ?');
+            $q->execute([$id]);
+            $existentes = $q->fetchAll();
+            if (count($existentes) + count($nuevas) > self::MAX_VARIANTES) {
+                throw new ApiError(422, 'Un producto tiene como máximo ' . self::MAX_VARIANTES . ' presentaciones', ['campo' => 'variantes']);
+            }
+            $etiquetas = array_map(fn($e) => mb_strtolower($e['etiqueta']), $existentes);
+            $n = 0;
+            foreach ($existentes as $e) {
+                $n = max($n, (int) substr(strrchr($e['sku'], '-'), 1));
+            }
+            $insertar = $db->prepare('INSERT INTO producto_variantes (producto_id, etiqueta, sku, precio, precio_anterior, stock, updated_by)
+                                      VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $creadas = [];
+            foreach ($nuevas as $v) {
+                if (in_array(mb_strtolower($v['etiqueta']), $etiquetas, true)) {
+                    throw new ApiError(422, "La presentación «{$v['etiqueta']}» ya existe", ['campo' => 'variantes']);
+                }
+                $sku = sprintf('HU-%03d-%d', $id, ++$n);
+                $insertar->execute([$id, $v['etiqueta'], $sku, $v['precio'], $v['precio_anterior'], $v['stock'], (int) $claims['sub']]);
+                $creadas[] = ['sku' => $sku, 'etiqueta' => $v['etiqueta'], 'precio' => $v['precio'], 'stock' => $v['stock']];
+            }
+            $db->prepare('UPDATE productos SET updated_by = ? WHERE id = ?')->execute([(int) $claims['sub'], $id]);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+        self::invalidar();
+        Auditoria::registrar('PRODUCTO_ACTUALIZADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_nuevo' => ['producto_id' => $id, 'producto' => $nombre, 'variantes_agregadas' => $creadas],
+        ]);
+        return [201, ['producto' => $this->uno($id)]];
     }
 
     /** Cambio de precio y/o stock de una variante. Registra PRECIO_MODIFICADO y PRODUCTO_AGOTADO. */
