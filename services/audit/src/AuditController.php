@@ -39,6 +39,7 @@ final class AuditController
         'WEBHOOK_STRIPE_RECIBIDO' => ['pagos-service'],
         'PRODUCTO_CREADO'         => ['catalogo-service'],
         'PRODUCTO_ACTUALIZADO'    => ['catalogo-service'],
+        'RESENA_PUBLICADA'        => ['catalogo-service'],
         'PRECIO_MODIFICADO'       => ['catalogo-service'],
         'PRODUCTO_AGOTADO'        => ['catalogo-service', 'pedidos-service'],
         'EMAIL_ENVIADO'           => ['notificaciones-service'],

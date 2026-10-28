@@ -498,6 +498,27 @@ final class PedidosController
         return [200, ['pedido' => $this->detalle($pedido['id'])]];
     }
 
+    /** Solo catalogo-service: ¿el cliente compró el producto? (para dejar una reseña). Devuelve su nombre. */
+    public function comproInterno(): array
+    {
+        Guard::servicio(['catalogo-service']);
+        $d = Http::body();
+        $cliente = is_int($d['id_cliente'] ?? null) ? $d['id_cliente'] : throw new ApiError(422, 'Cliente no válido');
+        $producto = is_int($d['producto_id'] ?? null) ? $d['producto_id'] : throw new ApiError(422, 'Producto no válido');
+        $q = Db::escritura()->prepare("SELECT c.nombre FROM pedidos p JOIN detalle_pedidos d ON d.pedido_id = p.id JOIN clientes c ON c.id_cliente = p.id_cliente
+                                        WHERE p.id_cliente = ? AND d.producto_id = ? AND p.estado IN ('pagado','preparando','listo_retiro','enviado','entregado') LIMIT 1");
+        $q->execute([$cliente, $producto]);
+        $nombre = $q->fetchColumn();
+        return [200, ['compro' => $nombre !== false, 'nombre' => $nombre ?: null]];
+    }
+
+    /** Métodos de pago activos (los que tienen claves en pagos-service): el checkout solo ofrece esos. */
+    public function metodosPago(): array
+    {
+        [$codigo, $json] = Interno::post($this->servicio('PAGOS_URL', 'http://pagos-service:8084', '/internal/pagos/metodos'), []);
+        return [200, ['metodos' => $codigo === 200 && is_array($json['metodos'] ?? null) ? $json['metodos'] : []]];
+    }
+
     /** Llamado por pagos-service cuando Stripe confirma (webhook con firma válida). */
     public function pagadoInterno(): array
     {

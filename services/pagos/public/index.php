@@ -13,6 +13,7 @@ $pagos = new PagosController();
 $router->add('GET',  '/salud', fn() => [200, ['estado' => 'ok', 'servicio' => 'pagos-service']]);
 
 // Solo pedidos-service (JWT de servicio): el navegador nunca llama directo a pagos.
+$router->add('POST', '/internal/pagos/metodos', fn() => $pagos->metodos());
 $router->add('POST', '/internal/pagos/iniciar', fn() => $pagos->iniciar());
 $router->add('POST', '/internal/pagos/paypal/capturar', fn() => $pagos->capturarPayPal());
 

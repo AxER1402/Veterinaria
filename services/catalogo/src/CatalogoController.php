@@ -8,6 +8,8 @@ use Huellitas\Auditoria;
 use Huellitas\Cache;
 use Huellitas\Db;
 use Huellitas\Guard;
+use Huellitas\Interno;
+use Huellitas\Env;
 use Huellitas\Http;
 use Huellitas\Validar;
 
@@ -307,6 +309,127 @@ final class CatalogoController
             throw new ApiError(503, 'Cloudinary no está configurado (CLOUDINARY_* en .env)');
         }
         return [200, Cloudinary::firma()];
+    }
+
+    // ---------- Reseñas ----------
+
+    /** Reseñas visibles de un producto (públicas), de la más nueva a la más vieja. */
+    public function resenas(string $slug): array
+    {
+        $producto = $this->productoPorSlug($slug);
+        $q = Db::escritura()->prepare('SELECT id, autor, calificacion, comentario, created_at FROM resenas
+                                        WHERE producto_id = ? AND visible = 1 ORDER BY created_at DESC LIMIT 100');
+        $q->execute([$producto['id']]);
+        return [200, ['calificacion' => (float) $producto['calificacion'], 'total' => (int) $producto['resenas'],
+                      'resenas' => array_map(fn($r) => self::resenaJson($r), $q->fetchAll())]];
+    }
+
+    /** ¿Puede opinar el cliente (compró el producto)? Y su reseña, si ya dejó una. */
+    public function miResena(string $slug): array
+    {
+        $claims = Guard::usuario(['cliente']);
+        $producto = $this->productoPorSlug($slug);
+        $q = Db::escritura()->prepare('SELECT id, autor, calificacion, comentario, created_at, visible FROM resenas WHERE producto_id = ? AND id_cliente = ?');
+        $q->execute([$producto['id'], (int) $claims['sub']]);
+        $mia = $q->fetch();
+        return [200, ['compro' => $this->compro((int) $claims['sub'], (int) $producto['id'])['compro'],
+                      'resena' => $mia ? self::resenaJson($mia) + ['visible' => (bool) $mia['visible']] : null]];
+    }
+
+    /**
+     * Publica o actualiza la reseña del cliente. Solo quien compró el producto (pedido pagado o más
+     * avanzado): lo confirma pedidos-service por la red interna, no el navegador.
+     */
+    public function publicarResena(string $slug): array
+    {
+        $claims = Guard::usuario(['cliente']);
+        $datos = Http::body();
+        Validar::sinAtaques($datos);
+        $producto = $this->productoPorSlug($slug);
+        $calificacion = $datos['calificacion'] ?? null;
+        if (!is_int($calificacion) || $calificacion < 1 || $calificacion > 5) {
+            throw new ApiError(422, 'Elige de 1 a 5 estrellas', ['campo' => 'calificacion']);
+        }
+        $comentario = isset($datos['comentario']) && $datos['comentario'] !== '' ? Validar::texto($datos, 'comentario', 3, 600) : null;
+        $compra = $this->compro((int) $claims['sub'], (int) $producto['id']);
+        if (!$compra['compro']) {
+            throw new ApiError(403, 'Solo puede opinar quien compró este producto');
+        }
+        // «Lucía Hernández» → «Lucía H.»: se publica el nombre y la inicial, no el nombre completo (A.5.34).
+        $partes = preg_split('/\s+/', trim((string) ($compra['nombre'] ?? 'Cliente')));
+        $autor = mb_substr($partes[0] . (isset($partes[1]) ? ' ' . mb_substr($partes[1], 0, 1) . '.' : ''), 0, 60);
+
+        $db = Db::escritura();
+        $db->prepare('INSERT INTO resenas (producto_id, id_cliente, autor, calificacion, comentario) VALUES (?, ?, ?, ?, ?)
+                      ON DUPLICATE KEY UPDATE calificacion = VALUES(calificacion), comentario = VALUES(comentario), autor = VALUES(autor)')
+            ->execute([$producto['id'], (int) $claims['sub'], $autor, $calificacion, $comentario]);
+        $this->recalcular((int) $producto['id']);
+        Auditoria::registrar('RESENA_PUBLICADA', 'EXITO', Auditoria::actor($claims) + [
+            'dato_nuevo' => ['producto_id' => (int) $producto['id'], 'producto' => $producto['nombre'], 'calificacion' => $calificacion],
+        ]);
+        return [201, $this->resenas($slug)[1]];
+    }
+
+    /** Reseñas recientes para moderar (panel de la tienda). */
+    public function resenasAdmin(): array
+    {
+        Guard::usuario(Guard::TIENDA);
+        $q = Db::escritura()->query('SELECT r.id, r.autor, r.calificacion, r.comentario, r.created_at, r.visible, p.nombre AS producto, p.slug
+                                       FROM resenas r JOIN productos p ON p.id = r.producto_id ORDER BY r.created_at DESC LIMIT 100');
+        return [200, ['resenas' => array_map(fn($r) => self::resenaJson($r) + ['visible' => (bool) $r['visible'], 'producto' => $r['producto'], 'slug' => $r['slug']],
+            $q->fetchAll())]];
+    }
+
+    /** Oculta o vuelve a mostrar una reseña (no se borra) y recalcula la calificación. */
+    public function moderarResena(int $id): array
+    {
+        $claims = Guard::usuario(Guard::TIENDA);
+        $datos = Http::body();
+        if (!is_bool($datos['visible'] ?? null)) {
+            throw new ApiError(422, 'Indica si la reseña es visible', ['campo' => 'visible']);
+        }
+        $db = Db::escritura();
+        $q = $db->prepare('SELECT producto_id, visible FROM resenas WHERE id = ?');
+        $q->execute([$id]);
+        $r = $q->fetch() ?: throw new ApiError(404, 'Reseña no encontrada');
+        $db->prepare('UPDATE resenas SET visible = ? WHERE id = ?')->execute([(int) $datos['visible'], $id]);
+        $this->recalcular((int) $r['producto_id']);
+        Auditoria::registrar('PRODUCTO_ACTUALIZADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_anterior' => ['resena_id' => $id, 'visible' => (bool) $r['visible']],
+            'dato_nuevo'    => ['resena_id' => $id, 'producto_id' => (int) $r['producto_id'], 'visible' => $datos['visible']],
+        ]);
+        return [200, ['ok' => true]];
+    }
+
+    private function recalcular(int $productoId): void
+    {
+        Db::escritura()->prepare('UPDATE productos p SET
+                p.calificacion = COALESCE((SELECT ROUND(AVG(r.calificacion), 1) FROM resenas r WHERE r.producto_id = p.id AND r.visible = 1), 0),
+                p.resenas = (SELECT COUNT(*) FROM resenas r WHERE r.producto_id = p.id AND r.visible = 1)
+              WHERE p.id = ?')->execute([$productoId]);
+        self::invalidar();
+    }
+
+    /** @return array{compro: bool, nombre: ?string} según pedidos-service (si no responde, no se permite). */
+    private function compro(int $clienteId, int $productoId): array
+    {
+        [$codigo, $json] = Interno::post(rtrim(Env::get('PEDIDOS_URL', 'http://pedidos-service:8083'), '/') . '/internal/pedidos/compro',
+            ['id_cliente' => $clienteId, 'producto_id' => $productoId]);
+        return $codigo === 200 && is_array($json) ? ['compro' => ($json['compro'] ?? false) === true, 'nombre' => $json['nombre'] ?? null]
+            : ['compro' => false, 'nombre' => null];
+    }
+
+    private function productoPorSlug(string $slug): array
+    {
+        $q = Db::escritura()->prepare('SELECT id, nombre, calificacion, resenas FROM productos WHERE slug = ? AND activo = 1');
+        $q->execute([$slug]);
+        return $q->fetch() ?: throw new ApiError(404, 'Producto no encontrado');
+    }
+
+    private static function resenaJson(array $r): array
+    {
+        return ['id' => (int) $r['id'], 'autor' => $r['autor'], 'calificacion' => (int) $r['calificacion'], 'comentario' => $r['comentario'],
+                'fecha' => substr($r['created_at'], 0, 10)];
     }
 
     // ---------- Caché ----------

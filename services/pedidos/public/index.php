@@ -16,6 +16,7 @@ $router->add('GET',   '/salud', fn() => [200, ['estado' => 'ok', 'servicio' => '
 $router->add('GET',   '/api/pedidos/sedes', fn() => [200, ['sedes' => PedidosController::SEDES]]);
 $router->add('GET',   '/api/pedidos/cupones/{codigo}', fn($p) => $pedidos->cupon($p['codigo']));
 $router->add('POST',  '/api/pedidos/cotizar', fn() => $pedidos->cotizar());
+$router->add('GET',   '/api/pedidos/metodos-pago', fn() => $pedidos->metodosPago());
 
 // Administración.
 $router->add('GET',   '/api/pedidos/admin/todos', fn() => $pedidos->listarTodos());
@@ -33,6 +34,7 @@ $router->add('POST',  '/api/pedidos/{id}/pago/paypal/capturar', fn($p) => $pedid
 
 // Solo pagos-service: confirma que la pasarela cobró.
 $router->add('POST',  '/internal/pedidos/pagado', fn() => $pedidos->pagadoInterno());
+$router->add('POST',  '/internal/pedidos/compro', fn() => $pedidos->comproInterno());
 
 // Cliente autenticado: solo ve y crea sus propios pedidos.
 $router->add('POST',  '/api/pedidos', fn() => $pedidos->crear());

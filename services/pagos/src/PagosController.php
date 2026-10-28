@@ -22,6 +22,13 @@ use Huellitas\Jwt;
 final class PagosController
 {
     /** Entrada: {pedido_id, id_cliente, monto: "41.97", metodo: stripe|paypal, actor} */
+    /** Métodos con claves configuradas (solo pedidos-service). Sin claves, ese método no se ofrece. */
+    public function metodos(): array
+    {
+        Guard::servicio(['pedidos-service']);
+        return [200, ['metodos' => array_values(array_filter([Stripe::configurado() ? 'stripe' : null, PayPal::configurado() ? 'paypal' : null]))]];
+    }
+
     public function iniciar(): array
     {
         Guard::servicio(['pedidos-service']);
