@@ -21,6 +21,7 @@ export default function AgendarCita({ inicial = {}, onClose, onDone }) {
   const [nueva, setNueva] = useState(null) // { nombre, especie } al registrar una mascota
   const [servicios, setServicios] = useState(null)
   const [servicio, setServicio] = useState(inicial.servicio || 'veterinaria')
+  const [profesional, setProfesional] = useState('')
   const [eleccion, setEleccion] = useState({ fecha: inicial.fecha || '', hora: '', salida: '' })
   const [contacto, setContacto] = useState({ nombre: '', email: '', telefono: '', notas: '' })
   const [error, setError] = useState('')
@@ -76,7 +77,8 @@ export default function AgendarCita({ inicial = {}, onClose, onDone }) {
     try {
       const d = await api('/api/citas/admin/citas', {
         method: 'POST',
-        body: { servicio, mascota_id: mascotaId, ...cuerpoReserva(elegido.modalidad, eleccion), nombre: contacto.nombre, email: contacto.email,
+        body: { servicio, mascota_id: mascotaId, ...cuerpoReserva(elegido.modalidad, eleccion), ...(profesional ? { profesional_id: Number(profesional) } : {}),
+                nombre: contacto.nombre, email: contacto.email,
                 telefono: contacto.telefono, notas: contacto.notas.trim() },
       })
       onDone(d.cita, d.aviso)
@@ -155,11 +157,19 @@ export default function AgendarCita({ inicial = {}, onClose, onDone }) {
         {cliente && mascotaId && servicios && (
           <>
             <label>Servicio
-              <select value={servicio} onChange={(e) => { setServicio(e.target.value); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
+              <select value={servicio} onChange={(e) => { setServicio(e.target.value); setProfesional(''); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
                 {servicios.map((s) => <option key={s.slug} value={s.slug}>{s.nombre} · {s.sede.nombre.split(' · ')[0]}</option>)}
               </select>
             </label>
-            {elegido && <SlotPicker servicio={servicio} modalidad={elegido.modalidad} value={eleccion} onChange={setEleccion} numerado={false} />}
+            {elegido?.profesionales?.length > 0 && (
+              <label>Con quién
+                <select value={profesional} onChange={(e) => { setProfesional(e.target.value); setEleccion((x) => ({ ...x, hora: '' })) }}>
+                  <option value="">Quien tenga lugar</option>
+                  {elegido.profesionales.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                </select>
+              </label>
+            )}
+            {elegido && <SlotPicker servicio={servicio} modalidad={elegido.modalidad} value={eleccion} onChange={setEleccion} numerado={false} profesional={profesional} />}
             <div className="agenda__form-row">
               <label>Quien la trae
                 <input value={contacto.nombre} onChange={(e) => setContacto((x) => ({ ...x, nombre: e.target.value }))} maxLength={100} />

@@ -119,7 +119,7 @@ function CitaRow({ cita, onChange, onReprogramar }) {
       <span className="cita__icon"><PetIcon especie={cita.mascota.especie} size={26} /></span>
       <span className="cita__main">
         <strong>{cita.servicio.nombre} · {cita.mascota.nombre}</strong>
-        <small>{formatReserva(cita, true)}</small>
+        <small>{formatReserva(cita, true)}{cita.profesional && ` · con ${cita.profesional}`}</small>
         <small><MapPin size={14} /> {cita.sede.nombre}</small>
         {cita.codigo_verificacion && <small>Código de verificación: <span className="mono">{cita.codigo_verificacion}</span></small>}
         {error && <small className="field-error">{error}</small>}

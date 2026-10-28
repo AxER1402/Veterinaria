@@ -38,7 +38,7 @@ const REFRESCO_MS = 60_000
 
 const sedeCorta = (codigo) => SEDES.find((s) => s.value === codigo)?.label || codigo
 const rango = (b) => (b.hora_inicio ? `${b.hora_inicio}–${b.hora_fin}` : 'Todo el día')
-const lugar = (c) => (c.servicio.slug === 'veterinaria' ? `Consultorio ${c.cupo}` : c.servicio.slug === 'peluqueria' ? `Mesa ${c.cupo}` : `Lugar ${c.cupo}`)
+const lugar = (c) => c.profesional || (c.servicio.slug === 'veterinaria' ? `Consultorio ${c.cupo}` : c.servicio.slug === 'peluqueria' ? `Mesa ${c.cupo}` : `Lugar ${c.cupo}`)
 
 export default function AdminAgenda() {
   const { user } = useAuth()

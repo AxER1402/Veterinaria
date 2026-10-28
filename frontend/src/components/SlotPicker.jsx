@@ -11,42 +11,43 @@ const DIAS_VISIBLES = 12
 //   estadia → entrada y salida (hospedaje)
 // Abre en el primer día con lugar y marca los llenos con el calendario del servidor, que vuelve a
 // validar todo al reservar. `value` = { fecha, hora, salida }.
-export default function SlotPicker({ servicio, modalidad, value, onChange, numerado = true }) {
+export default function SlotPicker({ servicio, modalidad, value, onChange, numerado = true, profesional = '' }) {
   // Cada respuesta guarda la consulta que la pidió: si llega tarde la de otro día o servicio, no se muestra.
   const [cal, setCal] = useState(null)
   const [disp, setDisp] = useState(null)
   const [estadia, setEstadia] = useState(null)
   const { fecha, hora, salida } = value
-  const calendario = cal?.clave === servicio ? cal.datos : null
-  const turnos = disp?.clave === `${servicio}|${fecha}` ? disp.datos : null
+  const conQuien = profesional ? `&profesional=${profesional}` : ''
+  const calendario = cal?.clave === `${servicio}|${profesional}` ? cal.datos : null
+  const turnos = disp?.clave === `${servicio}|${fecha}|${profesional}` ? disp.datos : null
   const libresEstadia = estadia?.clave === `${servicio}|${fecha}|${salida}` ? estadia.datos : null
   const n = (paso) => (numerado ? `${paso}. ` : '')
 
   useEffect(() => {
     if (!servicio) return
     let vigente = true
-    api(`/api/citas/calendario?servicio=${encodeURIComponent(servicio)}`, { auth: false })
+    api(`/api/citas/calendario?servicio=${encodeURIComponent(servicio)}${conQuien}`, { auth: false })
       .then((d) => {
         if (!vigente) return
-        setCal({ clave: servicio, datos: d })
+        setCal({ clave: `${servicio}|${profesional}`, datos: d })
         // Si no hay fecha elegida (o ya no tiene lugar), se abre en el primer día libre.
         const elegido = d.dias.find((x) => x.fecha === fecha)
         if (!elegido || elegido.estado !== 'libre') onChange({ fecha: d.primer_dia_libre || '', hora: '', salida: '' })
       })
-      .catch(() => vigente && setCal({ clave: servicio, datos: { dias: [], error: true } }))
+      .catch(() => vigente && setCal({ clave: `${servicio}|${profesional}`, datos: { dias: [], error: true } }))
     return () => { vigente = false }
-    // Solo al cambiar de servicio: la fecha elegida después no debe recargar el calendario.
-  }, [servicio]) // eslint-disable-line react-hooks/exhaustive-deps
+    // Solo al cambiar de servicio o de profesional: la fecha elegida después no debe recargar el calendario.
+  }, [servicio, profesional]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!servicio || !fecha) return
     let vigente = true
-    const clave = `${servicio}|${fecha}`
-    api(`/api/citas/disponibilidad?servicio=${encodeURIComponent(servicio)}&fecha=${fecha}`, { auth: false })
+    const clave = `${servicio}|${fecha}|${profesional}`
+    api(`/api/citas/disponibilidad?servicio=${encodeURIComponent(servicio)}&fecha=${fecha}${conQuien}`, { auth: false })
       .then((d) => vigente && setDisp({ clave, datos: d.turnos }))
       .catch((e) => vigente && setDisp({ clave, datos: { error: e.message } }))
     return () => { vigente = false }
-  }, [servicio, fecha])
+  }, [servicio, fecha, conQuien, profesional])
 
   useEffect(() => {
     if (modalidad !== 'estadia' || !fecha || !salida) return

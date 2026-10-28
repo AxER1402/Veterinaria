@@ -44,6 +44,7 @@ export default function BookingForm() {
   const [loadError, setLoadError] = useState('')
   const [servicio, setServicio] = useState(params.get('servicio') || draft.servicio || '')
   const [eleccion, setEleccion] = useState({ fecha: draft.fecha || '', hora: draft.hora || '', salida: draft.salida || '' })
+  const [profesional, setProfesional] = useState(draft.profesional || '')
   const [cita, setCita] = useState(null)
 
   useEffect(() => {
@@ -89,7 +90,7 @@ export default function BookingForm() {
             <div className="booking__steps">
               <div className="form-grid form-grid--tight">
                 <Field label="1. Servicio" full>
-                  <select value={servicio} onChange={(e) => { setServicio(e.target.value); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
+                  <select value={servicio} onChange={(e) => { setServicio(e.target.value); setProfesional(''); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
                     {servicios.map((s) => (
                       <option key={s.slug} value={s.slug}>{s.nombre} · desde {formatPrice(s.precio_desde)}</option>
                     ))}
@@ -100,10 +101,20 @@ export default function BookingForm() {
                 <p className="booking__sede"><MapPin size={18} /> <span>Se atiende en <strong>{elegido.sede.nombre}</strong></span></p>
               )}
 
-              {elegido && <SlotPicker servicio={servicio} modalidad={elegido.modalidad} value={eleccion} onChange={setEleccion} />}
+              {elegido?.profesionales?.length > 0 && (
+                <div className="form-grid form-grid--tight">
+                  <Field label="¿Con quién? (opcional)" full>
+                    <select value={profesional} onChange={(e) => { setProfesional(e.target.value); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
+                      <option value="">Con quien tenga lugar</option>
+                      {elegido.profesionales.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                    </select>
+                  </Field>
+                </div>
+              )}
+              {elegido && <SlotPicker servicio={servicio} modalidad={elegido.modalidad} value={eleccion} onChange={setEleccion} profesional={profesional} />}
 
               {checking ? null : !user ? (
-                <LoginPrompt disabled={!lista} onGo={() => saveDraft({ servicio, ...eleccion })} from={pathname} />
+                <LoginPrompt disabled={!lista} onGo={() => saveDraft({ servicio, profesional, ...eleccion })} from={pathname} />
               ) : (
                 <Confirm
                   key={user.id || user.email}
@@ -111,7 +122,7 @@ export default function BookingForm() {
                   lista={lista}
                   consulta={servicio === 'veterinaria'}
                   mascotaInicial={params.get('mascota')}
-                  reserva={{ servicio, ...cuerpoReserva(elegido?.modalidad, eleccion) }}
+                  reserva={{ servicio, ...cuerpoReserva(elegido?.modalidad, eleccion), ...(profesional ? { profesional_id: Number(profesional) } : {}) }}
                   onDone={(r) => { saveDraft(null); setCita(r) }}
                   onTaken={() => setEleccion((e) => ({ ...e, hora: '' }))}
                 />
@@ -278,7 +289,7 @@ function Success({ cita, aviso, onReset }) {
       <p>
         <strong>{cita.servicio.nombre}</strong> para <PetIcon especie={cita.mascota.especie} size={16} className="inline-icon" /> {cita.mascota.nombre}
         <br />
-        {formatReserva(cita)}
+        {formatReserva(cita)}{cita.profesional && ` · con ${cita.profesional}`}
         <br />
         {cita.sede.nombre}
       </p>
