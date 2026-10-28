@@ -29,6 +29,34 @@ final class PagosController
         return [200, ['metodos' => array_values(array_filter([Stripe::configurado() ? 'stripe' : null, PayPal::configurado() ? 'paypal' : null]))]];
     }
 
+    /**
+     * Reembolso total del pago confirmado de un pedido, por la API de la pasarela (solo pedidos-service).
+     * Entrada: {pedido_id, actor}. Devuelve la referencia del reembolso.
+     */
+    public function reembolsar(): array
+    {
+        Guard::servicio(['pedidos-service']);
+        $d = Http::body();
+        $pedidoId = is_string($d['pedido_id'] ?? null) ? $d['pedido_id'] : throw new ApiError(422, 'Pedido no válido');
+        $q = Db::escritura()->prepare("SELECT id, metodo, payment_intent_id, monto, moneda, reembolso_ref FROM pagos
+                                        WHERE id_pedido = ? AND estado = 'confirmado' ORDER BY fecha_pago DESC LIMIT 1");
+        $q->execute([$pedidoId]);
+        $pago = $q->fetch() ?: throw new ApiError(409, 'Este pedido no tiene un pago confirmado en la pasarela: reembolsa a mano y anota la referencia');
+        if ($pago['reembolso_ref'] !== null) {
+            return [200, ['referencia' => $pago['reembolso_ref'], 'metodo' => $pago['metodo']]];
+        }
+        if (!($pago['metodo'] === 'stripe' ? Stripe::configurado() : PayPal::configurado())) {
+            throw new ApiError(503, 'La pasarela de ese pago no está configurada en este entorno');
+        }
+        $referencia = $pago['metodo'] === 'stripe' ? Stripe::reembolsar($pago['payment_intent_id']) : PayPal::reembolsar($pago['payment_intent_id']);
+        Db::escritura()->prepare('UPDATE pagos SET reembolso_ref = ?, reembolsado_en = NOW() WHERE id = ?')->execute([$referencia, $pago['id']]);
+        Auditoria::registrar('PAGO_REEMBOLSADO', 'EXITO', (is_array($d['actor'] ?? null) ? $d['actor'] : []) + [
+            'pedido_id' => $pedidoId, 'pago_id' => $pago['id'],
+            'dato_nuevo' => ['metodo' => $pago['metodo'], 'monto' => $pago['monto'], 'moneda' => $pago['moneda'], 'referencia' => $referencia],
+        ]);
+        return [200, ['referencia' => $referencia, 'metodo' => $pago['metodo']]];
+    }
+
     public function iniciar(): array
     {
         Guard::servicio(['pedidos-service']);

@@ -67,7 +67,7 @@ final class AuthController
         }
 
         $db = Db::escritura();
-        $consulta = $db->prepare('SELECT id, nombre, email, telefono, password_hash, rol, activo, intentos_fallidos, bloqueado_hasta, mfa_activo
+        $consulta = $db->prepare('SELECT id, nombre, email, telefono, password_hash, debe_cambiar_password, rol, activo, intentos_fallidos, bloqueado_hasta, mfa_activo
                                     FROM usuarios WHERE email = ?');
         $consulta->execute([$email]);
         $usuario = $consulta->fetch() ?: null;
@@ -222,7 +222,7 @@ final class AuthController
 
     private function usuarioPorId(int $id): array
     {
-        $consulta = Db::escritura()->prepare('SELECT id, nombre, email, telefono, password_hash, rol, activo, intentos_fallidos, bloqueado_hasta,
+        $consulta = Db::escritura()->prepare('SELECT id, nombre, email, telefono, password_hash, debe_cambiar_password, rol, activo, intentos_fallidos, bloqueado_hasta,
                                                      mfa_activo, mfa_secreto, mfa_ultimo_paso FROM usuarios WHERE id = ?');
         $consulta->execute([$id]);
         return $consulta->fetch() ?: throw new ApiError(401, 'Cuenta no disponible');
@@ -243,7 +243,7 @@ final class AuthController
     public function me(): array
     {
         $claims = Guard::usuario();
-        $consulta = Db::escritura()->prepare('SELECT id, nombre, email, telefono, rol, activo, mfa_activo FROM usuarios WHERE id = ?');
+        $consulta = Db::escritura()->prepare('SELECT id, nombre, email, telefono, debe_cambiar_password, rol, activo, mfa_activo FROM usuarios WHERE id = ?');
         $consulta->execute([$claims['sub']]);
         $usuario = $consulta->fetch();
         if (!$usuario || !$usuario['activo']) {
@@ -302,6 +302,64 @@ final class AuthController
         $consulta->execute([$id]);
         $u = $consulta->fetch() ?: throw new ApiError(404, 'Cliente no encontrado');
         return [200, ['cliente' => self::clienteJson($u)]];
+    }
+
+    /**
+     * Cuenta para alguien que llama o llega sin cuenta. Nace con una contraseña temporal (se muestra una
+     * sola vez, para entregársela al cliente) que debe cambiar en su primer ingreso.
+     */
+    public function crearCliente(): array
+    {
+        $claims = Guard::usuario(Guard::CLINICA);
+        $datos = Http::body();
+        Validar::sinAtaques($datos);
+        $nombre = Validar::texto($datos, 'nombre', 2, 100);
+        $email = Validar::email($datos);
+        $telefono = isset($datos['telefono']) && $datos['telefono'] !== '' ? self::telefono($datos['telefono']) : null;
+        $db = Db::escritura();
+        $existe = $db->prepare('SELECT id FROM usuarios WHERE email = ?');
+        $existe->execute([$email]);
+        if ($existe->fetchColumn()) {
+            throw new ApiError(409, 'Ya existe una cuenta con ese correo: búscala en la lista');
+        }
+        // 10 caracteres sin los que se confunden al dictarlos (0/O, 1/l/I).
+        $alfabeto = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        do {
+            $temporal = '';
+            for ($i = 0; $i < 10; $i++) {
+                $temporal .= $alfabeto[random_int(0, strlen($alfabeto) - 1)];
+            }
+        } while (!preg_match('/\d/', $temporal) || !preg_match('/[a-zA-Z]/', $temporal));
+        $db->prepare('INSERT INTO usuarios (nombre, email, telefono, password_hash, debe_cambiar_password, rol) VALUES (?, ?, ?, ?, 1, ?)')
+            ->execute([$nombre, $email, $telefono, password_hash($temporal, PASSWORD_BCRYPT, self::BCRYPT), 'cliente']);
+        $id = (int) $db->lastInsertId();
+        Auditoria::registrar('REGISTRO_CLIENTE', 'EXITO', [
+            'usuario_id' => $id, 'usuario_email' => $email, 'rol' => 'cliente',
+            'dato_nuevo' => ['nombre' => $nombre, 'email' => $email, 'origen' => 'panel', 'creado_por' => $claims['email']],
+        ]);
+        return [201, ['cliente' => self::clienteJson($this->usuarioPorId($id) + ['created_at' => date('Y-m-d H:i:s'), 'bloqueado_hasta' => null]),
+                      'password_temporal' => $temporal]];
+    }
+
+    /** Cambio de contraseña con la actual. Quita la marca de «contraseña temporal». */
+    public function cambiarPassword(): array
+    {
+        $claims = Guard::usuario();
+        $datos = Http::body();
+        $usuario = $this->usuarioPorId((int) $claims['sub']);
+        if (!password_verify(is_string($datos['actual'] ?? null) ? $datos['actual'] : '', $usuario['password_hash'])) {
+            throw new ApiError(422, 'La contraseña actual no es correcta', ['campo' => 'actual']);
+        }
+        $nueva = Validar::password($datos, 'nueva');
+        if (password_verify($nueva, $usuario['password_hash'])) {
+            throw new ApiError(422, 'La contraseña nueva debe ser distinta de la actual', ['campo' => 'nueva']);
+        }
+        Db::escritura()->prepare('UPDATE usuarios SET password_hash = ?, debe_cambiar_password = 0 WHERE id = ?')
+            ->execute([password_hash($nueva, PASSWORD_BCRYPT, self::BCRYPT), $usuario['id']]);
+        Auditoria::registrar('PASSWORD_CAMBIADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_nuevo' => ['era_temporal' => (bool) $usuario['debe_cambiar_password']],
+        ]);
+        return [200, ['usuario' => $this->publico($this->usuarioPorId($usuario['id']))]];
     }
 
     /** Personal con acceso al panel (solo admin). */
@@ -409,6 +467,6 @@ final class AuthController
     private function publico(array $u): array
     {
         return ['id' => (int) $u['id'], 'nombre' => $u['nombre'], 'email' => $u['email'], 'telefono' => $u['telefono'] ?? null, 'rol' => $u['rol'],
-                'mfa' => (bool) ($u['mfa_activo'] ?? false)];
+                'mfa' => (bool) ($u['mfa_activo'] ?? false), 'cambiar_password' => (bool) ($u['debe_cambiar_password'] ?? false)];
     }
 }

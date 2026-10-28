@@ -14,6 +14,7 @@ $router->add('GET',  '/salud', fn() => [200, ['estado' => 'ok', 'servicio' => 'p
 
 // Solo pedidos-service (JWT de servicio): el navegador nunca llama directo a pagos.
 $router->add('POST', '/internal/pagos/metodos', fn() => $pagos->metodos());
+$router->add('POST', '/internal/pagos/reembolsar', fn() => $pagos->reembolsar());
 $router->add('POST', '/internal/pagos/iniciar', fn() => $pagos->iniciar());
 $router->add('POST', '/internal/pagos/paypal/capturar', fn() => $pagos->capturarPayPal());
 

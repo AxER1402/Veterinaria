@@ -26,6 +26,7 @@ $router->add('GET',   '/api/pedidos/admin/preparacion', fn() => $pedidos->prepar
 $router->add('GET',   '/api/pedidos/admin/clientes/{id}', fn($p) => $pedidos->deCliente((int) $p['id']));
 $router->add('PATCH', '/api/pedidos/admin/{id}/estado', fn($p) => $pedidos->cambiarEstado($p['id']));
 $router->add('PATCH', '/api/pedidos/admin/{id}/reembolso', fn($p) => $pedidos->registrarReembolso($p['id']));
+$router->add('POST',  '/api/pedidos/admin/{id}/reembolso/pasarela', fn($p) => $pedidos->reembolsarEnPasarela($p['id']));
 
 // Pago: el cliente dueño lo inicia aquí; pedidos-service habla con pagos-service por la red interna.
 $router->add('POST',  '/api/pedidos/{id}/pago', fn($p) => $pedidos->iniciarPago($p['id']));

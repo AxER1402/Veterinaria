@@ -340,16 +340,17 @@ final class CatalogoController
     {
         $claims = Guard::usuario(['cliente']);
         $producto = $this->productoPorSlug($slug);
-        $q = Db::escritura()->prepare('SELECT id, autor, calificacion, comentario, created_at, visible FROM resenas WHERE producto_id = ? AND id_cliente = ?');
+        $q = Db::escritura()->prepare('SELECT id, autor, calificacion, comentario, created_at, visible, revisada FROM resenas WHERE producto_id = ? AND id_cliente = ?');
         $q->execute([$producto['id'], (int) $claims['sub']]);
         $mia = $q->fetch();
         return [200, ['compro' => $this->compro((int) $claims['sub'], (int) $producto['id'])['compro'],
-                      'resena' => $mia ? self::resenaJson($mia) + ['visible' => (bool) $mia['visible']] : null]];
+                      'resena' => $mia ? self::resenaJson($mia) + ['estado' => self::estadoResena($mia)] : null]];
     }
 
     /**
-     * Publica o actualiza la reseña del cliente. Solo quien compró el producto (pedido pagado o más
-     * avanzado): lo confirma pedidos-service por la red interna, no el navegador.
+     * Guarda o actualiza la reseña del cliente. Solo quien compró el producto (pedido pagado o más
+     * avanzado): lo confirma pedidos-service por la red interna, no el navegador. Queda «en revisión»
+     * (no se ve) hasta que la tienda la publica; si la edita, vuelve a revisión.
      */
     public function publicarResena(string $slug): array
     {
@@ -371,8 +372,9 @@ final class CatalogoController
         $autor = mb_substr($partes[0] . (isset($partes[1]) ? ' ' . mb_substr($partes[1], 0, 1) . '.' : ''), 0, 60);
 
         $db = Db::escritura();
-        $db->prepare('INSERT INTO resenas (producto_id, id_cliente, autor, calificacion, comentario) VALUES (?, ?, ?, ?, ?)
-                      ON DUPLICATE KEY UPDATE calificacion = VALUES(calificacion), comentario = VALUES(comentario), autor = VALUES(autor)')
+        $db->prepare('INSERT INTO resenas (producto_id, id_cliente, autor, calificacion, comentario, visible, revisada) VALUES (?, ?, ?, ?, ?, 0, 0)
+                      ON DUPLICATE KEY UPDATE calificacion = VALUES(calificacion), comentario = VALUES(comentario), autor = VALUES(autor),
+                                              visible = 0, revisada = 0')
             ->execute([$producto['id'], (int) $claims['sub'], $autor, $calificacion, $comentario]);
         $this->recalcular((int) $producto['id']);
         Auditoria::registrar('RESENA_PUBLICADA', 'EXITO', Auditoria::actor($claims) + [
@@ -385,13 +387,13 @@ final class CatalogoController
     public function resenasAdmin(): array
     {
         Guard::usuario(Guard::TIENDA);
-        $q = Db::escritura()->query('SELECT r.id, r.autor, r.calificacion, r.comentario, r.created_at, r.visible, p.nombre AS producto, p.slug
-                                       FROM resenas r JOIN productos p ON p.id = r.producto_id ORDER BY r.created_at DESC LIMIT 100');
-        return [200, ['resenas' => array_map(fn($r) => self::resenaJson($r) + ['visible' => (bool) $r['visible'], 'producto' => $r['producto'], 'slug' => $r['slug']],
-            $q->fetchAll())]];
+        $q = Db::escritura()->query('SELECT r.id, r.autor, r.calificacion, r.comentario, r.created_at, r.visible, r.revisada, p.nombre AS producto, p.slug
+                                       FROM resenas r JOIN productos p ON p.id = r.producto_id ORDER BY r.revisada, r.updated_at DESC LIMIT 100');
+        return [200, ['resenas' => array_map(fn($r) => self::resenaJson($r) + ['estado' => self::estadoResena($r), 'visible' => (bool) $r['visible'],
+            'producto' => $r['producto'], 'slug' => $r['slug']], $q->fetchAll())]];
     }
 
-    /** Oculta o vuelve a mostrar una reseña (no se borra) y recalcula la calificación. */
+    /** Publica u oculta una reseña (no se borra; queda revisada) y recalcula la calificación. */
     public function moderarResena(int $id): array
     {
         $claims = Guard::usuario(Guard::TIENDA);
@@ -403,7 +405,7 @@ final class CatalogoController
         $q = $db->prepare('SELECT producto_id, visible FROM resenas WHERE id = ?');
         $q->execute([$id]);
         $r = $q->fetch() ?: throw new ApiError(404, 'Reseña no encontrada');
-        $db->prepare('UPDATE resenas SET visible = ? WHERE id = ?')->execute([(int) $datos['visible'], $id]);
+        $db->prepare('UPDATE resenas SET visible = ?, revisada = 1 WHERE id = ?')->execute([(int) $datos['visible'], $id]);
         $this->recalcular((int) $r['producto_id']);
         Auditoria::registrar('PRODUCTO_ACTUALIZADO', 'EXITO', Auditoria::actor($claims) + [
             'dato_anterior' => ['resena_id' => $id, 'visible' => (bool) $r['visible']],
@@ -435,6 +437,11 @@ final class CatalogoController
         $q = Db::escritura()->prepare('SELECT id, nombre, calificacion, resenas FROM productos WHERE slug = ? AND activo = 1');
         $q->execute([$slug]);
         return $q->fetch() ?: throw new ApiError(404, 'Producto no encontrado');
+    }
+
+    private static function estadoResena(array $r): string
+    {
+        return !(int) $r['revisada'] ? 'en_revision' : ((int) $r['visible'] ? 'publicada' : 'oculta');
     }
 
     private static function resenaJson(array $r): array

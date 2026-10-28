@@ -350,7 +350,31 @@ final class PedidosController
         $id = self::uuid($id);
         $datos = Http::body();
         Validar::sinAtaques($datos);
-        $referencia = Validar::texto($datos, 'referencia', 3, 100);
+        return [200, ['pedido' => $this->marcarReembolsado($id, Validar::texto($datos, 'referencia', 3, 100), $claims)]];
+    }
+
+    /** Pide el reembolso a la pasarela (Stripe o PayPal, vía pagos-service) y lo deja registrado. */
+    public function reembolsarEnPasarela(string $id): array
+    {
+        $claims = Guard::usuario(Guard::TIENDA);
+        $id = self::uuid($id);
+        $consulta = Db::escritura()->prepare('SELECT reembolso FROM pedidos WHERE id = ?');
+        $consulta->execute([$id]);
+        $estado = $consulta->fetchColumn();
+        if ($estado === false) {
+            throw new ApiError(404, 'Pedido no encontrado');
+        }
+        if ($estado !== 'pendiente') {
+            throw new ApiError(409, 'Este pedido no tiene un reembolso pendiente');
+        }
+        $r = Interno::exigir($this->servicio('PAGOS_URL', 'http://pagos-service:8084', '/internal/pagos/reembolsar'),
+            ['pedido_id' => $id, 'actor' => Auditoria::actor($claims)], 'pagos');
+        $metodo = ($r['metodo'] ?? '') === 'paypal' ? 'PayPal' : 'Stripe';
+        return [200, ['pedido' => $this->marcarReembolsado($id, mb_substr("$metodo {$r['referencia']}", 0, 100), $claims)]];
+    }
+
+    private function marcarReembolsado(string $id, string $referencia, array $claims): array
+    {
         $db = Db::escritura();
         $db->beginTransaction();
         try {
@@ -369,7 +393,7 @@ final class PedidosController
             throw $e;
         }
         Auditoria::registrar('REEMBOLSO_REGISTRADO', 'EXITO', Auditoria::actor($claims) + ['pedido_id' => $id, 'dato_nuevo' => ['referencia' => $referencia]]);
-        return [200, ['pedido' => $this->detalle($id)]];
+        return $this->detalle($id);
     }
 
     /** El cliente cancela su propio pedido mientras siga pendiente de pago; el stock vuelve al catálogo. */

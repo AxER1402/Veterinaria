@@ -43,6 +43,21 @@ final class Stripe
         return $json;
     }
 
+    /** Reembolso total de un PaymentIntent. La Idempotency-Key evita reembolsar dos veces. Devuelve el id (re_…). */
+    public static function reembolsar(string $paymentIntent): string
+    {
+        [$codigo, $json] = Pasarela::llamar('POST', self::API . '/refunds', [
+            'Authorization: Bearer ' . Env::required('STRIPE_SECRET_KEY'),
+            'Content-Type: application/x-www-form-urlencoded',
+            "Idempotency-Key: re-$paymentIntent",
+        ], http_build_query(['payment_intent' => $paymentIntent, 'reason' => 'requested_by_customer']));
+        if ($codigo !== 200 || !isset($json['id'])) {
+            error_log('Stripe (reembolso) respondió ' . $codigo . ': ' . ($json['error']['message'] ?? 'sin detalle'));
+            throw new ApiError(502, 'Stripe no pudo hacer el reembolso: ' . ($json['error']['message'] ?? "HTTP $codigo"));
+        }
+        return $json['id'];
+    }
+
     /**
      * A08 / PCI-DSS: verificación de la cabecera Stripe-Signature.
      * Formato: "t=<unix>,v1=<hmac_sha256(t.payload)>[,v1=…]". Se acepta si alguna v1 coincide

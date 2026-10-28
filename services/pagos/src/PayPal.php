@@ -65,6 +65,29 @@ final class PayPal
         return $json;
     }
 
+    /** Reembolso total de la captura de una orden. PayPal-Request-Id evita reembolsar dos veces. Devuelve el id. */
+    public static function reembolsar(string $ordenId): string
+    {
+        [$codigo, $orden] = Pasarela::llamar('GET', self::base() . '/v2/checkout/orders/' . rawurlencode($ordenId), [
+            'Authorization: Bearer ' . self::token(),
+        ], null);
+        $captura = $orden['purchase_units'][0]['payments']['captures'][0]['id'] ?? null;
+        if ($codigo !== 200 || !is_string($captura)) {
+            error_log("PayPal (orden para reembolso) respondió $codigo");
+            throw new ApiError(502, 'No se encontró el cobro de PayPal para reembolsar');
+        }
+        [$codigo, $json] = Pasarela::llamar('POST', self::base() . '/v2/payments/captures/' . rawurlencode($captura) . '/refund', [
+            'Authorization: Bearer ' . self::token(),
+            'Content-Type: application/json',
+            "PayPal-Request-Id: reembolso-$captura",
+        ], '{}');
+        if (!in_array($codigo, [200, 201], true) || !isset($json['id'])) {
+            error_log("PayPal (reembolso) respondió $codigo");
+            throw new ApiError(502, 'PayPal no pudo hacer el reembolso: ' . ($json['details'][0]['issue'] ?? "HTTP $codigo"));
+        }
+        return $json['id'];
+    }
+
     private static function token(): string
     {
         $r = Cache::redis();
