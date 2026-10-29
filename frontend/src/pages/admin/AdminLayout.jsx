@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, Navigate, NavLink, Outlet } from 'react-router-dom'
+import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Package, Tags, ShieldCheck, Users, CalendarDays, PawPrint } from 'lucide-react'
 import Loading from '../../components/Loading'
 import { useAuth } from '../../context/useAuth'
@@ -22,6 +22,11 @@ const tabs = [
 export default function AdminLayout() {
   const { user, checking, isStaff } = useAuth()
   const [allowed, setAllowed] = useState(null)
+  const { pathname } = useLocation()
+  // Sección abierta por un enlace o un marcador de otro rol: se avisa en vez de mostrar la pantalla a medias
+  // (el servidor igual respondería 403 a cada dato).
+  const seccion = tabs.find((t) => !t.end && (pathname === t.to || pathname.startsWith(t.to + '/')))
+  const fueraDeRol = seccion?.roles && user && !seccion.roles.includes(user.rol)
 
   // El servidor decide: registra ACCESO_ADMIN_PANEL (éxito o intento fallido) y responde 200/403.
   useEffect(() => {
@@ -59,7 +64,14 @@ export default function AdminLayout() {
             </NavLink>
           ))}
         </nav>
-        <Outlet />
+        {fueraDeRol ? (
+          <div className="admin-card empty-state">
+            <ShieldCheck size={48} />
+            <h3>{seccion.label} no es parte de tu rol</h3>
+            <p>Tu cuenta es de {ROLES[user.rol] || user.rol}. Si necesitas esta sección, pídele al administrador que revise tu rol.</p>
+            <Link to="/admin" className="btn btn--primary btn--sm">Ir a Hoy</Link>
+          </div>
+        ) : <Outlet />}
       </div>
     </section>
   )

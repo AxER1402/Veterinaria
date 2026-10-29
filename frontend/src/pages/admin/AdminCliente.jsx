@@ -113,7 +113,8 @@ export default function AdminCliente() {
         <div className="admin-card">
           <h2>Pedidos</h2>
           {pedidos === false ? <p className="summary__hint">No disponible.</p> : pedidos.length === 0 ? <p className="summary__hint">Sin pedidos.</p> : (
-            <table className="admin-table">
+            <div className="table-scroll">
+              <table className="admin-table">
               <thead><tr><th>Pedido</th><th>Fecha</th><th className="num">Total</th><th>Estado</th></tr></thead>
               <tbody>
                 {pedidos.map((p) => (
@@ -126,6 +127,7 @@ export default function AdminCliente() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}

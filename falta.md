@@ -26,7 +26,8 @@ Pendiente
 - En macOS con Docker Desktop, los scripts de inicio de la base (`db/master/01-*.sh` y `db/audit/01-*.sh`) fallan con "bad interpreter: Permission denied" y las bases quedan vacías. Con volúmenes nuevos hay que correrlos a mano o cambiar cómo se cargan. En Linux y en CI funcionan.
 
 Lo que no se probó
-- Nadie revisó en el navegador las pantallas nuevas: reservar con profesional, agenda (por hora y por consultorio, y el equipo), pacientes, clientes, alta de clientes y cambio de contraseña obligatorio, pedidos, mis citas, mis mascotas, reseñas y checkout. Todo se probó por la API y el frontend compila sin avisos, pero falta revisarlo en escritorio y en celular, con cada rol.
+- Revisión en el navegador (2026-10-29, Chromium sin interfaz): 37 pantallas por rol (cliente, admin, veterinario, recepción, tienda y cliente con contraseña temporal), en escritorio (1366 px) y celular (390 px), sin errores de JS, sin peticiones fallidas y sin desborde horizontal. Se corrigieron el encabezado en celulares, las tablas sin desplazamiento, la sección fuera del rol y una petición prohibida de la tienda (ver `implementacionfaltante.md`). Falta probarlo en un teléfono real, y en Safari/iOS.
+  - Detalle menor sin corregir: en `/reservar`, en celular, el precio del servicio se corta dentro del selector («desde Q 2…»).
 - No se probó subir un adjunto del historial (laboratorio o radiografía) ni abrir su enlace firmado. La foto del catálogo sí se probó.
 - El reembolso por la pasarela no se probó con un pago real: falta tener claves.
 - `tests/seguridad.sh` se corrió el 2026-10-29 en local: 342 pasaron, 0 fallaron (detalle en `implementacionfaltante.md`). La prueba CP-36 necesita internet (clima).

@@ -16,7 +16,7 @@ export function Logo({ light = false }) {
       <span className="logo__badge">
         <PawIcon size={22} />
       </span>
-      Huellitas
+      <span className="logo__texto">Huellitas</span>
     </span>
   )
 }

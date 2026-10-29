@@ -11,6 +11,8 @@ const normalizar = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toL
 
 export default function AdminClientes() {
   const { user } = useAuth()
+  // Cancelaciones y faltas son datos de la agenda: solo los ve el personal de la clínica (la tienda no tiene acceso a citas).
+  const clinica = ['admin', 'veterinario', 'recepcion'].includes(user.rol)
   const [params, setParams] = useSearchParams()
   const q = params.get('q') || ''
   const [clientes, setClientes] = useState(null)
@@ -20,9 +22,8 @@ export default function AdminClientes() {
 
   useEffect(() => {
     api('/api/auth/admin/clientes').then((d) => setClientes(d.clientes)).catch((e) => setError(e.message))
-    // Solo el personal de la clínica ve cancelaciones y faltas (la tienda no tiene acceso a citas).
-    api('/api/citas/admin/clientes/contadores').then((d) => setContadores(d.contadores)).catch(() => {})
-  }, [])
+    if (clinica) api('/api/citas/admin/clientes/contadores').then((d) => setContadores(d.contadores)).catch(() => {})
+  }, [clinica])
 
   const lista = useMemo(() => {
     const t = normalizar(q.trim())
@@ -70,7 +71,7 @@ export default function AdminClientes() {
         {!clientes ? !error && <Loading /> : (
           <div className="table-scroll">
             <table className="admin-table">
-              <thead><tr><th>Cliente</th><th>Teléfono</th><th className="num">Atendidas</th><th className="num">Canceladas</th><th className="num">Faltas</th><th>Alta</th><th>Estado</th></tr></thead>
+              <thead><tr><th>Cliente</th><th>Teléfono</th>{clinica && <><th className="num">Atendidas</th><th className="num">Canceladas</th><th className="num">Faltas</th></>}<th>Alta</th><th>Estado</th></tr></thead>
               <tbody>
                 {lista.map((c) => {
                   const n = contadores[c.id] || {}
@@ -78,9 +79,13 @@ export default function AdminClientes() {
                     <tr key={c.id}>
                       <td><Link to={`/admin/clientes/${c.id}`}><strong>{c.nombre}</strong></Link><small>{c.email}</small></td>
                       <td>{c.telefono ? <a href={`tel:${c.telefono}`}>{c.telefono}</a> : '—'}</td>
-                      <td className="num">{n.atendidas ?? '—'}</td>
-                      <td className="num">{n.canceladas ?? '—'}</td>
-                      <td className="num">{n.faltas ? <span className={`status status--${n.faltas >= 3 ? 'bad' : 'warn'}`}>{n.faltas}</span> : n.faltas ?? '—'}</td>
+                      {clinica && (
+                        <>
+                          <td className="num">{n.atendidas ?? '—'}</td>
+                          <td className="num">{n.canceladas ?? '—'}</td>
+                          <td className="num">{n.faltas ? <span className={`status status--${n.faltas >= 3 ? 'bad' : 'warn'}`}>{n.faltas}</span> : n.faltas ?? '—'}</td>
+                        </>
+                      )}
                       <td>{formatDate(c.creado)}</td>
                       <td>
                         {c.bloqueado ? <span className="status status--bad">Bloqueado 15 min</span>
@@ -131,7 +136,8 @@ function Personal({ yo }) {
       {error && <p className="form-alert" role="alert">{error}</p>}
       {aviso && <p className="form-ok" role="status">{aviso}</p>}
       {!personal ? !error && <Loading /> : (
-        <table className="admin-table">
+        <div className="table-scroll">
+          <table className="admin-table">
           <thead><tr><th>Nombre</th><th>Rol</th><th>Dos pasos</th></tr></thead>
           <tbody>
             {personal.map((u) => (
@@ -147,6 +153,7 @@ function Personal({ yo }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   )

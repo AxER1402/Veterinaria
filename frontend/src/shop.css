@@ -864,7 +864,8 @@
 
 /* Agenda del admin (FASE 15 A3) */
 .agenda__day::first-letter { text-transform: uppercase; }
-.agenda__nav { display: flex; align-items: center; gap: 8px; }
+.agenda__nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.agenda__nav input { min-width: 0; }
 .agenda__nav .icon-btn { width: 38px; height: 38px; }
 .agenda__nav .icon-btn:hover { transform: none; }
 .agenda__nav input { font: inherit; font-size: 0.9rem; color: var(--navy); border: 1px solid var(--line); border-radius: 12px; padding: 7px 10px; background: var(--white); }
@@ -1177,6 +1178,14 @@ small.alert-badge { display: inline-flex; width: fit-content; margin-top: 4px; }
   .header__actions .header__reservar { display: inline-flex; padding: 8px 14px; font-size: 0.82rem; }
 }
 @media (max-width: 380px) { .header__actions .header__reservar { padding: 7px 10px; } }
+/* Celulares: con el nombre del logo, el encabezado mide 469 px y no cabe en 390 (ni en 360). Eso ensanchaba
+   toda la página y dejaba fuera de pantalla el botón del menú y parte de las ventanas fijas. Queda la huella;
+   el enlace ya se anuncia como «Inicio». */
+@media (max-width: 480px) {
+  .header__inner { gap: 12px; }
+  .header__actions { gap: 6px; }
+  .header .logo__texto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 .page-header--compact { padding: 28px 0 30px; text-align: left; }
 .page-header--compact h1 { font-size: clamp(1.6rem, 4vw, 2.2rem); margin: 4px 0; }
 .page-header--compact p { font-size: 1rem; margin: 0; max-width: none; }

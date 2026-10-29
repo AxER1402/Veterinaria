@@ -265,10 +265,73 @@ Si el turno estaba lleno por la misma cita (por ejemplo, el último lugar), repr
 - `docs/01-arquitectura-stride-dfd.md`: las tres filas 🟡 pasan a ✅ (CP-50 y CP-51).
 - `docs/06`, `docs/08`, `README.md` y `falta.md`: los conteos nuevos.
 
+Commit: `e4b727f`.
+
+## 2026-10-29 · Revisión en el navegador
+
+### 1. Cómo se hizo
+
+Con Chromium sin interfaz (`playwright-core` 1.46.1, fuera del repositorio). La sesión de cada rol se inyectó igual que la guarda el frontend: el token en `sessionStorage`.
+
+**Pantallas revisadas:**
+
+| Rol | Pantallas |
+|---|---|
+| Cliente | reservar, mis citas, mis mascotas, mis pedidos, detalle de pedido, producto con reseñas, checkout con carrito, seguridad |
+| Admin | hoy, agenda (por hora, por consultorio y en un día con 24 citas), pacientes, paciente, clientes, cliente, pedidos, pedido, catálogo, bitácora |
+| Veterinario, recepción y tienda | sus secciones, y una sección de otro rol abierta por URL |
+| Cliente creado desde el panel | la ventana de contraseña obligatoria |
+
+**En cada pantalla**, en escritorio (1366 px) y en celular (390 px):
+- se guardó una captura;
+- se registraron los errores de JS, los errores de consola y las peticiones que respondieron 4xx o 5xx;
+- se buscó desborde horizontal;
+- en los casos dudosos se midió en el navegador, también a 360 y 430 px.
+
+### 2. Qué se encontró y se corrigió
+
+1. **El encabezado no cabía en celulares.**
+   - **Causa:** logo con nombre (164 px) + 3 iconos + «Reservar» + ☰ suman 469 px, y en un teléfono de 390 hay 358 px.
+   - **Efecto:** el navegador ensanchaba toda la página a 485 px, así que:
+     - el botón ☰ quedaba fuera de la pantalla y no se podía abrir el menú;
+     - «Reservar» se veía cortado;
+     - la ventana de **contraseña obligatoria** quedaba cortada a la derecha (440 px de ancho en 390).
+   - Sin el botón «Reservar» del encabezado (agregado en `49605a7`) tampoco cabía: 370 px.
+   - **Corrección** (`Brand.jsx`, `shop.css`): hasta 480 px, el logo muestra solo la huella (el nombre queda oculto a la vista, y el enlace se anuncia como «Inicio») y los espacios bajan a 12 y 6 px.
+   - **Resultado:** a 360, 390 y 430 px el ancho de la página es igual al de la pantalla, el ☰ abre el menú y la ventana mide 358 px.
+2. **Dos tablas sin desplazamiento propio:** «Personal» (solo admin, en Clientes) y «Pedidos» del detalle de un cliente. Ensanchaban la página en celular, así que se envolvieron en `.table-scroll`, como el resto del panel.
+3. **La tienda pedía datos que no le corresponden.**
+   - En Clientes, el panel llamaba a `/api/citas/admin/clientes/contadores` aunque la tienda no tiene acceso a citas: un 403 en la consola y tres columnas llenas de «—».
+   - Ahora solo lo pide el personal de la clínica, y la tienda no ve esas columnas.
+4. **Sección de otro rol abierta por URL** (por ejemplo, la tienda en `/admin/agenda`).
+   - **Antes:** se veía la agenda con sus formularios, dos «No tienes permiso» y un «Cargando…» que no terminaba.
+   - **Ahora:** `AdminLayout` revisa la sección contra el rol y muestra «Agenda no es parte de tu rol» con un botón a Hoy. El servidor igual responde 403 a cada dato.
+5. **La fila de fecha de la agenda** se salía 8 px de la tarjeta en celular: ahora se acomoda en dos líneas (`flex-wrap`).
+
+### 3. Comprobado además
+
+- **Cambio de contraseña obligatorio hecho en la pantalla**, como un cliente:
+  - con contraseñas distintas avisa «no coinciden»;
+  - al guardar, la ventana se cierra y no vuelve al recargar;
+  - la contraseña nueva sirve para entrar.
+- **Reservar:** el selector «¿Con quién? (opcional)» ofrece los profesionales.
+- **Agenda «Por consultorio»:** una columna por profesional; en celular, la tabla se desplaza dentro de la tarjeta.
+- **Checkout sin claves:** avisa que el pago en línea no está disponible y que el pedido se aparta.
+
+### 4. Resultado final
+
+- **74 de 74 pantallas** sin errores de JS, sin peticiones fallidas y sin desborde.
+- `tests/seguridad.sh`: **342 pasaron, 0 fallaron**.
+
+### 5. Pendiente
+
+- Probar en un teléfono real, y en Safari/iOS.
+- Detalle menor sin corregir: en `/reservar`, en celular, el precio se corta dentro del selector de servicio.
+- Los nombres con números («Firulais 6588113») son datos que dejan las pruebas en la base local.
+
 ## Siguiente
 
 Según `falta.md`:
-- revisión de las pantallas nuevas en el navegador;
 - `lazy()` para el panel;
 - regenerar el PDF;
 - decidir el ENUM de `rol` de la bitácora.
