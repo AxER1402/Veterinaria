@@ -329,9 +329,36 @@ Con Chromium sin interfaz (`playwright-core` 1.46.1, fuera del repositorio). La 
 - Detalle menor sin corregir: en `/reservar`, en celular, el precio se corta dentro del selector de servicio.
 - Los nombres con números («Firulais 6588113») son datos que dejan las pruebas en la base local.
 
+Commit: `cf104da`.
+
+## 2026-10-29 · Panel con `lazy()`
+
+### 1. Cambio
+
+- **`App.jsx`:** las 11 páginas del panel (`AdminLayout`, `AdminResumen`, `AdminAgenda`, `AdminPacientes`, `AdminPaciente`, `AdminPedidos`, `AdminPedido`, `AdminCatalogo`, `AdminBitacora`, `AdminClientes`, `AdminCliente`) se cargan con `lazy()`. Antes solo `AdminResumen`, por Chart.js. La ruta `/admin` lleva su `Suspense`.
+- **`AdminLayout.jsx`:** un `Suspense` alrededor de la sección. El encabezado, las pestañas y el control de rol quedan fijos mientras baja la sección.
+- Ninguna página pública importa del panel (se comprobó con `grep`), así que nada del panel se cuela en el bundle de la tienda.
+
+### 2. Medido
+
+| | Antes | Después |
+|---|---|---|
+| Bundle principal (`index-*.js`) | 540 KB (gzip 159) | 377 KB (gzip 115) |
+| Aviso de Vite «chunks > 500 kB» | sí | no |
+| JS que descarga `/tienda`, `/reservar` o `/cuenta/citas` | 540 KB | 421 KB (3 archivos, nada del panel) |
+| `/admin` (Hoy) | — | 580 KB (incluye Chart.js) |
+| `/admin/agenda` | — | 476 KB (sin Chart.js) |
+
+Los 421 KB de la tienda son el bundle principal más dos piezas compartidas que Rolldown separó: los iconos (`createLucideIcon`, 43 KB) y `Loading` (11 KB).
+
+### 3. Comprobado
+
+- Revisión en el navegador: **74 de 74** pantallas sin errores, sin peticiones fallidas y sin desborde.
+- Navegación por las pestañas del panel con clics, cargando cada sección al momento: todas muestran su contenido. Volver con «atrás» desde la tienda también funciona.
+- `oxlint` sin avisos; la CSP no cambia, porque los trozos son del mismo origen (`script-src 'self'`).
+
 ## Siguiente
 
 Según `falta.md`:
-- `lazy()` para el panel;
-- regenerar el PDF;
+- regenerar el PDF SEC-1;
 - decidir el ENUM de `rol` de la bitácora.

@@ -26,22 +26,23 @@ import OrderDetail from './pages/account/OrderDetail'
 import Security from './pages/account/Security'
 import Appointments from './pages/account/Appointments'
 import Pets from './pages/account/Pets'
-import AdminLayout from './pages/admin/AdminLayout'
-import AdminPedidos from './pages/admin/AdminPedidos'
-import AdminCatalogo from './pages/admin/AdminCatalogo'
-import AdminBitacora from './pages/admin/AdminBitacora'
-import AdminClientes from './pages/admin/AdminClientes'
-import AdminAgenda from './pages/admin/AdminAgenda'
-import AdminPacientes from './pages/admin/AdminPacientes'
-import AdminPaciente from './pages/admin/AdminPaciente'
-import AdminCliente from './pages/admin/AdminCliente'
-import AdminPedido from './pages/admin/AdminPedido'
 import Loading from './components/Loading'
 import CambiarPassword from './components/CambiarPassword'
 import { useAuth } from './context/useAuth'
 
-// El resumen trae Chart.js: se descarga solo al abrir el panel, no en la tienda.
+// El panel se descarga solo al abrirlo: quien visita la tienda o reserva no baja su código (ni Chart.js,
+// que trae el resumen). AdminLayout pone su propio Suspense alrededor de cada sección.
+const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'))
 const AdminResumen = lazy(() => import('./pages/admin/AdminResumen'))
+const AdminAgenda = lazy(() => import('./pages/admin/AdminAgenda'))
+const AdminPacientes = lazy(() => import('./pages/admin/AdminPacientes'))
+const AdminPaciente = lazy(() => import('./pages/admin/AdminPaciente'))
+const AdminPedidos = lazy(() => import('./pages/admin/AdminPedidos'))
+const AdminPedido = lazy(() => import('./pages/admin/AdminPedido'))
+const AdminCatalogo = lazy(() => import('./pages/admin/AdminCatalogo'))
+const AdminBitacora = lazy(() => import('./pages/admin/AdminBitacora'))
+const AdminClientes = lazy(() => import('./pages/admin/AdminClientes'))
+const AdminCliente = lazy(() => import('./pages/admin/AdminCliente'))
 
 // En el flujo de compra el banner de reservas distrae, así que se oculta.
 const NO_CTA = ['/carrito', '/checkout', '/cuenta', '/admin']
@@ -90,8 +91,8 @@ export default function App() {
               <Route path="cuenta/seguridad" element={<Security />} />
               <Route path="cuenta/citas" element={<Appointments />} />
               <Route path="cuenta/mascotas" element={<Pets />} />
-              <Route path="admin" element={<AdminLayout />}>
-                <Route index element={<Suspense fallback={<Loading />}><AdminResumen /></Suspense>} />
+              <Route path="admin" element={<Suspense fallback={<Loading />}><AdminLayout /></Suspense>}>
+                <Route index element={<AdminResumen />} />
                 <Route path="agenda" element={<AdminAgenda />} />
                 <Route path="pacientes" element={<AdminPacientes />} />
                 <Route path="pacientes/:id" element={<AdminPaciente />} />

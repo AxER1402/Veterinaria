@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Package, Tags, ShieldCheck, Users, CalendarDays, PawPrint } from 'lucide-react'
 import Loading from '../../components/Loading'
@@ -71,7 +71,7 @@ export default function AdminLayout() {
             <p>Tu cuenta es de {ROLES[user.rol] || user.rol}. Si necesitas esta sección, pídele al administrador que revise tu rol.</p>
             <Link to="/admin" className="btn btn--primary btn--sm">Ir a Hoy</Link>
           </div>
-        ) : <Outlet />}
+        ) : <Suspense fallback={<Loading />}><Outlet /></Suspense>}
       </div>
     </section>
   )
