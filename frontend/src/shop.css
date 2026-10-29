@@ -710,6 +710,14 @@
 .payment__methods { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .payment__form { display: grid; gap: 16px; }
 .payment__paypal { min-height: 50px; }
+/* Lo que el SDK de PayPal pone en un <style> propio, que la CSP bloquea (no se usa 'unsafe-inline'). */
+.payment__paypal .paypal-buttons { position: relative; display: inline-block; width: 100%; min-height: 35px; min-width: 200px; font-size: 0; }
+.payment__paypal .paypal-buttons > iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+.payment__paypal .paypal-buttons > iframe.component-frame { z-index: 100; }
+.payment__paypal .paypal-buttons > iframe.prerender-frame { transition: opacity .2s linear; z-index: 200; }
+.payment__paypal .paypal-buttons > iframe.visible { opacity: 1; }
+.payment__paypal .paypal-buttons > iframe.invisible { opacity: 0; pointer-events: none; }
+.payment__paypal .paypal-buttons > .smart-menu { position: absolute; z-index: 300; top: 0; left: 0; width: 100%; }
 .btn--paypal { background: #ffc439; color: #003087; font-weight: 700; }
 .btn--paypal:hover { background: #f2ba36; }
 

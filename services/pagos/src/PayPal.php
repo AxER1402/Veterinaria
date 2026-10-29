@@ -15,17 +15,18 @@ final class PayPal
         return Env::get('PAYPAL_CLIENT_ID') !== null && Env::get('PAYPAL_CLIENT_SECRET') !== null;
     }
 
-    /** Quetzales por dólar (PAYPAL_TIPO_CAMBIO). PayPal no acepta GTQ: se cobra en USD. */
+    /** Quetzales por dólar (ver TipoCambio). PayPal no acepta GTQ: se cobra en USD. */
     public static function tipoCambio(): float
     {
-        $tipo = (float) Env::get('PAYPAL_TIPO_CAMBIO', '7.75');
+        $tipo = TipoCambio::actual()['tasa'];
         return $tipo > 0 ? $tipo : throw new ApiError(503, 'El pago con PayPal no está habilitado en este entorno');
     }
 
     /** "500.00" (GTQ) → "64.52" (USD) */
-    public static function aDolares(string $quetzales): string
+    public static function aDolares(string $quetzales, ?float $tasa = null): string
     {
-        return number_format(max(0.01, round((float) $quetzales / self::tipoCambio(), 2)), 2, '.', '');
+        $tasa = $tasa > 0 ? $tasa : self::tipoCambio();
+        return number_format(max(0.01, round((float) $quetzales / $tasa, 2)), 2, '.', '');
     }
 
     public static function crearOrden(string $pedidoId, string $dolares): array

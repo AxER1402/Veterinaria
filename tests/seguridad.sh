@@ -345,6 +345,15 @@ r=$(docker compose exec -T catalogo-service php -r '
     echo $c;')
 esperar "solo pagos-service puede marcar un pedido como pagado → 403" 403 "$r"
 
+caso "CP-48 Tipo de cambio de PayPal y tarjeta oculta (integridad del cobro)"
+PHP_PAGOS='const SERVICE_DIR = "/var/www/app"; require "/var/www/shared/bootstrap.php";'
+tc=$(docker compose exec -T pagos-service php -r "$PHP_PAGOS echo json_encode(App\TipoCambio::actual());")
+# Sin Internet (o con Banguat caído) se usa PAYPAL_TIPO_CAMBIO: los dos casos son válidos.
+[[ $(jq -r .fuente <<<"$tc") =~ ^(banguat|fijo)$ ]] && jq -e '.tasa >= 5 and .tasa <= 12' <<<"$tc" >/dev/null \
+  && ok "tipo de cambio en rango: Q$(jq -r .tasa <<<"$tc") ($(jq -r .fuente <<<"$tc"))" || mal "tipo de cambio inválido: $tc"
+esperar "con PAYPAL_TIPO_CAMBIO_AUTO=0 se usa el del .env" "fijo|${PAYPAL_TIPO_CAMBIO:-7.75}" "$(docker compose exec -T -e PAYPAL_TIPO_CAMBIO_AUTO=0 pagos-service php -r "$PHP_PAGOS \$c = App\TipoCambio::actual(); echo \$c['fuente'], '|', \$c['tasa'];")"
+esperar "STRIPE_OCULTAR_TARJETA=1 quita la tarjeta sin desconfigurar Stripe" "configurado|no ofrecido" "$(docker compose exec -T -e STRIPE_SECRET_KEY=sk_x -e STRIPE_PUBLISHABLE_KEY=pk_x -e STRIPE_OCULTAR_TARJETA=1 pagos-service php -r "$PHP_PAGOS echo App\Stripe::configurado() ? 'configurado' : 'no', '|', App\Stripe::ofrecido() ? 'ofrecido' : 'no ofrecido';")"
+
 caso "CP-30 Secretos fuera del repositorio (A05, penalización -4)"
 fugas=$(git grep -nE 'sk_(test|live)_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|EMAILJS_PRIVATE_KEY=[^ ]+|PAYPAL_CLIENT_SECRET=[^ ]+|CLOUDINARY_API_SECRET=[^ ]+' -- . ':!tests' | wc -l)
 esperar "ninguna API key en archivos versionados" 0 "$fugas"

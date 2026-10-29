@@ -35,6 +35,7 @@ async function waitPaid(id, tries = 15) {
 export default function PaymentPanel({ order, onPaid, inicial = null }) {
   const [method, setMethod] = useState(inicial || null)
   const [error, setError] = useState('')
+  const [aviso, setAviso] = useState('')
   const [metodos, setMetodos] = useState(null)
 
   useEffect(() => {
@@ -50,20 +51,28 @@ export default function PaymentPanel({ order, onPaid, inicial = null }) {
       {!method && metodos?.length > 0 && (
         <div className="payment__methods">
           {metodos.includes('stripe') && (
-            <button className="btn btn--primary" onClick={() => { setError(''); setMethod('stripe') }}>
+            <button className="btn btn--primary" onClick={() => { setError(''); setAviso(''); setMethod('stripe') }}>
               <CreditCard size={18} /> Tarjeta
             </button>
           )}
           {metodos.includes('paypal') && (
-            <button className="btn btn--paypal" onClick={() => { setError(''); setMethod('paypal') }}>
+            <button className="btn btn--paypal" onClick={() => { setError(''); setAviso(''); setMethod('paypal') }}>
               PayPal
             </button>
           )}
         </div>
       )}
       {method === 'stripe' && <StripeForm order={order} onPaid={onPaid} onError={(m) => { setError(m); setMethod(null) }} />}
-      {method === 'paypal' && <PayPalButtons order={order} onPaid={onPaid} onError={(m) => { setError(m); setMethod(null) }} />}
+      {method === 'paypal' && (
+        <PayPalButtons
+          order={order}
+          onPaid={onPaid}
+          onError={(m) => { setError(m); setMethod(null) }}
+          onCancel={() => { setAviso('Cerraste la ventana de PayPal sin terminar el pago. No se cobró nada: puedes intentarlo de nuevo.'); setMethod(null) }}
+        />
+      )}
       {error && <p className="form-alert" role="alert">{error}</p>}
+      {aviso && <p className="form-alert form-alert--soft" role="status">{aviso}</p>}
       <p className="demo-note">
         <Lock size={14} /> El pago lo procesa directamente Stripe o PayPal: Huellitas no recibe ni guarda los datos de tu tarjeta o cuenta.
       </p>
@@ -139,10 +148,11 @@ function StripeForm({ order, onPaid, onError }) {
 }
 
 // PayPal no acepta quetzales: cobra en dólares al tipo de cambio de pagos-service.
-function PayPalButtons({ order, onPaid, onError }) {
+function PayPalButtons({ order, onPaid, onError, onCancel }) {
   const mountRef = useRef(null)
   const onPaidRef = useLatest(onPaid)
   const onErrorRef = useLatest(onError)
+  const onCancelRef = useLatest(onCancel)
   const [cobro, setCobro] = useState(null)
 
   useEffect(() => {
@@ -150,7 +160,7 @@ function PayPalButtons({ order, onPaid, onError }) {
     ;(async () => {
       try {
         const { pago } = await api(`/api/pedidos/${order.id}/pago`, { method: 'POST', body: { metodo: 'paypal' } })
-        await loadScript(`https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(pago.client_id)}&currency=USD&intent=capture&locale=es_ES`)
+        await loadScript(`https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(pago.client_id)}&currency=USD&intent=capture&locale=es_ES&disable-funding=card`)
         if (cancelled) return
         setCobro(pago)
         window.paypal
@@ -160,6 +170,7 @@ function PayPalButtons({ order, onPaid, onError }) {
               const d = await api(`/api/pedidos/${order.id}/pago/paypal/capturar`, { method: 'POST', body: { orden_id: pago.orden_id } })
               onPaidRef.current(d.pedido)
             },
+            onCancel: () => onCancelRef.current(),
             onError: () => onErrorRef.current('PayPal no pudo completar el pago'),
           })
           .render(mountRef.current)
@@ -170,13 +181,14 @@ function PayPalButtons({ order, onPaid, onError }) {
     return () => {
       cancelled = true
     }
-  }, [order.id, onPaidRef, onErrorRef])
+  }, [order.id, onPaidRef, onErrorRef, onCancelRef])
 
   return (
     <>
       {cobro && (
         <p className="summary__hint">
-          PayPal cobra en dólares: <strong>US${cobro.monto_cobro}</strong> (Q{Number(cobro.tipo_cambio).toFixed(2)} por dólar).
+          PayPal cobra en dólares: <strong>US${cobro.monto_cobro}</strong> (Q{Number(cobro.tipo_cambio).toFixed(2)} por dólar
+          {cobro.tipo_cambio_fuente === 'banguat' ? `, tipo de cambio de referencia del Banguat${cobro.tipo_cambio_fecha ? ` del ${cobro.tipo_cambio_fecha}` : ''}` : ''}).
         </p>
       )}
       <div ref={mountRef} className="payment__paypal" />

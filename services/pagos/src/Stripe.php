@@ -17,6 +17,15 @@ final class Stripe
     }
 
     /**
+     * Si el checkout ofrece pagar con tarjeta. STRIPE_OCULTAR_TARJETA=1 la quita de la tienda sin
+     * desconfigurar Stripe: el webhook y los reembolsos de pagos ya hechos siguen funcionando.
+     */
+    public static function ofrecido(): bool
+    {
+        return self::configurado() && Env::get('STRIPE_OCULTAR_TARJETA', '0') !== '1';
+    }
+
+    /**
      * Crea (o recupera) el PaymentIntent del pedido. La Idempotency-Key hace que repetir la
      * llamada para el mismo pedido y monto devuelva el mismo PaymentIntent.
      */

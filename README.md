@@ -42,7 +42,7 @@ Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 | `pedidos-service` | Pedidos con UUID, total calculado en el servidor, cupones, estados con historial | 8083 (interno) |
 | `pedidos-vencimientos` | Tarea periódica (cada 15 min): cancela los pedidos sin pagar tras `PEDIDO_VENCE_HORAS` (24 h) y devuelve el stock | — |
 | `citas-recordatorios` | Tarea periódica (cada 15 min): recordatorio de la cita un día antes, aviso 7 días antes de que venza una vacuna y cierre como «no asistió» de las citas que pasaron sin atenderse | — |
-| `pagos-service` | Stripe (PaymentIntent + webhook firmado, cobra en quetzales) y PayPal (Orders v2, captura en servidor; cobra en US$ al `PAYPAL_TIPO_CAMBIO` porque no acepta GTQ). Sin datos de tarjeta | 8084 (interno; solo el webhook es público) |
+| `pagos-service` | Stripe (PaymentIntent + webhook firmado, cobra en quetzales) y PayPal (Orders v2, captura en servidor; cobra en US$ al tipo de cambio del día del Banguat, con `PAYPAL_TIPO_CAMBIO` de respaldo, porque no acepta GTQ). Sin datos de tarjeta | 8084 (interno; solo el webhook es público) |
 | `notificaciones-service` | Correo de confirmación por EmailJS con código de verificación HMAC. Clima del panel admin (OpenWeatherMap u Open-Meteo) | 8085 (interno) |
 | `citas-service` | Mascotas de cada cliente y citas por sede en turnos de 30 min (2 cupos). La BD impide la doble reserva; máx. 5 citas próximas por cliente. Agenda del admin, bloqueo de turnos, historial clínico y carné de vacunas | 8087 (interno) |
 | `security-audit-service` | Bitácora `security_audit_logs`: append-only, con cadena de hashes | 8086 (interno) |

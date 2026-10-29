@@ -7,17 +7,14 @@ Cómo actualizar un entorno ya levantado
   - `PEDIDO_VENCE_HORAS=2`: antes era 24.
   - `CLOUDINARY_FETCH`: opcional, 0 por defecto. Ya está activo en local.
   - `DB_MAX_RETRASO_SEG`: opcional, 5 por defecto.
+  - `STRIPE_OCULTAR_TARJETA`: opcional, 0 por defecto. Con 1 la tienda no ofrece tarjeta, pero Stripe sigue configurado.
+  - `PAYPAL_TIPO_CAMBIO_AUTO`: opcional, 1 por defecto (tipo de cambio del Banguat). `PAYPAL_TIPO_CAMBIO` queda de respaldo.
 - Cuentas del personal para probar cada rol (veterinario, recepción, tienda): están en `usuarios.md`, todas con la contraseña `Personal#2026`.
 
 Pendiente
-- Pagos (apartado 13), sin hacer salvo lo indicado:
-  - Ya hecho: el checkout solo ofrece los métodos con claves, el texto sobre la tarjeta se corrigió y existe el reembolso por API.
-  - Faltan las claves de prueba (sandbox) de PayPal y Stripe en el `.env`. Sin ellas no se puede pagar en línea ni reembolsar por la pasarela; el panel lo dice y permite registrar el reembolso a mano.
-  - Falta una opción para ocultar la tarjeta sin borrar Stripe, porque las pruebas CP-26 a CP-28 dependen de Stripe.
-  - Falta `disable-funding=card` en el SDK de PayPal.
-  - Falta comprobar si la política de seguridad del sitio (CSP) bloquea `*.paypalobjects.com`.
-  - Falta un mensaje cuando el cliente cierra la ventana de PayPal.
-  - Falta que el tipo de cambio se actualice solo.
+- Pagos (apartado 13):
+  - Ya hecho: el checkout solo ofrece los métodos con claves, el texto sobre la tarjeta se corrigió y existe el reembolso por API. El 2026-10-29 se agregaron `STRIPE_OCULTAR_TARJETA`, `disable-funding=card`, la revisión de la CSP, el aviso al cerrar PayPal y el tipo de cambio automático del Banguat (ver `implementacionfaltante.md`).
+  - Faltan las claves de prueba (sandbox) de PayPal y Stripe en el `.env`. Sin ellas no se puede pagar en línea ni reembolsar por la pasarela; el panel lo dice y permite registrar el reembolso a mano. El flujo de PayPal se probó con el SDK y el `client-id=test` público, no con una cuenta propia.
 - Fotos de productos: siguen siendo de stock. La subida funciona desde Catálogo → Editar; falta cargar las fotos reales.
 - Equipo por servicio: solo la consulta veterinaria tiene profesionales cargados. Peluquería, paseos y entrenamiento siguen con una cantidad fija de lugares. Si se cargan profesionales a un servicio con citas futuras, esas citas siguen ocupando su lugar, pero no quedan asignadas a nadie.
 - Contenido por confirmar con el negocio:
@@ -32,7 +29,7 @@ Lo que no se probó
 - Nadie revisó en el navegador las pantallas nuevas: reservar con profesional, agenda (por hora y por consultorio, y el equipo), pacientes, clientes, alta de clientes y cambio de contraseña obligatorio, pedidos, mis citas, mis mascotas, reseñas y checkout. Todo se probó por la API y el frontend compila sin avisos, pero falta revisarlo en escritorio y en celular, con cada rol.
 - No se probó subir un adjunto del historial (laboratorio o radiografía) ni abrir su enlace firmado. La foto del catálogo sí se probó.
 - El reembolso por la pasarela no se probó con un pago real: falta tener claves.
-- `tests/seguridad.sh` se corrió el 2026-10-29 en local: 274 pasaron, 0 fallaron (detalle en `implementacionfaltante.md`). La prueba CP-36 necesita internet (clima).
+- `tests/seguridad.sh` se corrió el 2026-10-29 en local: 277 pasaron, 0 fallaron (detalle en `implementacionfaltante.md`). La prueba CP-36 necesita internet (clima).
 - Los correos nuevos (cita reprogramada, cambios de estado de pedidos) reutilizan la plantilla de citas de EmailJS. No se probaron con claves reales.
 
 Otros pendientes

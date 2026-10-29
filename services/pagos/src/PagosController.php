@@ -26,7 +26,7 @@ final class PagosController
     public function metodos(): array
     {
         Guard::servicio(['pedidos-service']);
-        return [200, ['metodos' => array_values(array_filter([Stripe::configurado() ? 'stripe' : null, PayPal::configurado() ? 'paypal' : null]))]];
+        return [200, ['metodos' => array_values(array_filter([Stripe::ofrecido() ? 'stripe' : null, PayPal::configurado() ? 'paypal' : null]))]];
     }
 
     /**
@@ -78,7 +78,7 @@ final class PagosController
         [$montoPasarela, $monedaPasarela] = [$monto, 'GTQ'];
         try {
             if ($metodo === 'stripe') {
-                if (!Stripe::configurado()) {
+                if (!Stripe::ofrecido()) {
                     throw new ApiError(503, 'El pago con tarjeta no está habilitado en este entorno');
                 }
                 $pi = Stripe::crearIntento($pedidoId, (int) round((float) $monto * 100), $idCliente);
@@ -89,12 +89,15 @@ final class PagosController
                 if (!PayPal::configurado()) {
                     throw new ApiError(503, 'El pago con PayPal no está habilitado en este entorno');
                 }
-                [$montoPasarela, $monedaPasarela] = [PayPal::aDolares($monto), 'USD'];
+                $cambio = TipoCambio::actual();
+                [$montoPasarela, $monedaPasarela] = [PayPal::aDolares($monto, $cambio['tasa']), 'USD'];
+                $ref += ['tipo_cambio' => $cambio['tasa'], 'tipo_cambio_fuente' => $cambio['fuente']];
                 $orden = PayPal::crearOrden($pedidoId, $montoPasarela);
                 $referencia = $orden['id'];
                 $estado = $orden['status'] ?? 'CREATED';
                 $respuesta = ['metodo' => 'paypal', 'orden_id' => $orden['id'], 'client_id' => Env::required('PAYPAL_CLIENT_ID'),
-                              'monto_cobro' => $montoPasarela, 'moneda_cobro' => 'USD', 'tipo_cambio' => PayPal::tipoCambio()];
+                              'monto_cobro' => $montoPasarela, 'moneda_cobro' => 'USD', 'tipo_cambio' => $cambio['tasa'],
+                              'tipo_cambio_fuente' => $cambio['fuente'], 'tipo_cambio_fecha' => $cambio['fecha']];
             }
         } catch (ApiError $e) {
             Auditoria::registrar('PAGO_INICIADO', 'FALLO', $actor + ['pedido_id' => $pedidoId, 'dato_nuevo' => $ref + ['motivo' => $e->getMessage()]]);
