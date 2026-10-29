@@ -697,6 +697,48 @@ esperar "aparece en el catálogo público (caché invalidada)" "M,L" "$("${C[@]}
 esperar "PRODUCTO_CREADO con quién y qué" "$PROD|admin|2" "$(evento_ultimo PRODUCTO_CREADO | jq -r '"\(.dato_nuevo.producto_id)|\(.rol)|\(.dato_nuevo.variantes | length)"')"
 auth_json PATCH "$ADMIN" "/api/catalogo/admin/productos/$PROD" '{"activo":false}' >/dev/null  # no deja el producto de prueba en la tienda
 
+caso "CP-49 Roles del personal: mínimo privilegio y cambios auditados (A01, A.5.15, A09)"
+# Un usuario temporal pasa por cada rol del personal y vuelve a cliente. El rol nuevo rige al iniciar sesión otra vez.
+ROLU="rol$SUF@correo.gt"
+post /api/auth/registro "{\"nombre\":\"Rol Prueba $SUF\",\"email\":\"$ROLU\",\"password\":\"Segura123\"}" >/dev/null
+TR=$(login "$ROLU" Segura123)
+ROL_ID=$(auth_json GET "$TR" /api/auth/me | jq -r '.usuario.id')
+HIST_X=$(cat /proc/sys/kernel/random/uuid)
+# ruta → roles que deben pasar (el resto debe recibir 403)
+declare -A RUTAS=(
+    [/api/pedidos/admin/todos]="tienda"
+    [/api/catalogo/admin/productos]="tienda"
+    [/api/citas/admin/semana]="veterinario recepcion"
+    [/api/citas/admin/mascotas/$HIST_X/historial]="veterinario"
+    [/api/auth/admin/clientes]="veterinario recepcion tienda"
+    [/api/auth/admin/clientes/exportar]=""
+    [/api/auth/admin/personal]=""
+    [/api/auditoria/eventos]=""
+)
+for rol in veterinario recepcion tienda; do
+    esperar "el admin asigna el rol $rol" "$rol" "$(auth_json PATCH "$ADMIN" "/api/auth/admin/usuarios/$ROL_ID/rol" "{\"rol\":\"$rol\"}" | jq -r .usuario.rol)"
+    TROL=$(login "$ROLU" Segura123)
+    esperar "$rol entra al panel" 200 "$(codigo -X POST -H "Authorization: Bearer $TROL" "$BASE/api/auth/admin/acceso")"
+    mal_rol=""
+    for ruta in "${!RUTAS[@]}"; do
+        c=$(codigo -H "Authorization: Bearer $TROL" "$BASE$ruta")
+        if [[ " ${RUTAS[$ruta]} " == *" $rol "* ]]; then [[ $c == 403 ]] && mal_rol+=" $ruta(403)"; else [[ $c != 403 ]] && mal_rol+=" $ruta($c)"; fi
+    done
+    esperar "$rol solo llega a las rutas de su trabajo" "" "${mal_rol# }"
+done
+esperar "el personal no puede cambiar roles → 403" 403 "$(codigo -X PATCH -H "Authorization: Bearer $TROL" -H 'Content-Type: application/json' -d '{"rol":"admin"}' "$BASE/api/auth/admin/usuarios/$ROL_ID/rol")"
+ADMIN_ID=$(auth_json GET "$ADMIN" /api/auth/me | jq -r '.usuario.id')
+esperar "el admin no puede cambiar su propio rol → 409" 409 "$(codigo -X PATCH -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d '{"rol":"admin"}' "$BASE/api/auth/admin/usuarios/$ADMIN_ID/rol")"
+esperar "rol inexistente → 422" 422 "$(codigo -X PATCH -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d '{"rol":"superadmin"}' "$BASE/api/auth/admin/usuarios/$ROL_ID/rol")"
+auth_json PATCH "$ADMIN" "/api/auth/admin/usuarios/$ROL_ID/rol" '{"rol":"cliente"}' >/dev/null
+esperar "ROL_CAMBIADO guarda quién, el rol anterior y el nuevo" "admin@huellitas.gt|tienda|cliente|$ROLU" "$(evento_ultimo ROL_CAMBIADO | jq -r '"\(.usuario_email)|\(.dato_anterior.rol)|\(.dato_nuevo.rol)|\(.dato_nuevo.email)"')"
+TR=$(login "$ROLU" Segura123)
+esperar "de vuelta a cliente ya no entra al panel → 403" 403 "$(codigo -X POST -H "Authorization: Bearer $TR" "$BASE/api/auth/admin/acceso")"
+esperar "cambiar la contraseña con la actual equivocada → 422" 422 "$(codigo -X PATCH -H "Authorization: Bearer $TR" -H 'Content-Type: application/json' -d '{"actual":"Otra1234","nueva":"Nueva12345"}' "$BASE/api/auth/password")"
+esperar "cambiar la contraseña con la actual → 200" 200 "$(codigo -X PATCH -H "Authorization: Bearer $TR" -H 'Content-Type: application/json' -d '{"actual":"Segura123","nueva":"Nueva12345"}' "$BASE/api/auth/password")"
+esperar "PASSWORD_CAMBIADO sin la contraseña en la bitácora" "$ROLU|false|false" "$(evento_ultimo PASSWORD_CAMBIADO | jq -r '"\(.usuario_email)|\(.dato_nuevo.era_temporal)|\(tostring | test("Nueva12345|Segura123"))"')"
+esperar "la contraseña vieja ya no sirve" 401 "$(login_codigo "$ROLU" Segura123)"
+
 caso "CP-16 Rate limiting en /login (gateway, se corre al final)"
 codigos=$(for i in $(seq 1 15); do codigo -X POST -H 'Content-Type: application/json' -d '{"email":"flood@correo.gt","password":"x"}' "$BASE/api/auth/login"; echo; done)
 grep -q 429 <<<"$codigos" && ok "ráfaga de logins → 429" || mal "ninguna respuesta 429 en la ráfaga"

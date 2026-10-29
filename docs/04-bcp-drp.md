@@ -44,7 +44,7 @@
 
 ### Escenario 3 — Fuga de datos de clientes · Prob. **baja** · Impacto **crítico**
 
-- **Alcance limitado por diseño:** no hay tarjetas (PCI), las contraseñas son bcrypt de costo 12 y la exportación es de datos mínimos. Los datos de salud de las mascotas (diagnóstico y tratamiento) solo están en `citas_db`, solo los lee el admin y la bitácora no los copia.
+- **Alcance limitado por diseño:** no hay tarjetas (PCI), las contraseñas son bcrypt de costo 12 y la exportación es de datos mínimos. Los datos de salud de las mascotas (diagnóstico y tratamiento) solo están en `citas_db`, solo los leen el admin y el veterinario, y la bitácora no los copia.
 - **Respuesta:**
   1. Aislar el servicio comprometido (se le quita la red `interna`).
   2. Rotar `JWT_SECRET`. Eso invalida **todas** las sesiones.
@@ -70,11 +70,11 @@
 
 ### Escenario 6 — Credenciales de administrador comprometidas · Prob. **media** · Impacto **crítico**
 
-- **Detección:** `LOGIN_CLIENTE_FALLIDO` marcado `FRAUDE` (la misma cuenta desde 3 o más IPs), `ACCESO_ADMIN_PANEL` desde una IP o un navegador desconocido, `PRECIO_MODIFICADO`, `EXPORTACION_CLIENTES`, `TURNO_BLOQUEADO` o muchas `HISTORIAL_CONSULTADO` seguidas fuera de horario.
+- **Detección:** `LOGIN_CLIENTE_FALLIDO` marcado `FRAUDE` (la misma cuenta desde 3 o más IPs), `ACCESO_ADMIN_PANEL` desde una IP o un navegador desconocido, `ROL_CAMBIADO` inesperado (otra cuenta que pasa a `admin`), `PRECIO_MODIFICADO`, `EXPORTACION_CLIENTES`, `REEMBOLSO_REGISTRADO`, `TURNO_BLOQUEADO` o muchas `HISTORIAL_CONSULTADO` seguidas fuera de horario.
 - **Respuesta:**
   1. Revocar los JWT activos. El JWT de 1 h más la lista negra en Redis cortan el acceso; si hace falta cortarlo ya mismo, se rota `JWT_SECRET`.
   2. Desactivar la cuenta (`usuarios.activo = 0`) y forzar el cambio de contraseña.
-  3. Revisar en la bitácora todo lo que hizo la cuenta desde el primer acceso sospechoso: precios con `dato_anterior`, estados de pedidos y de citas, bloqueos de turnos, historiales consultados y exportaciones.
+  3. Revisar en la bitácora todo lo que hizo la cuenta desde el primer acceso sospechoso: roles asignados (`ROL_CAMBIADO`; devolver a `cliente` las cuentas que haya elevado), precios con `dato_anterior`, estados de pedidos y de citas, reembolsos, bloqueos de turnos, historiales consultados y exportaciones.
   4. Revertir los cambios.
 - **RTO objetivo:** 30 min.
 

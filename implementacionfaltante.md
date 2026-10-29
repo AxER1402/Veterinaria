@@ -132,9 +132,75 @@ Comprobado en el contenedor:
 
 - Las claves sandbox de Stripe y PayPal (las tiene que crear el equipo). Con ellas falta probar un pago y un reembolso reales de punta a punta.
 
+Commit: `aa18cf8`.
+
+## 2026-10-29 · Documentación: roles del personal y eventos de la bitácora
+
+### 1. Qué estaba desactualizado
+
+- La bitácora tiene **38 tipos de evento** (`AuditController::EVENTOS`), pero los docs decían 27. Ningún doc mencionaba 19 de ellos: los 10 que listaba `falta.md`, más `PRODUCTO_CREADO`, `MFA_CONFIGURADO`, `MASCOTA_*`, `TURNO_DESBLOQUEADO`, `RECORDATORIO_ENVIADO`, etc.
+- Los docs decían que solo el admin entra al panel (`Guard::usuario(['admin'])`). En el código hay cuatro roles del personal con grupos de permisos (`Guard::PERSONAL`, `CLINICA`, `VETERINARIO`, `TIENDA`).
+- El guion decía que «un rol nuevo rompería el ENUM» de la bitácora, pero `db/audit/02-roles-personal.sql` ya lo había ampliado.
+- **Ningún rol nuevo ni ninguno de los 10 eventos nuevos tenía prueba automática.** Los docs habrían afirmado controles sin evidencia.
+
+### 2. Prueba nueva CP-49 (roles del personal)
+
+En `tests/seguridad.sh`, un usuario temporal pasa por `veterinario`, `recepcion` y `tienda`. En cada rol:
+
+- inicia sesión de nuevo y entra al panel;
+- debe llegar (no 403) a las rutas de su trabajo y recibir 403 en las demás.
+
+| Ruta | Pueden entrar |
+|---|---|
+| `/api/pedidos/admin/todos`, `/api/catalogo/admin/productos` | tienda |
+| `/api/citas/admin/semana` | veterinario, recepción |
+| historial clínico | veterinario |
+| `/api/auth/admin/clientes` | los tres |
+| exportar clientes, personal, bitácora | ninguno (solo admin) |
+
+Además comprueba:
+
+- el personal no puede cambiar roles (403), el admin no puede cambiar el suyo (409) y un rol inexistente da 422;
+- `ROL_CAMBIADO` guarda quién, el rol anterior y el nuevo;
+- al volver a `cliente`, el usuario ya no entra al panel;
+- el cambio de contraseña: con la actual equivocada da 422 y con la correcta da 200; `PASSWORD_CAMBIADO` no trae la contraseña, y la vieja deja de servir.
+
+La prueba del rol propio del admin manda `"rol":"admin"`: si el control fallara, el admin igual se quedaría con su rol.
+
+Resultado de la suite: **295 pasaron, 0 fallaron** (49 casos).
+
+### 3. Cambios en los docs
+
+- `docs/02-owasp-top10.md`:
+  - fila A01: grupos de roles y CP-49;
+  - control 4 y «Rutas del personal» actualizados;
+  - subsección nueva **«A01 en los roles del personal»** (tabla de grupos y controles);
+  - fila A09: 38 tipos;
+  - sección nueva **«A09 — Catálogo de eventos de la bitácora»** con los 38 eventos: servicio, cuándo, resultado y prueba; ✱ marca los agregados después de la FASE 15.
+- `docs/01-arquitectura-stride-dfd.md`:
+  - historial clínico con `Guard::VETERINARIO`, agenda con `Guard::CLINICA`, panel por rol;
+  - 6 filas STRIDE nuevas: E (roles del personal), S (contraseña temporal), T (adendas del historial), T (tipo de cambio de PayPal), R (reembolsos), R (reprogramación);
+  - leyenda 🟡 = probado a mano, sin prueba automática.
+- `docs/06-iso27001.md`: A.5.15 (roles), A.5.34 (admin y veterinario, adendas, reseñas con inicial), A.8.5 (contraseña temporal), A.8.15 (38 eventos), A.8.25 (295 comprobaciones en 49 casos).
+- `docs/03-pci-dss-pagos.md`: `PAGO_REEMBOLSADO` en el logging; flujo de reembolsos; cobro de PayPal con `monto_pasarela`.
+- `docs/04-bcp-drp.md`: los datos de salud los leen el admin y el veterinario. En el escenario 6 (credenciales de admin robadas), la detección y la respuesta incluyen `ROL_CAMBIADO` y los reembolsos.
+- `docs/08-guion-presentacion.md`:
+  - 295 pruebas;
+  - respuesta corregida sobre quién ve diagnósticos;
+  - pregunta nueva sobre los roles;
+  - la respuesta del ENUM ahora justifica la ampliación.
+- `README.md`: 38 tipos, CP-01 a CP-49 y 295 comprobaciones.
+
+### 4. Para decidir
+
+- **ENUM de `rol` en la bitácora.** El enunciado define `rol ENUM(admin,cliente,anonimo)`, y el proyecto lo amplió con los tres roles del personal (antes de esta sesión). Los docs lo presentan como una desviación justificada: registrar al personal como `admin` ocultaría quién hizo qué. Si se prefiere apegarse al enunciado, la alternativa sería registrar `admin` en `rol` y el rol real dentro de `dato_nuevo`.
+- **Ocho eventos sin prueba automática:** `REEMBOLSO_PENDIENTE`, `REEMBOLSO_REGISTRADO`, `PAGO_REEMBOLSADO`, `PRODUCTO_ACTUALIZADO`, `RESENA_PUBLICADA`, `CITA_REPROGRAMADA`, `PROFESIONAL_ACTUALIZADO` y `HISTORIAL_CORREGIDO`.
+- **PDF SEC-1:** hay que regenerarlo con los docs nuevos.
+
 ## Siguiente
 
 Según `falta.md`:
-- `docs/` (STRIDE, OWASP, ISO): eventos nuevos de la bitácora y roles nuevos;
+- pruebas para los ocho eventos que faltan;
 - revisión de las pantallas nuevas en el navegador;
-- `lazy()` para el panel.
+- `lazy()` para el panel;
+- regenerar el PDF.

@@ -4,7 +4,7 @@
 
 ```bash
 docker compose up -d && docker compose ps          # los 14 contenedores en healthy
-tests/seguridad.sh | tail -1                        # "263 pasaron, 0 fallaron"
+tests/seguridad.sh | tail -1                        # "295 pasaron, 0 fallaron"
 ```
 
 - Pestaña 1: la tienda (`/tienda`) en una ventana privada.
@@ -70,5 +70,6 @@ tests/seguridad.sh 2>&1 | sed -n '/CP-26/,/CP-28/p'    # firma ausente, falsa, v
 | ¿Cuál es el RPO real? | Respaldo completo cada 4 h + binlogs cada 5 min → ≤ 5 min | `docs/04-bcp-drp.md` §3 |
 | ¿Por qué quedan alertas en ZAP? | Son bajas: COEP/COOP romperían Stripe, PayPal y Maps, y la otra es un falso positivo. Están justificadas | `docs/zap/README.md` |
 | ¿Cómo evitan que dos clientes reserven el mismo cupo? | Índice `UNIQUE (sede, inicio, cupo)`: la BD rechaza el segundo INSERT aunque lleguen a la vez, y ese cliente recibe 409 | CP-39, `docs/02-owasp-top10.md` |
-| ¿Quién ve el diagnóstico de una mascota? | Solo el admin, y cada lectura queda como `HISTORIAL_CONSULTADO`. El dueño ve el carné de vacunas, sin diagnósticos | CP-44, CP-45 (A.5.34) |
-| ¿Por qué el admin hace de veterinario? | El enunciado fija los roles `admin`, `cliente` y `anonimo` en la bitácora; un rol nuevo rompería ese ENUM | `implementacion.md`, FASE 15 |
+| ¿Quién ve el diagnóstico de una mascota? | El admin y el veterinario; recepción y tienda reciben 403. Cada lectura queda como `HISTORIAL_CONSULTADO`. El dueño ve el carné de vacunas, sin diagnósticos | CP-44, CP-45, CP-49 (A.5.34) |
+| ¿Qué puede hacer cada rol del personal? | Mínimo privilegio: recepción maneja agenda y clientes, el veterinario además el historial clínico, la tienda pedidos y catálogo. Solo el admin ve la bitácora, exporta clientes y asigna roles (nunca el suyo), y cada cambio queda como `ROL_CAMBIADO` | CP-49, `docs/02-owasp-top10.md` (A01) |
+| La bitácora del enunciado tiene `rol ENUM(admin,cliente,anonimo)`, ¿por qué hay más? | Se amplió con `veterinario`, `recepcion` y `tienda`. Si todo el personal quedara como `admin`, la bitácora no diría quién hizo qué (R de STRIDE) y todos tendrían todos los permisos (A.5.15). Los tres valores del enunciado siguen igual, y la migración no tocó registros ni la cadena de hashes | `db/audit/02-roles-personal.sql`, CP-13 |

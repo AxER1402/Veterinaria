@@ -25,7 +25,7 @@ Proyecto 2 del curso **Auditoría y Seguridad de Sistemas**.
 | Microservicios + compose + README | este repositorio (7 microservicios + gateway + 2 tareas periódicas + 3 BD + Redis) |
 | Scripts SQL con ≥ 20 productos | `db/master/*.sql` (24 productos, 40 variantes), `db/audit/` |
 | **SEC-1** PDF de seguridad | `docs/pdf/SEC-1-Huellitas-Seguridad.pdf` (se regenera con `docs/pdf/construir.mjs`) |
-| **SEC-2** ≥ 30 registros, ≥ 8 tipos | `/admin/bitacora` o `GET /api/auditoria/resumen` (CP-32 lo comprueba: los 14 eventos obligatorios; hay 27 tipos en total, 10 del módulo de citas) |
+| **SEC-2** ≥ 30 registros, ≥ 8 tipos | `/admin/bitacora` o `GET /api/auditoria/resumen` (CP-32 lo comprueba: los 14 eventos obligatorios; hay 38 tipos en total, 13 del módulo de citas; catálogo en `docs/02-owasp-top10.md`, A09) |
 | **SEC-3** sin datos de tarjeta | `SELECT * FROM pagos_db.pagos;` → solo `payment_intent_id` (CP-28) |
 | **SEC-4** reporte OWASP ZAP | `docs/zap/zap-baseline-2.html` (0 FAIL, 0 alertas medias o altas) |
 | **SEC-5** hardening Docker | `docker ps` → ningún `0.0.0.0:3306` ni `0.0.0.0:6379` (CP-14) |
@@ -118,7 +118,7 @@ Todos los usuarios (app, BD y Redis) están en [`usuarios.md`](usuarios.md).
 tests/seguridad.sh
 ```
 
-Corre los casos CP-01 a CP-47 (274 comprobaciones) contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto o moneda manipulados), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2, vencimiento de pedidos sin pagar, verificación en dos pasos, IP del cliente no falsificable, clima del panel y el módulo de citas (mascotas y citas ajenas, doble reserva simultánea, agenda y estados, correo con código HMAC, bloqueos de turnos, historial clínico, carné de vacunas, recordatorios y límite de citas por cliente) y el alta de productos desde el panel.
+Corre los casos CP-01 a CP-49 (295 comprobaciones) contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto o moneda manipulados), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2, vencimiento de pedidos sin pagar, verificación en dos pasos, IP del cliente no falsificable, clima del panel y el módulo de citas (mascotas y citas ajenas, doble reserva simultánea, agenda y estados, correo con código HMAC, bloqueos de turnos, historial clínico, carné de vacunas, recordatorios y límite de citas por cliente), el alta de productos desde el panel, el tipo de cambio de PayPal y los roles del personal (mínimo privilegio y cambios auditados).
 
 > La ráfaga del CP-16 agota el cupo de `/login` del gateway. Si se repite la prueba enseguida, la suite espera sola a que se recupere (hasta ~1 min).
 

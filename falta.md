@@ -29,11 +29,14 @@ Lo que no se probó
 - Nadie revisó en el navegador las pantallas nuevas: reservar con profesional, agenda (por hora y por consultorio, y el equipo), pacientes, clientes, alta de clientes y cambio de contraseña obligatorio, pedidos, mis citas, mis mascotas, reseñas y checkout. Todo se probó por la API y el frontend compila sin avisos, pero falta revisarlo en escritorio y en celular, con cada rol.
 - No se probó subir un adjunto del historial (laboratorio o radiografía) ni abrir su enlace firmado. La foto del catálogo sí se probó.
 - El reembolso por la pasarela no se probó con un pago real: falta tener claves.
-- `tests/seguridad.sh` se corrió el 2026-10-29 en local: 277 pasaron, 0 fallaron (detalle en `implementacionfaltante.md`). La prueba CP-36 necesita internet (clima).
+- `tests/seguridad.sh` se corrió el 2026-10-29 en local: 295 pasaron, 0 fallaron (detalle en `implementacionfaltante.md`). La prueba CP-36 necesita internet (clima).
 - Los correos nuevos (cita reprogramada, cambios de estado de pedidos) reutilizan la plantilla de citas de EmailJS. No se probaron con claves reales.
 
 Otros pendientes
-- Faltan en `docs/` (STRIDE, OWASP, ISO) los eventos nuevos de la bitácora: `HISTORIAL_CORREGIDO`, `CITA_REPROGRAMADA`, `ROL_CAMBIADO`, `PASSWORD_CAMBIADO`, `PRODUCTO_ACTUALIZADO`, `PROFESIONAL_ACTUALIZADO`, `REEMBOLSO_PENDIENTE`, `REEMBOLSO_REGISTRADO`, `PAGO_REEMBOLSADO` y `RESENA_PUBLICADA`. Tampoco reflejan los roles nuevos: hoy dicen que solo el admin entra al panel.
+- Docs (STRIDE, OWASP, ISO, PCI, BCP, guion, README) actualizados el 2026-10-29 con los roles del personal y los 38 eventos (catálogo en `docs/02-owasp-top10.md`, A09). Queda pendiente:
+  - Ocho eventos sin prueba automática (en los docs figuran con «—» o 🟡): `REEMBOLSO_PENDIENTE`, `REEMBOLSO_REGISTRADO`, `PAGO_REEMBOLSADO`, `PRODUCTO_ACTUALIZADO`, `RESENA_PUBLICADA`, `CITA_REPROGRAMADA`, `PROFESIONAL_ACTUALIZADO` y `HISTORIAL_CORREGIDO`.
+  - Decidir si se mantiene el `rol` de la bitácora ampliado (`veterinario`, `recepcion`, `tienda`). El enunciado dice `ENUM(admin,cliente,anonimo)`; el guion trae la justificación.
+  - Regenerar el PDF SEC-1 (`docs/pdf/construir.mjs`) con los docs nuevos.
 - El bundle del frontend pasa de 500 KB. Conviene cargar el panel (`/admin/*`) con `lazy()`.
 - La base local tiene datos de prueba de esta sesión, además de la demo: la mascota "Kiwi", citas de noviembre, la cuenta "Rosa Prueba" y varios pedidos cancelados con su reembolso. Para dejar solo la demo, levantar con volúmenes nuevos y correr `ops/seed-demo.sh`.
 - El archivo `env` (sin punto) tiene secretos y no está en `.gitignore`: no subirlo. La contraseña root de la base local se mostró en una sesión de trabajo; conviene cambiarla.
