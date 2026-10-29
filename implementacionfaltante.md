@@ -357,8 +357,42 @@ Los 421 KB de la tienda son el bundle principal más dos piezas compartidas que 
 - Navegación por las pestañas del panel con clics, cargando cada sección al momento: todas muestran su contenido. Volver con «atrás» desde la tienda también funciona.
 - `oxlint` sin avisos; la CSP no cambia, porque los trozos son del mismo origen (`script-src 'self'`).
 
+Commit: `f99bb97`.
+
+## 2026-10-29 · PDF SEC-1 regenerado
+
+### 1. Cómo se generó
+
+```bash
+npm i --no-save --no-package-lock playwright-core@1.46.1 marked@12   # en la raíz del repo
+node docs/pdf/construir.mjs ~/.cache/ms-playwright/chromium-1140/chrome-linux/chrome
+rm -rf node_modules
+```
+
+- Junta `docs/01` a `docs/06`, `docs/zap/README.md` y el último simulacro (`docs/simulacros/20261017-1126-ransomware-maestro.md`).
+- Los diagramas los dibuja Mermaid 10.9.1 desde el CDN, así que hace falta internet.
+
+### 2. Comprobado
+
+| | Antes | Después |
+|---|---|---|
+| Páginas | 24 | 27 |
+| Tamaño | 504 KB | 572 KB |
+
+- **El texto del PDF trae lo de hoy:**
+  - «A09 — Catálogo de eventos de la bitácora» (pág. 13) y «A01 en los roles del personal»;
+  - CP-49 a CP-51, `ROL_CAMBIADO`, `HISTORIAL_CORREGIDO`, `PAGO_REEMBOLSADO`, `TipoCambio`, `Guard::VETERINARIO`;
+  - 38 tipos de evento y «342 comprobaciones en 51 casos».
+- **No queda nada viejo:** ni «27 tipos» ni «263 comprobaciones».
+- **Los 5 diagramas Mermaid salieron como dibujo:** ninguno quedó como código. Se revisaron las imágenes de las páginas 4 (DFD) y 13 (catálogo).
+
+### 3. Cuándo volver a generarlo
+
+- si cambian los docs 01 a 06;
+- después del ZAP contra el dominio, con su informe;
+- si se corre un simulacro DRP nuevo.
+
 ## Siguiente
 
-Según `falta.md`:
-- regenerar el PDF SEC-1;
-- decidir el ENUM de `rol` de la bitácora.
+- Decidir el ENUM de `rol` de la bitácora (ver «Para decidir» en la sección de docs).
+- Pendientes del equipo: claves sandbox, fotos reales, textos del negocio, prueba en un teléfono real.

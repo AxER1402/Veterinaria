@@ -37,7 +37,7 @@ Otros pendientes
 - Docs (STRIDE, OWASP, ISO, PCI, BCP, guion, README) actualizados el 2026-10-29 con los roles del personal y los 38 eventos (catálogo en `docs/02-owasp-top10.md`, A09). Queda pendiente:
   - Los 38 eventos tienen prueba automática (CP-50 y CP-51 cubren los ocho que faltaban). `PAGO_REEMBOLSADO` con éxito sigue necesitando claves sandbox.
   - Decidir si se mantiene el `rol` de la bitácora ampliado (`veterinario`, `recepcion`, `tienda`). El enunciado dice `ENUM(admin,cliente,anonimo)`; el guion trae la justificación.
-  - Regenerar el PDF SEC-1 (`docs/pdf/construir.mjs`) con los docs nuevos.
+  - PDF SEC-1 regenerado el 2026-10-29 con los docs nuevos (27 páginas). Hay que volver a generarlo si cambian los docs o tras el ZAP contra el dominio.
 - Panel con `lazy()` (2026-10-29): el bundle principal bajó de 540 a 377 KB y Vite ya no avisa. La tienda descarga 421 KB de JS en vez de 540, y nada del panel.
 - La base local tiene datos de prueba de esta sesión, además de la demo: la mascota "Kiwi", citas de noviembre, la cuenta "Rosa Prueba" y varios pedidos cancelados con su reembolso. Para dejar solo la demo, levantar con volúmenes nuevos y correr `ops/seed-demo.sh`.
 - El archivo `env` (sin punto) tiene secretos y no está en `.gitignore`: no subirlo. La contraseña root de la base local se mostró en una sesión de trabajo; conviene cambiarla.
