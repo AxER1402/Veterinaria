@@ -178,26 +178,26 @@ Resultado: **E** éxito, **F** fallo, **X** fraude. ✱ = evento agregado despu�
 | `MFA_CONFIGURADO` | auth | Activar o desactivar la verificación en dos pasos | E, F | CP-34 |
 | `ROL_CAMBIADO` ✱ | auth | El admin cambia el rol de un usuario (rol anterior y nuevo) | E | CP-49 |
 | `PASSWORD_CAMBIADO` ✱ | auth | Cambio de contraseña con la actual (`era_temporal`) | E | CP-49 |
-| `REEMBOLSO_PENDIENTE` ✱ | pedidos | Se cancela un pedido cobrado, o llega un pago de un pedido ya cancelado | E | — |
-| `REEMBOLSO_REGISTRADO` ✱ | pedidos | El personal marca el reembolso como hecho, con la referencia | E | — |
-| `PAGO_REEMBOLSADO` ✱ | pagos | Reembolso pedido a Stripe o PayPal por su API | E | — |
+| `REEMBOLSO_PENDIENTE` ✱ | pedidos | Se cancela un pedido cobrado, o llega un pago de un pedido ya cancelado | E | CP-50 |
+| `REEMBOLSO_REGISTRADO` ✱ | pedidos | El personal marca el reembolso como hecho, con la referencia | E | CP-50 |
+| `PAGO_REEMBOLSADO` ✱ | pagos | Reembolso pedido a Stripe o PayPal por su API | E | CP-50 (sin claves: 503, Zero Trust e idempotencia; el reembolso real necesita claves sandbox) |
 | `EMAIL_ENVIADO` | notificaciones | Correo de pedido o de cita (F si EmailJS falla) | E, F | CP-26, CP-42 |
 | `PRODUCTO_CREADO` ✱ | catálogo | Alta de producto desde el panel | E | CP-47 |
-| `PRODUCTO_ACTUALIZADO` ✱ | catálogo | Edición de ficha, presentaciones nuevas o moderación de una reseña | E | — |
-| `RESENA_PUBLICADA` ✱ | catálogo | Un cliente que compró opina (queda oculta hasta moderarla) | E | — |
+| `PRODUCTO_ACTUALIZADO` ✱ | catálogo | Edición de ficha, presentaciones nuevas o moderación de una reseña | E | CP-50 |
+| `RESENA_PUBLICADA` ✱ | catálogo | Un cliente que compró opina (queda oculta hasta moderarla) | E | CP-50 |
 | `MASCOTA_REGISTRADA` | citas | Alta de mascota | E | CP-37 |
 | `MASCOTA_ACTUALIZADA` | citas | Edición, alertas médicas o baja de una mascota | E | CP-37 |
 | `CITA_CREADA` | citas | Reserva (cliente o personal) | E | CP-38 |
 | `CITA_CANCELADA` | citas | Cancelación | E | CP-40 |
 | `CITA_ESTADO_CAMBIADO` | citas | Confirmada, atendida o no asistió (también automático) | E | CP-40, CP-44, CP-46 |
-| `CITA_REPROGRAMADA` ✱ | citas | Cambio de día, hora o profesional (horario anterior y nuevo) | E | — |
-| `PROFESIONAL_ACTUALIZADO` ✱ | citas | Alta o cambio de horario de un profesional del equipo | E | — |
+| `CITA_REPROGRAMADA` ✱ | citas | Cambio de día, hora o profesional (horario anterior y nuevo) | E | CP-51 |
+| `PROFESIONAL_ACTUALIZADO` ✱ | citas | Alta o cambio de horario de un profesional del equipo | E | CP-51 |
 | `TURNO_BLOQUEADO` | citas | Bloqueo de un día o de un turno (feriado, mantenimiento) | E | CP-43 |
 | `TURNO_DESBLOQUEADO` | citas | Se quita un bloqueo | E | CP-43 |
 | `HISTORIAL_REGISTRADO` | citas | Ficha de consulta, nota, adjunto o vacuna externa (sin el diagnóstico) | E | CP-44 |
 | `HISTORIAL_CONSULTADO` | citas | Lectura del historial clínico de una mascota | E | CP-45 |
-| `HISTORIAL_CORREGIDO` ✱ | citas | Adenda a una ficha (el texto no va a la bitácora) | E | — |
+| `HISTORIAL_CORREGIDO` ✱ | citas | Adenda a una ficha (el texto no va a la bitácora) | E | CP-51 |
 | `RECORDATORIO_ENVIADO` | citas | Recordatorio de cita o aviso de vacuna por vencer | E, F | CP-46 |
 | `ACCESO_DENEGADO` | todos | Intento de ver o editar un pedido, una mascota o una cita ajenos | F | CP-20, CP-37, CP-45 |
 
-Los eventos marcados con «—» se probaron a mano por la API, pero no tienen prueba automática. Es un pendiente de `falta.md`.
+`PAGO_REEMBOLSADO` con éxito necesita claves sandbox de Stripe o PayPal: sin ellas, CP-50 comprueba que el reembolso no se marca como hecho, que solo `pedidos-service` puede pedirlo y que uno ya hecho no se vuelve a pedir.

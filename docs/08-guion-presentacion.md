@@ -4,7 +4,7 @@
 
 ```bash
 docker compose up -d && docker compose ps          # los 14 contenedores en healthy
-tests/seguridad.sh | tail -1                        # "295 pasaron, 0 fallaron"
+tests/seguridad.sh | tail -1                        # "342 pasaron, 0 fallaron"
 ```
 
 - Pestaña 1: la tienda (`/tienda`) en una ventana privada.

@@ -697,6 +697,111 @@ esperar "aparece en el catálogo público (caché invalidada)" "M,L" "$("${C[@]}
 esperar "PRODUCTO_CREADO con quién y qué" "$PROD|admin|2" "$(evento_ultimo PRODUCTO_CREADO | jq -r '"\(.dato_nuevo.producto_id)|\(.rol)|\(.dato_nuevo.variantes | length)"')"
 auth_json PATCH "$ADMIN" "/api/catalogo/admin/productos/$PROD" '{"activo":false}' >/dev/null  # no deja el producto de prueba en la tienda
 
+caso "CP-50 Reembolsos, reseñas y edición del catálogo (A01, A08, A09)"
+pedido_pagado() { # → id de un pedido de T2 pagado con un webhook firmado (igual que en CP-26)
+    local id tot pi ev ts
+    read -r id tot <<<"$(nuevo_pedido)"; pi="pi_reemb_$SUF$RANDOM"; fixture_pago "$id" "$tot" "$pi"
+    ev=$(evento_stripe payment_intent.succeeded "$pi" "$(jq -n "$tot*100|round")" "$id"); ts=$(date +%s)
+    webhook "$ev" "t=$ts,v1=$(firmar "$ts" "$ev")" >/dev/null
+    echo "$id"
+}
+reembolsos_de() { "${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auditoria/eventos?accion=REEMBOLSO_PENDIENTE&limite=50" | jq --arg p "$1" '[.eventos[] | select(.pedido_id==$p)] | length'; }
+auth_json PATCH "$ADMIN" "/api/catalogo/admin/variantes/$var_id" '{"stock":500}' >/dev/null
+R1=$(pedido_pagado)
+esperar "pedido de prueba pagado" pagado "$(estado_pedido "$R1")"
+esperar "un cliente no puede cancelar desde el panel → 403" 403 "$(codigo -X PATCH -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d '{"estado":"cancelado"}' "$BASE/api/pedidos/admin/$R1/estado")"
+esperar "cancelar un pedido cobrado deja el reembolso pendiente" "cancelado|pendiente" "$(auth_json PATCH "$ADMIN" "/api/pedidos/admin/$R1/estado" '{"estado":"cancelado","comentario":"Sin stock"}' | jq -r '"\(.pedido.estado)|\(.pedido.reembolso.estado)"')"
+esperar "REEMBOLSO_PENDIENTE con el motivo y quién canceló" "$R1|pedido cobrado y cancelado|admin" "$(evento_ultimo REEMBOLSO_PENDIENTE | jq -r '"\(.pedido_id)|\(.dato_nuevo.motivo)|\(.rol)"')"
+# Pago que llega después de que el cliente canceló: no reactiva el pedido.
+read -r R2 TOT2 <<<"$(nuevo_pedido)"; PI_R2="pi_tarde_$SUF$RANDOM"; fixture_pago "$R2" "$TOT2" "$PI_R2"
+esperar "el cliente cancela su pedido sin pagar" 200 "$(codigo -X POST -H "Authorization: Bearer $T2" "$BASE/api/pedidos/$R2/cancelar")"
+for i in 1 2; do  # la pasarela reintenta: dos avisos distintos del mismo cobro
+    EV=$(evento_stripe payment_intent.succeeded "$PI_R2" "$(jq -n "$TOT2*100|round")" "$R2"); TS=$(date +%s)
+    webhook "$EV" "t=$TS,v1=$(firmar "$TS" "$EV")" >/dev/null
+done
+esperar "el pago tardío no reactiva el pedido" "cancelado|pendiente" "$(auth_json GET "$ADMIN" "/api/pedidos/$R2" | jq -r '"\(.pedido.estado)|\(.pedido.reembolso.estado)"')"
+esperar "REEMBOLSO_PENDIENTE por pago tardío, una sola vez" "pago recibido después de cancelar|1" "$(evento_ultimo REEMBOLSO_PENDIENTE | jq -r .dato_nuevo.motivo)|$(reembolsos_de "$R2")"
+# Reembolso por la pasarela: sin claves no se puede, y solo pedidos-service puede pedirlo a pagos.
+r=$(codigo -X POST -H "Authorization: Bearer $ADMIN" "$BASE/api/pedidos/admin/$R1/reembolso/pasarela")
+[[ $r =~ ^50[23]$ ]] && ok "sin claves, reembolsar por la pasarela → $r" || mal "reembolsar sin claves respondió $r"
+esperar "el reembolso sigue pendiente" pendiente "$(auth_json GET "$ADMIN" "/api/pedidos/$R1" | jq -r .pedido.reembolso.estado)"
+r=$(docker compose exec -T catalogo-service php -r '
+    const SERVICE_DIR = "/var/www/app"; require "/var/www/shared/bootstrap.php";
+    [$c] = Huellitas\Interno::post("http://pagos-service:8084/internal/pagos/reembolsar", ["pedido_id" => Huellitas\Jwt::uuid()]);
+    echo $c;')
+esperar "catalogo-service no puede pedir reembolsos → 403" 403 "$r"
+# Registrar a mano el reembolso hecho en el panel de la pasarela.
+esperar "un cliente no puede registrar reembolsos → 403" 403 "$(codigo -X PATCH -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d '{"referencia":"re_x"}' "$BASE/api/pedidos/admin/$R1/reembolso")"
+esperar "XSS en la referencia → 400" 400 "$(codigo -X PATCH -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d '{"referencia":"<script>alert(1)</script>"}' "$BASE/api/pedidos/admin/$R1/reembolso")"
+esperar "registrar el reembolso → hecho" "hecho|re_manual_$SUF" "$(auth_json PATCH "$ADMIN" "/api/pedidos/admin/$R1/reembolso" "{\"referencia\":\"re_manual_$SUF\"}" | jq -r '"\(.pedido.reembolso.estado)|\(.pedido.reembolso.referencia)"')"
+esperar "REEMBOLSO_REGISTRADO con quién y la referencia" "$R1|admin@huellitas.gt|re_manual_$SUF" "$(evento_ultimo REEMBOLSO_REGISTRADO | jq -r '"\(.pedido_id)|\(.usuario_email)|\(.dato_nuevo.referencia)"')"
+esperar "registrarlo otra vez → 409" 409 "$(codigo -X PATCH -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d '{"referencia":"re_otra"}' "$BASE/api/pedidos/admin/$R1/reembolso")"
+# Si la pasarela ya lo había reembolsado, no se le vuelve a pedir: se reutiliza la referencia guardada.
+docker compose exec -T mariadb-master mariadb -uroot -p"$DB_ROOT_PASSWORD" -e "UPDATE pagos_db.pagos SET reembolso_ref='re_previo_$SUF', reembolsado_en=NOW() WHERE payment_intent_id='$PI_R2'"
+esperar "un reembolso ya hecho en la pasarela no se repite" "hecho|Stripe re_previo_$SUF" "$(auth_json POST "$ADMIN" "/api/pedidos/admin/$R2/reembolso/pasarela" | jq -r '"\(.pedido.reembolso.estado)|\(.pedido.reembolso.referencia)"')"
+# Reseñas: solo quien compró, y no se publican hasta moderarlas.
+SLUG=alimento-seco-pollo-arroz
+resena() { "${C[@]}" -w '\n%{http_code}' -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$2" "$BASE/api/catalogo/productos/$SLUG/resenas"; }
+NO_COMPRO="sincompra$SUF@correo.gt"
+post /api/auth/registro "{\"nombre\":\"Sin Compra $SUF\",\"email\":\"$NO_COMPRO\",\"password\":\"Segura123\"}" >/dev/null
+esperar "quien no compró no puede opinar → 403" 403 "$(resena "$(login "$NO_COMPRO" Segura123)" '{"calificacion":5,"comentario":"Excelente"}' | tail -1)"
+esperar "el personal no publica reseñas → 403" 403 "$(resena "$ADMIN" '{"calificacion":5}' | tail -1)"
+esperar "calificación fuera de 1–5 → 422" 422 "$(resena "$T2" '{"calificacion":7}' | tail -1)"
+esperar "XSS en el comentario → 400" 400 "$(resena "$T2" '{"calificacion":4,"comentario":"<img src=x onerror=alert(1)>"}' | tail -1)"
+COMENT="Prueba $SUF: a mi perro le encantó"
+esperar "quien compró publica su reseña → 201" 201 "$(resena "$T2" "$(jq -nc --arg c "$COMENT" '{calificacion:5, comentario:$c}')" | tail -1)"
+PROD_ID=$(auth_json GET "$ADMIN" /api/catalogo/admin/productos | jq --argjson v "$var_id" '.productos[] | select(any(.variantes[]; .id==$v)) | .id')
+esperar "RESENA_PUBLICADA con el producto y la calificación" "$CLIENTE2|$PROD_ID|5" "$(evento_ultimo RESENA_PUBLICADA | jq -r '"\(.usuario_email)|\(.dato_nuevo.producto_id)|\(.dato_nuevo.calificacion)"')"
+publica() { "${C[@]}" "$BASE/api/catalogo/productos/$SLUG/resenas" | jq --arg c "$COMENT" '[.. | objects | select(.comentario? == $c)] | length'; }
+esperar "no aparece en la tienda hasta moderarla" 0 "$(publica)"
+RES_ID=$(auth_json GET "$ADMIN" /api/catalogo/admin/resenas | jq --arg c "$COMENT" '.resenas[] | select(.comentario==$c) | .id')
+esperar "un cliente no puede moderar → 403" 403 "$(codigo -X PATCH -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d '{"visible":true}' "$BASE/api/catalogo/admin/resenas/$RES_ID")"
+esperar "el admin la aprueba → 200" 200 "$(codigo -X PATCH -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d '{"visible":true}' "$BASE/api/catalogo/admin/resenas/$RES_ID")"
+esperar "aprobada, aparece en la tienda con nombre e inicial" 1 "$(publica)"
+esperar "PRODUCTO_ACTUALIZADO por la moderación (visible antes y después)" "$RES_ID|false|true" "$(evento_ultimo PRODUCTO_ACTUALIZADO | jq -r '"\(.dato_anterior.resena_id)|\(.dato_anterior.visible)|\(.dato_nuevo.visible)"')"
+auth_json PATCH "$ADMIN" "/api/catalogo/admin/resenas/$RES_ID" '{"visible":false}' >/dev/null  # no deja la reseña de prueba en la tienda
+# Edición de un producto (el de prueba de CP-47).
+esperar "un cliente no puede editar productos → 403" 403 "$(codigo -X PATCH -H "Authorization: Bearer $T2" -H 'Content-Type: application/json' -d '{"destacado":true}' "$BASE/api/catalogo/admin/productos/$PROD")"
+auth_json PATCH "$ADMIN" "/api/catalogo/admin/productos/$PROD" '{"destacado":true}' >/dev/null
+esperar "PRODUCTO_ACTUALIZADO con el valor anterior y el nuevo" "$PROD|0|1" "$(evento_ultimo PRODUCTO_ACTUALIZADO | jq -r '"\(.dato_nuevo.producto_id // .dato_anterior.producto_id)|\(.dato_anterior.destacado)|\(.dato_nuevo.destacado)"')"
+auth_json PATCH "$ADMIN" "/api/catalogo/admin/productos/$PROD" '{"destacado":false}' >/dev/null
+
+caso "CP-51 Citas: reprogramar, horarios del equipo y correcciones del historial (A01, R de STRIDE)"
+respiro
+DIA_R=$(gt -d "+$(( 3 + 10#$SUF % 30 )) day" +%F); [[ $(gt -d "$DIA_R" +%u) == 7 ]] && DIA_R=$(gt -d "$DIA_R +1 day" +%F)
+read -r H1 H2 <<<"$(disp "$DIA_R" | jq -r '[.turnos[] | select(.libres>=1) | .hora] | "\(.[0]) \(.[-1])"')"
+MR=$(mascota "$T3" "Rocky $SUF")
+r=$(reservar "$T3" "$MR" "$H1" "$DIA_R")
+esperar "cita de prueba reservada" 201 "$(tail -1 <<<"$r")"
+CITA_R=$(head -n -1 <<<"$r" | jq -r .cita.id)
+repro() { "${C[@]}" -w '\n%{http_code}' -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "{\"fecha\":\"$DIA_R\",\"hora\":\"$2\"}" "$BASE/api/citas/$CITA_R/reprogramar"; }
+esperar "otro cliente no puede reprogramarla → 404" 404 "$(repro "$T2" "$H2" | tail -1)"
+esperar "al mismo día y hora → 422" 422 "$(repro "$T3" "$H1" | tail -1)"
+esperar "el dueño la reprograma → 200" 200 "$(repro "$T3" "$H2" | tail -1)"
+esperar "CITA_REPROGRAMADA con el horario anterior y el nuevo" "$CITA_R|$DIA_R $H1:00|$DIA_R $H2:00|$CLIENTE3" "$(evento_ultimo CITA_REPROGRAMADA | jq -r '"\(.dato_nuevo.cita_id)|\(.dato_anterior.inicio)|\(.dato_nuevo.inicio)|\(.usuario_email)"')"
+esperar "el historial de la cita dice quién la movió" "Reprogramada de $DIA_R $H1 a $DIA_R $H2 por el cliente" "$(sqlc "SELECT comentario FROM historial_citas WHERE cita_id='$CITA_R' AND comentario LIKE 'Reprogramada de %'")"
+# Horario de un profesional: no se puede dejar fuera una cita ya agendada.
+PROF=$(sqlc "SELECT cupo FROM citas WHERE id='$CITA_R'")
+OTROS=$(jq -nc --argjson d "$(gt -d "$DIA_R" +%u)" '[1,2,3,4,5,6] | map(select(. != $d))')
+equipo() { "${C[@]}" -o /dev/null -w '%{http_code}' -X PATCH -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$2" "$BASE/api/citas/admin/equipo/$PROF"; }
+esperar "un cliente no puede cambiar horarios → 403" 403 "$(equipo "$T2" '{}')"
+esperar "quitarle el día de una cita agendada → 409" 409 "$(equipo "$ADMIN" "{\"dias\":$OTROS}")"
+esperar "XSS en el nombre → 400" 400 "$(equipo "$ADMIN" '{"nombre":"<script>alert(1)</script>"}')"
+esperar "guardar el horario sin cambios → 200" 200 "$(equipo "$ADMIN" '{}')"
+esperar "PROFESIONAL_ACTUALIZADO con el horario anterior y el nuevo" "$PROF|admin@huellitas.gt|true" "$(evento_ultimo PROFESIONAL_ACTUALIZADO | jq -r '"\(.dato_nuevo.profesional_id)|\(.usuario_email)|\(.dato_anterior.dias == .dato_nuevo.dias)"')"
+esperar "el dueño cancela la cita de prueba" 200 "$(codigo -X POST -H "Authorization: Bearer $T3" "$BASE/api/citas/$CITA_R/cancelar")"
+# Corrección del historial de CP-44: la ficha no cambia, se agrega una adenda.
+HIST_ID=$(auth_json GET "$ADMIN" "/api/citas/admin/mascotas/$M1/historial" | jq -r '.consultas[0].id')
+adenda() { "${C[@]}" -w '\n%{http_code}' -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$2" "$BASE/api/citas/admin/historial/${3:-$HIST_ID}/adendas"; }
+esperar "un cliente no puede corregir el historial → 403" 403 "$(adenda "$T2" '{"texto":"Cambio"}' | tail -1)"
+esperar "consulta inexistente → 404" 404 "$(adenda "$ADMIN" '{"texto":"Corrección"}' "$(cat /proc/sys/kernel/random/uuid)" | tail -1)"
+esperar "XSS en la adenda → 400" 400 "$(adenda "$ADMIN" '{"texto":"<script>alert(1)</script>"}' | tail -1)"
+r=$(adenda "$ADMIN" '{"texto":"Corrección: el oído afectado es el izquierdo"}')
+esperar "la adenda se agrega y la ficha original no cambia" "201|Otitis leve en oído derecho|Corrección: el oído afectado es el izquierdo" "$(tail -1 <<<"$r")|$(head -n -1 <<<"$r" | jq -r --arg h "$HIST_ID" '.consultas[] | select(.id==$h) | "\(.diagnostico)|\(.adendas[-1].texto)"')"
+cor=$(evento_ultimo HISTORIAL_CORREGIDO)
+esperar "HISTORIAL_CORREGIDO con la consulta y quién la corrigió" "$HIST_ID|$M1|admin@huellitas.gt" "$(jq -r '"\(.dato_nuevo.historial_id)|\(.dato_nuevo.mascota_id)|\(.usuario_email)"' <<<"$cor")"
+esperar "el texto de la corrección no va a la bitácora" false "$(jq '[.. | strings] | any(test("izquierdo"))' <<<"$cor")"
+
 caso "CP-49 Roles del personal: mínimo privilegio y cambios auditados (A01, A.5.15, A09)"
 # Un usuario temporal pasa por cada rol del personal y vuelve a cliente. El rol nuevo rige al iniciar sesión otra vez.
 ROLU="rol$SUF@correo.gt"

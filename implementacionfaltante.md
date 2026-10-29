@@ -197,10 +197,78 @@ Resultado de la suite: **295 pasaron, 0 fallaron** (49 casos).
 - **Ocho eventos sin prueba automática:** `REEMBOLSO_PENDIENTE`, `REEMBOLSO_REGISTRADO`, `PAGO_REEMBOLSADO`, `PRODUCTO_ACTUALIZADO`, `RESENA_PUBLICADA`, `CITA_REPROGRAMADA`, `PROFESIONAL_ACTUALIZADO` y `HISTORIAL_CORREGIDO`.
 - **PDF SEC-1:** hay que regenerarlo con los docs nuevos.
 
+Commit: `120fa9b`.
+
+## 2026-10-29 · Pruebas de los ocho eventos que faltaban
+
+### 1. CP-50 · Reembolsos, reseñas y edición del catálogo
+
+Pedidos pagados con el mismo método que CP-26: fila en `pagos` y webhook firmado. Se comprobó:
+
+**Reembolsos**
+
+- **`REEMBOLSO_PENDIENTE` (cancelación):** un cliente no puede cancelar desde el panel (403). Si el admin cancela un pedido pagado, queda `cancelado` con el reembolso pendiente, y el evento guarda el motivo y quién canceló.
+- **`REEMBOLSO_PENDIENTE` (pago tardío):** el cliente cancela su pedido sin pagar y luego llegan **dos** avisos de pago de la pasarela. El pedido sigue cancelado, con reembolso pendiente, y el evento queda **una sola vez**.
+- **Sin claves:**
+  - reembolsar por la pasarela responde 503 y el reembolso sigue pendiente;
+  - `catalogo-service` no puede llamar a `/internal/pagos/reembolsar` (403).
+- **`REEMBOLSO_REGISTRADO`:**
+  - un cliente no puede registrarlo (403) y una referencia con XSS da 400;
+  - el admin lo registra: queda `hecho`, y el evento guarda quién y la referencia;
+  - registrarlo otra vez da 409.
+- **Idempotencia:** si la pasarela ya lo había reembolsado (`reembolso_ref` guardado), no se le vuelve a pedir: se reutiliza la referencia.
+- **`PAGO_REEMBOLSADO` con éxito** necesita claves sandbox: Stripe y PayPal tienen la URL fija y no hay cómo simularlos sin cambiar el código. Queda documentado.
+
+**Reseñas (`RESENA_PUBLICADA`)**
+
+- Rechazos: quien no compró recibe 403, el personal también (403), una calificación de 7 da 422 y un XSS da 400.
+- Quien compró publica (201) y el evento guarda el producto y la calificación.
+- La reseña no aparece en la tienda hasta moderarla. Un cliente no puede moderar (403); el admin la aprueba y entonces aparece.
+
+**`PRODUCTO_ACTUALIZADO`**
+
+- Por la moderación: guarda `visible` antes y después.
+- Por la edición: un cliente no puede editar productos (403). Al marcar como destacado el producto de CP-47, el evento guarda 0 → 1.
+- Al final se deja todo como estaba: la reseña oculta y el producto sin destacar.
+
+### 2. CP-51 · Reprogramar, horarios del equipo y correcciones del historial
+
+- **`CITA_REPROGRAMADA`:**
+  - otro cliente no puede reprogramar la cita (404) y al mismo día y hora da 422;
+  - el dueño la reprograma (200) y el evento guarda el horario anterior, el nuevo y quién la movió;
+  - `historial_citas` dice «Reprogramada de … a … por el cliente».
+- **`PROFESIONAL_ACTUALIZADO`:**
+  - un cliente no puede cambiar horarios (403);
+  - quitarle al profesional el día de una cita ya agendada da 409;
+  - un XSS en el nombre da 400;
+  - guardar sin cambios da 200, y el evento guarda el horario anterior y el nuevo.
+  - La cita de prueba se cancela al final.
+- **`HISTORIAL_CORREGIDO`:**
+  - rechazos: un cliente recibe 403, una consulta inexistente 404 y un XSS 400;
+  - la adenda se agrega y la ficha original no cambia;
+  - el evento guarda la consulta, la mascota y quién corrigió, sin el texto de la corrección.
+
+### 3. Error encontrado y corregido: reprogramar al mismo horario
+
+Si el turno estaba lleno por la misma cita (por ejemplo, el último lugar), reprogramar al mismo día y hora respondía **409 «Ese turno se acaba de llenar. Elige otro»**. Ese mensaje es engañoso: el cliente eligió el horario que ya tenía. Pasaba porque la comprobación de disponibilidad iba antes que la de «mismo horario».
+
+- **Corrección** (`CitasController::reprogramar()`): en los servicios por turnos, la comparación con el horario actual va antes de mirar la disponibilidad → **422 «Elige un día u hora distintos»**.
+- **Comprobación a mano:** se llenó un turno con dos citas, se reprogramó una al mismo horario y respondió 422. Las citas de prueba se cancelaron.
+
+### 4. Resultado
+
+**342 pasaron, 0 fallaron** (51 casos). Los 38 eventos de la bitácora tienen prueba automática. `PAGO_REEMBOLSADO` con éxito necesita claves.
+
+### 5. Documentación
+
+- `docs/02-owasp-top10.md`: en el catálogo A09, los ocho eventos tienen ahora su prueba (CP-50 o CP-51).
+- `docs/01-arquitectura-stride-dfd.md`: las tres filas 🟡 pasan a ✅ (CP-50 y CP-51).
+- `docs/06`, `docs/08`, `README.md` y `falta.md`: los conteos nuevos.
+
 ## Siguiente
 
 Según `falta.md`:
-- pruebas para los ocho eventos que faltan;
 - revisión de las pantallas nuevas en el navegador;
 - `lazy()` para el panel;
-- regenerar el PDF.
+- regenerar el PDF;
+- decidir el ENUM de `rol` de la bitácora.

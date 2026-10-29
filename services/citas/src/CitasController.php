@@ -470,6 +470,11 @@ final class CitasController
         $servicio = $this->servicio($cita['servicio']);
         $mascota = $this->mascotaPorId($cita['mascota_id']);
         $profesional = self::profesionalElegido($servicio, $datos['profesional_id'] ?? null);
+        // Antes de mirar la disponibilidad: si el turno está lleno por esta misma cita, diría «se acaba de llenar».
+        if ($servicio['modalidad'] === 'turno' && ($datos['fecha'] ?? null) === substr($cita['inicio'], 0, 10)
+            && ($datos['hora'] ?? null) === substr($cita['inicio'], 11, 5) && ($profesional === null || $profesional === (int) $cita['cupo'])) {
+            throw new ApiError(422, 'Elige un día u hora distintos', ['campo' => 'hora']);
+        }
         [$inicio, $fin] = $this->horario($servicio, $datos + ['servicio' => $servicio['slug']], $personal, $profesional);
         if ($inicio === $cita['inicio'] && $fin === $cita['fin'] && ($profesional === null || $profesional === (int) $cita['cupo'])) {
             throw new ApiError(422, 'Elige un día u hora distintos', ['campo' => 'hora']);
