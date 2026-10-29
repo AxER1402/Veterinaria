@@ -434,3 +434,42 @@ Se reprodujo en Linux con `chmod +x`, en una copia aparte (proyecto `huellitasma
 - **En el stack de desarrollo:** los 14 contenedores quedan healthy y `tests/seguridad.sh` da **342 pasaron, 0 fallaron**.
 - **Pendiente:** confirmarlo en una Mac real.
 
+Commit: `9afc4c7`.
+
+## 2026-10-29 · Base local limpia para la demo
+
+### 1. Pasos
+
+1. **Respaldo** con `ops/backup.sh` → `backups/20261029-071659`. Se verificó: `sha256sum -c` correcto y se descifra.
+2. `docker compose down` (sin `-v`). Se borraron **solo** `huellitas_master_data`, `huellitas_slave_data` y `huellitas_redis_data`, comprobando antes que fueran del proyecto `huellitas`.
+   - Redis también, porque guarda la caché del catálogo y los contadores con los IDs y precios viejos.
+   - **La bitácora (`huellitas_audit_data`) se conservó:** es append-only, encadenada y es la evidencia de SEC-2. Borrarla contradiría la retención que dicen los docs.
+3. `docker compose up -d --wait`: los scripts de inicio crean todo, ya en quetzales. Los 14 contenedores quedaron healthy.
+4. `ops/seed-demo.sh` (`db/seeds/01-demo.sql` y `02-resenas.sql`).
+
+### 2. Antes y después
+
+| | Antes | Después |
+|---|---|---|
+| Usuarios | 167 | 12 |
+| Mascotas | 105 | 13 |
+| Citas | 250 | 42 |
+| Pedidos | 209 | 13 |
+| Productos | 32 | 24 |
+| Reseñas | — | 14 |
+
+Precio máximo Q695; la moneda por defecto de los pagos es `GTQ`.
+
+### 3. Comprobado
+
+- **Réplica al día:** IO y SQL en `Yes`, retraso 0 y las mismas 42 citas.
+- **Cuentas:** las 5 de `usuarios.md` (admin, veterinaria, recepción, tienda y cliente) y los 7 clientes de demo (`Cliente#2026`) inician sesión (200).
+- **Revisión en el navegador:** **72 de 72** pantallas sin errores, sin peticiones fallidas y sin desborde. Se omitió el rol con contraseña temporal para no crear datos.
+- **La agenda de hoy muestra la demo:** Kiara (guardería, atendida), Luna (peluquería, confirmada) y Max (consulta con la Dra. Andrea Morales, pendiente). Ningún nombre de prueba.
+
+### 4. Ojo para la presentación
+
+`tests/seguridad.sh` crea datos de prueba: clientes «compras…», mascotas «Firulais 123…» y citas en los próximos 40 días. El guion (`docs/08`) lo corre en «Antes de empezar». Hay dos opciones:
+- correrlo en vivo y aceptar esas filas en la agenda y en Clientes;
+- mostrar la última corrida del CI en verde y dejar la base limpia.
+
