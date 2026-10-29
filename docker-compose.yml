@@ -269,6 +269,8 @@ services:
   mariadb-master:
     image: mariadb:10.6
     restart: unless-stopped
+    # Copia los scripts de inicio con permisos 644 antes de arrancar (ver db/iniciar-mariadb.sh: en macOS fallaban).
+    entrypoint: ["sh", "/huellitas/iniciar-mariadb.sh"]
     command: ["--server-id=1", "--log-bin=mysql-bin", "--binlog-format=ROW", "--expire-logs-days=7"]
     environment:
       TZ: America/Guatemala
@@ -282,7 +284,8 @@ services:
       CITAS_DB_PASSWORD: ${CITAS_DB_PASSWORD:?falta CITAS_DB_PASSWORD}
     volumes:
       - master_data:/var/lib/mysql
-      - ./db/master:/docker-entrypoint-initdb.d:ro
+      - ./db/master:/huellitas-initdb:ro
+      - ./db/iniciar-mariadb.sh:/huellitas/iniciar-mariadb.sh:ro
     networks: [interna]
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
@@ -323,13 +326,16 @@ services:
   mariadb-audit:
     image: mariadb:10.6
     restart: unless-stopped
+    entrypoint: ["sh", "/huellitas/iniciar-mariadb.sh"]
+    command: ["mariadbd"]   # al cambiar el entrypoint, Compose ya no usa el CMD de la imagen
     environment:
       TZ: America/Guatemala
       MARIADB_ROOT_PASSWORD: ${AUDIT_DB_ROOT_PASSWORD:?falta AUDIT_DB_ROOT_PASSWORD}
       AUDIT_DB_PASSWORD: ${AUDIT_DB_PASSWORD}
     volumes:
       - audit_data:/var/lib/mysql
-      - ./db/audit:/docker-entrypoint-initdb.d:ro
+      - ./db/audit:/huellitas-initdb:ro
+      - ./db/iniciar-mariadb.sh:/huellitas/iniciar-mariadb.sh:ro
     networks: [interna]
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]

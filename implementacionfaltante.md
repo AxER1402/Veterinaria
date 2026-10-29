@@ -408,3 +408,29 @@ rm -rf node_modules
 - **CI:**
   - Las dos corridas anteriores en `main` (`c7de3f3` y la previa) estaban en **rojo** por el falso positivo de CP-28 (`frecuencia_cardiaca`): 273 pasaron y 1 falló. Se corrigió esta mañana en `cb3bf3f`.
   - Con el push, la corrida 40873345520 quedó **en verde** en sus 4 trabajos: SAST, frontend, PHP y secretos, y stack completo con pruebas de seguridad y simulacro DRP.
+
+## 2026-10-29 · Bases vacías en macOS
+
+### 1. Causa (reproducida)
+
+El entrypoint de MariaDB **ejecuta** los `.sh` de `/docker-entrypoint-initdb.d` que tienen bit de ejecución, y **carga con `source`** los que no. `db/master/01-bases-y-usuarios.sh` y `db/audit/01-audit_db.sh` deben cargarse con `source`, porque usan `docker_process_sql`. En macOS, el bind mount de Docker Desktop puede mostrarlos como ejecutables.
+
+Se reprodujo en Linux con `chmod +x`, en una copia aparte (proyecto `huellitasmac` con volúmenes propios, sin tocar la base de desarrollo):
+- error `docker_process_sql: command not found`;
+- **ninguna de las 5 bases se creó**;
+- el contenedor igual quedó **healthy**: falla en silencio y la demo no arranca.
+
+### 2. Corrección
+
+- **`db/iniciar-mariadb.sh`** (nuevo): copia los scripts montados en `/huellitas-initdb` a `/docker-entrypoint-initdb.d` con permisos 644 y luego llama al entrypoint normal de MariaDB. Se corre con `sh`, así que solo necesita permiso de lectura.
+- **`docker-compose.yml`:**
+  - `mariadb-master` y `mariadb-audit` montan `./db/master` o `./db/audit` en `/huellitas-initdb` y usan ese entrypoint;
+  - `mariadb-audit` declara `command: ["mariadbd"]`, porque al cambiar el entrypoint Compose ya no usa el CMD de la imagen.
+- **`.gitattributes`** (nuevo): LF en `.sh`, `.sql`, `Dockerfile`, `.conf` y `.template`. Un `.sh` con CRLF también rompería el arranque, por ejemplo al clonar en Windows. Se comprobó con `git add --renormalize`: no cambia ningún archivo actual.
+
+### 3. Comprobado
+
+- **En la copia aparte, con los scripts aún ejecutables y volúmenes nuevos:** se crean las 5 bases, los 5 usuarios por servicio, el catálogo (40 presentaciones), `audit_db` y sus 2 triggers append-only. Después se borró con `down -v` (0 volúmenes `huellitasmac` restantes).
+- **En el stack de desarrollo:** los 14 contenedores quedan healthy y `tests/seguridad.sh` da **342 pasaron, 0 fallaron**.
+- **Pendiente:** confirmarlo en una Mac real.
+

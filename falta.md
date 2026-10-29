@@ -23,7 +23,7 @@ Pendiente
   - FLASH50 no tiene fecha de vencimiento en la base, así que no se muestra cuenta regresiva. Si se quiere, hay que poner la fecha en `pedidos_db.cupones.vence`.
   - Los testimonios y las reseñas son de demostración: ficticios pero coherentes con los clientes de la demo.
 - En el servidor hay que correr `ops/reparar-replica.sh` para resolver el error 1236 (se probó en local).
-- En macOS con Docker Desktop, los scripts de inicio de la base (`db/master/01-*.sh` y `db/audit/01-*.sh`) fallan con "bad interpreter: Permission denied" y las bases quedan vacías. Con volúmenes nuevos hay que correrlos a mano o cambiar cómo se cargan. En Linux y en CI funcionan.
+- macOS con Docker Desktop (corregido el 2026-10-29): los scripts de inicio de la base fallaban porque el bind mount los mostraba como ejecutables, y las bases quedaban vacías aunque el contenedor estuviera «healthy». Ahora `db/iniciar-mariadb.sh` los copia con permisos 644 antes de arrancar. Se probó en Linux, simulando el bit de ejecución; falta confirmarlo en una Mac real. `.gitattributes` fuerza LF en `.sh` y `.sql` (para Windows).
 
 Lo que no se probó
 - Revisión en el navegador (2026-10-29, Chromium sin interfaz): 37 pantallas por rol (cliente, admin, veterinario, recepción, tienda y cliente con contraseña temporal), en escritorio (1366 px) y celular (390 px), sin errores de JS, sin peticiones fallidas y sin desborde horizontal. Se corrigieron el encabezado en celulares, las tablas sin desplazamiento, la sección fuera del rol y una petición prohibida de la tienda (ver `implementacionfaltante.md`). Falta probarlo en un teléfono real, y en Safari/iOS.

@@ -1,0 +1,7 @@
+# Los scripts se ejecutan dentro de contenedores Linux: con CRLF fallan («$'\r': command not found»),
+# por ejemplo si alguien clona en Windows con core.autocrlf=true.
+*.sh text eol=lf
+*.sql text eol=lf
+Dockerfile text eol=lf
+*.conf text eol=lf
+*.template text eol=lf
