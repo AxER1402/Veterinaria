@@ -1,5 +1,6 @@
 
 Cómo actualizar un entorno ya levantado
+- Si el entorno se levantó cuando los precios estaban en dólares (la moneda por defecto de `pagos_db.pagos` es `USD`), correr primero `ops/backup.sh` y `ops/migrar-quetzales.sh`. `migrar-v2.sh` no lo incluye. Sin esto el webhook de Stripe rechaza los pagos en quetzales.
 - Correr `ops/migrar-v2.sh` y después `docker compose up -d --build --wait`. El script aplica, sin borrar datos, las migraciones `db/master/12` a `22` y `db/audit/02`, y se puede correr más de una vez.
 - Datos de demostración: `ops/seed-demo.sh`. Carga clientes, mascotas, citas, historial, pedidos y 14 reseñas coherentes con los pedidos entregados. No borra nada y se puede repetir.
 - Variables nuevas o cambiadas en el `.env` (ver `.env.example`):
@@ -31,7 +32,7 @@ Lo que no se probó
 - Nadie revisó en el navegador las pantallas nuevas: reservar con profesional, agenda (por hora y por consultorio, y el equipo), pacientes, clientes, alta de clientes y cambio de contraseña obligatorio, pedidos, mis citas, mis mascotas, reseñas y checkout. Todo se probó por la API y el frontend compila sin avisos, pero falta revisarlo en escritorio y en celular, con cada rol.
 - No se probó subir un adjunto del historial (laboratorio o radiografía) ni abrir su enlace firmado. La foto del catálogo sí se probó.
 - El reembolso por la pasarela no se probó con un pago real: falta tener claves.
-- No se corrió `tests/seguridad.sh` después de los cambios. Se actualizaron las pruebas afectadas: el límite ahora es de 3 citas por mascota, el motivo es obligatorio en consulta y el vencimiento de pedidos sale del `.env`. La prueba CP-36 necesita internet (clima).
+- `tests/seguridad.sh` se corrió el 2026-10-29 en local: 274 pasaron, 0 fallaron (detalle en `implementacionfaltante.md`). La prueba CP-36 necesita internet (clima).
 - Los correos nuevos (cita reprogramada, cambios de estado de pedidos) reutilizan la plantilla de citas de EmailJS. No se probaron con claves reales.
 
 Otros pendientes
