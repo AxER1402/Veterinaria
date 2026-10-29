@@ -473,3 +473,38 @@ Precio máximo Q695; la moneda por defecto de los pagos es `GTQ`.
 - correrlo en vivo y aceptar esas filas en la agenda y en Clientes;
 - mostrar la última corrida del CI en verde y dejar la base limpia.
 
+Commit: `cf26980`. Push de `9afc4c7` y `cf26980`: el CI 40883787130, que levanta todo desde cero, quedó **en verde**. Eso confirma también el arranque nuevo de las bases.
+
+## 2026-10-29 · Guion de la presentación con el CI como evidencia
+
+Decisión del usuario: en la presentación **no** se corre `tests/seguridad.sh` contra la base de la demo. Se muestra la última corrida del CI en verde.
+
+### 1. `docs/08-guion-presentacion.md`
+
+- **«Antes de empezar»:** `gh run list --repo AxER1402/Veterinaria --workflow CI --limit 1` en vez de correr la suite, con el aviso de por qué no correrla contra la demo. Se agrega una pestaña 3 con la corrida del CI.
+- **Min 2:15 (pago sin claves):** ahora usa `ops/demo-pago-sin-claves.sh <id>` en vez de la suite.
+- **Min 5:00:** decía «27 tipos de evento: 14 + 13»; ahora dice **38: 14 + 24**, cada uno con su prueba.
+- **Min 8:45:** «CI, ZAP, ALE/ROSI y cierre», mostrando el CI en verde (342 comprobaciones en 51 casos).
+- **Ataque 2 (precio manipulado):** esperaba `19.99` (precio en dólares); ahora `jq .totales.total` → **155**, el precio real en quetzales.
+
+### 2. `ops/demo-pago-sin-claves.sh` (nuevo)
+
+- Paga un pedido `pendiente_pago` como lo haría Stripe:
+  - deja la fila del pago en `pagos_db` (lo que habría creado el inicio del pago);
+  - envía `payment_intent.succeeded` tres veces: sin firma (400), con firma falsa (400) y firmado con `STRIPE_WEBHOOK_SECRET` (200).
+- Valida que el id sea un UUID y que el pedido esté pendiente de pago.
+- **Probado en un stack completo aparte** (proyecto `huellitasmac`, puertos 8089 y 8444, volúmenes propios):
+  - el pedido pasó a `pagado` y el cliente lo vio así;
+  - la bitácora registró `WEBHOOK_STRIPE_RECIBIDO` con FALLO, FRAUDE y EXITO, más `PAGO_CONFIRMADO` y `PEDIDO_ESTADO_CAMBIADO`;
+  - pagar otra vez el mismo pedido se rechaza;
+  - un id inválido se rechaza.
+- **La base de la demo quedó intacta:** 0 pagos `pi_demo_` y los mismos 13 pedidos.
+
+**Trampas al probar en una copia:** `docker-compose.yml` fija `name: huellitas`, así que en una copia hay que usar `COMPOSE_PROJECT_NAME=<otro>` (la variable tiene prioridad). Y `down --rmi local` borra las etiquetas `huellitas/*:latest`, que comparte con el stack de desarrollo. Se restauraron con `docker compose build`, y los 14 contenedores siguieron healthy.
+
+### 3. CI con resumen
+
+`.github/workflows/ci.yml`:
+- el paso de pruebas guarda la salida con `tee`; con `shell: bash` corre con `pipefail`, así que un fallo no queda tapado;
+- un paso nuevo, `if: always()`, publica en la página de la corrida el resultado («Resultado: N pasaron, M fallaron») y cada `✘`.
+

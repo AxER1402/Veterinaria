@@ -70,7 +70,17 @@ jobs:
       - name: Levantar el stack
         run: docker compose up -d --build --wait --wait-timeout 420
       - name: Pruebas de seguridad (tests/seguridad.sh)
-        run: tests/seguridad.sh
+        shell: bash   # bash -eo pipefail: si las pruebas fallan, tee no lo tapa
+        run: tests/seguridad.sh 2>&1 | tee "$RUNNER_TEMP/seguridad.log"
+      - name: Resumen de las pruebas en la página del CI
+        if: always()
+        run: |
+          {
+            echo '### Pruebas de seguridad (tests/seguridad.sh)'
+            echo '```'
+            grep -E '✘|^Resultado' "$RUNNER_TEMP/seguridad.log" || echo 'Las pruebas no llegaron a correr.'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Simulacro DRP (ransomware en el maestro)
         run: ops/simulacro-drp.sh --si
       - name: Evidencia
