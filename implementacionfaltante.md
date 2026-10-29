@@ -394,5 +394,17 @@ rm -rf node_modules
 
 ## Siguiente
 
-- Decidir el ENUM de `rol` de la bitácora (ver «Para decidir» en la sección de docs).
 - Pendientes del equipo: claves sandbox, fotos reales, textos del negocio, prueba en un teléfono real.
+
+## 2026-10-29 · Push y decisión sobre el ENUM de `rol`
+
+- **Push** a `origin/main` (github.com/AxER1402/Veterinaria) de los 7 commits del día, de `cb3bf3f` a `1fe9618`. Antes se hizo `git fetch`: no había cambios nuevos del equipo, así que no hubo merge.
+- **Decisión del usuario:** el `rol` de la bitácora **se mantiene ampliado** (`veterinario`, `recepcion`, `tienda`).
+  - El enunciado define `ENUM(admin,cliente,anonimo)`, y los tres valores originales siguen igual.
+  - Motivo: registrar a todo el personal como `admin` ocultaría quién hizo qué (R de STRIDE) y negaría el mínimo privilegio (A.5.15).
+  - La justificación para la presentación está en `docs/08-guion-presentacion.md`.
+  - No se cambia código.
+
+- **CI:**
+  - Las dos corridas anteriores en `main` (`c7de3f3` y la previa) estaban en **rojo** por el falso positivo de CP-28 (`frecuencia_cardiaca`): 273 pasaron y 1 falló. Se corrigió esta mañana en `cb3bf3f`.
+  - Con el push, la corrida 40873345520 quedó **en verde** en sus 4 trabajos: SAST, frontend, PHP y secretos, y stack completo con pruebas de seguridad y simulacro DRP.
