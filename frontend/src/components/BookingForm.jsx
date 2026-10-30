@@ -92,13 +92,13 @@ export default function BookingForm() {
                 <Field label="1. Servicio" full>
                   <select value={servicio} onChange={(e) => { setServicio(e.target.value); setProfesional(''); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
                     {servicios.map((s) => (
-                      <option key={s.slug} value={s.slug}>{s.nombre} · desde {formatPrice(s.precio_desde)}</option>
+                      <option key={s.slug} value={s.slug}>{s.nombre}</option>
                     ))}
                   </select>
                 </Field>
               </div>
               {elegido && (
-                <p className="booking__sede"><MapPin size={18} /> <span>Se atiende en <strong>{elegido.sede.nombre}</strong></span></p>
+                <p className="booking__sede"><MapPin size={18} /> <span>Desde <strong>{formatPrice(elegido.precio_desde)}</strong>. Se atiende en <strong>{elegido.sede.nombre}</strong></span></p>
               )}
 
               {elegido?.profesionales?.length > 0 && (

@@ -787,7 +787,7 @@
 .account__links a.active { font-weight: 500; text-decoration-thickness: 2px; }
 
 /* ---------- Reserva de citas (FASE 15) ---------- */
-.booking__steps { display: grid; gap: 22px; }
+.booking__steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
 .booking__steps .form-grid { margin-bottom: 0; }
 .booking__steps form { display: grid; gap: 22px; }
 .booking__sede { display: flex; align-items: flex-start; gap: 8px; margin: -8px 0 0; color: var(--gray); font-size: 0.92rem; }
@@ -797,9 +797,10 @@
 .booking__group legend::first-letter { text-transform: uppercase; }
 .booking__muted { color: var(--gray); font-size: 0.9rem; margin: 0; }
 .booking__empty { display: flex; align-items: center; gap: 10px; margin: 0; padding: 14px 18px; border-radius: 16px; background: var(--soft); color: var(--navy); }
-.booking__login { display: grid; gap: 14px; padding-top: 6px; border-top: 1px solid var(--line); }
+.booking__login { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding-top: 6px; border-top: 1px solid var(--line); }
 .booking__login p { margin: 12px 0 0; color: var(--navy); }
 .booking__login .booking__muted { margin: 0; text-align: center; }
+.booking__login .btn { white-space: normal; line-height: 1.3; text-align: center; }
 .booking__newpet { display: grid; gap: 12px; margin-top: 14px; padding: 18px; border-radius: 20px; background: var(--soft); }
 .booking__newpet .pet-picker { margin-bottom: 16px; }
 .booking__newpet .field input, .booking__newpet .field textarea { background: var(--white); }
