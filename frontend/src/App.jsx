@@ -13,6 +13,8 @@ import About from './pages/About'
 import FaqPage from './pages/FaqPage'
 import Contact from './pages/Contact'
 import Reservar from './pages/Reservar'
+import Privacidad from './pages/Privacidad'
+import Terminos from './pages/Terminos'
 import NotFound from './pages/NotFound'
 import ShopHome from './pages/shop/ShopHome'
 import Catalog from './pages/shop/Catalog'
@@ -79,6 +81,8 @@ export default function App() {
               <Route path="preguntas" element={<FaqPage />} />
               <Route path="contacto" element={<Contact />} />
               <Route path="reservar" element={<Reservar />} />
+              <Route path="privacidad" element={<Privacidad />} />
+              <Route path="terminos" element={<Terminos />} />
               <Route path="tienda" element={<ShopHome />} />
               <Route path="tienda/productos" element={<Catalog />} />
               <Route path="tienda/producto/:slug" element={<ProductDetail />} />

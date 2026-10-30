@@ -74,8 +74,8 @@ export default function Footer() {
         <div className="footer__bottom">
           <span>© {new Date().getFullYear()} {business.name}. Todos los derechos reservados.</span>
           <div>
-            <a href="#">Privacidad</a>
-            <a href="#">Términos</a>
+            <Link to="/privacidad">Privacidad</Link>
+            <Link to="/terminos">Términos</Link>
             <Link to="/contacto">Contacto</Link>
           </div>
         </div>

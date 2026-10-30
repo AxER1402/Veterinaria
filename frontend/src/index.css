@@ -762,6 +762,15 @@ strong { font-weight: 600; color: var(--navy); }
 .breadcrumb a { color: var(--navy); font-weight: 500; }
 .breadcrumb a:hover { text-decoration: underline; }
 
+/* Privacidad y Términos: una columna de lectura cómoda */
+.legal { padding-top: clamp(40px, 6vw, 72px); }
+.legal__body { max-width: 760px; color: var(--navy); line-height: 1.7; }
+.legal__fecha { color: var(--gray); font-size: 0.92rem; margin: 0 0 8px; }
+.legal__body h2 { font-size: clamp(1.3rem, 2.4vw, 1.6rem); margin: 36px 0 10px; }
+.legal__body p { margin: 0 0 12px; }
+.legal__body ul { margin: 0 0 12px; padding-left: 1.2em; display: grid; gap: 8px; }
+.legal__body a { font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+
 .service-list { display: grid; gap: 80px; }
 .service-row { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(32px, 6vw, 80px); align-items: center; }
 .service-row--reverse .service-row__media { order: 2; }
