@@ -26,7 +26,20 @@ Las tres cuentas del personal las crea `db/master/13-roles-telefono.sql` (en un 
 | Diego Alejandro Morales Chávez | `diego.morales@example.com` | Coco, un conejo |
 | Sofía Valentina Cifuentes Rivas | `sofia.cifuentes@example.com` | Pelusa y Thor; pedido pagado hace unas horas |
 
-La demo también carga 14 reseñas publicadas (`db/seeds/02-resenas.sql`), escritas por estos clientes sobre productos de pedidos entregados. La consulta veterinaria tiene dos profesionales: la **Dra. Andrea Morales** (cuenta `veterinaria@huellitas.gt`) y el **Dr. Luis Pérez**; el horario de cada uno se edita en **Agenda → Equipo y horarios**.
+La demo también carga 14 reseñas publicadas (`db/seeds/02-resenas.sql`), escritas por estos clientes sobre productos de pedidos entregados. Cada servicio por turnos tiene su equipo. El horario de cada persona se edita en **Agenda → Equipo y horarios**:
+
+| Servicio | Profesional | Días | Horario |
+|---|---|---|---|
+| Consulta veterinaria | **Dra. Andrea Morales** (cuenta `veterinaria@huellitas.gt`) | Lun a Sáb | 8:00–20:00 |
+| Consulta veterinaria | **Dr. Luis Pérez** | Lun a Sáb | 8:00–20:00 |
+| Peluquería | Karla Juárez | Lun a Sáb | 8:00–20:00 |
+| Peluquería | Mónica Estrada | Mar a Sáb | 10:00–18:00 |
+| Paseos | Kevin Rodas | Lun a Sáb | 8:00–20:00 |
+| Paseos | Andrés Batz | Lun a Vie | 8:00–14:00 |
+| Paseos | Fernanda Coy | Mié a Sáb | 14:00–20:00 |
+| Entrenamiento | Óscar Monterroso | Lun a Sáb | 8:00–20:00 |
+
+Solo los veterinarios tienen cuenta. El resto del equipo de demo lo carga `db/seeds/03-profesionales.sql` (con `ops/seed-demo.sh`).
 
 - **Clientes nuevos:** cualquiera puede registrarse en `/cuenta` (pestaña de registro; API `POST /api/auth/registro`). El registro siempre crea el rol `cliente`; los roles del personal los asigna un admin desde el panel.
 - **Bloqueo:** 5 contraseñas incorrectas bloquean la cuenta 15 min (A07). Si te bloqueas probando, espera o reinicia con volúmenes nuevos.
