@@ -19,7 +19,7 @@ Pendiente
 - Equipo por servicio: solo la consulta veterinaria tiene profesionales cargados. Peluquería, paseos y entrenamiento siguen con una cantidad fija de lugares. Si se cargan profesionales a un servicio con citas futuras, esas citas siguen ocupando su lugar, pero no quedan asignadas a nadie.
 - Contenido por confirmar con el negocio:
   - "Envío el mismo día" (en la tienda) y "Devoluciones gratis durante 30 días" (en la página de producto).
-  - Los enlaces de "Privacidad" y "Términos" del pie de página apuntan a "#".
+  - Privacidad (`/privacidad`) y Términos (`/terminos`) ya existen (2026-10-29) y describen lo que hace el sistema, pero son un texto base: falta que el negocio confirme la política de cambios y devoluciones y los motivos para ocultar reseñas, y que lo revise alguien con criterio legal. Las cifras (horario, 60 días, 2 h, Q35/Q400, 3 faltas) salen del código: si cambian allá, cambiarlas también en `Terminos.jsx`.
   - FLASH50 no tiene fecha de vencimiento en la base, así que no se muestra cuenta regresiva. Si se quiere, hay que poner la fecha en `pedidos_db.cupones.vence`.
   - Los testimonios y las reseñas son de demostración: ficticios pero coherentes con los clientes de la demo.
 - En el servidor hay que correr `ops/reparar-replica.sh` para resolver el error 1236 (se probó en local).

@@ -536,3 +536,23 @@ Al terminar se borraron los dos archivos de Cloudinary (`destroy`) y sus filas d
 - `ALTER USER` en el master (la réplica lo recibe por replicación) y en la base de auditoría; `.env` actualizado y con permisos 600; los tres contenedores de base recreados para que su entorno no guarde la contraseña vieja.
 - Comprobado: la contraseña vieja da «Access denied» en las tres; la réplica sigue al día (IO y SQL en `Yes`, 0 s de retraso); la app y `ops/evidencia.sh` funcionan.
 - Los respaldos no cambian: se cifran con `BACKUP_PASSPHRASE`. Los healthchecks usan su propio usuario. El servidor no se tocó.
+
+## 2026-10-29 · Páginas de Privacidad y Términos
+
+- **Nuevas rutas:** `/privacidad` y `/terminos`. Los enlaces del pie de página ya no apuntan a `#`. Ambas páginas usan una plantilla común (`components/LegalPage.jsx`): encabezado, fecha de actualización, texto en una columna de 760 px y el contacto al final. Los estilos `.legal*` están en `index.css`.
+- **Privacidad** (`pages/Privacidad.jsx`) describe lo que el sistema hace de verdad:
+  - qué datos guarda y para qué;
+  - quién puede ver cada dato según el rol (el historial solo lo ven veterinarios y administración, y cada lectura se audita);
+  - los servicios externos: Stripe, PayPal, Cloudinary (archivos clínicos privados con enlace de 10 min), EmailJS, Google Maps y Cloudflare R2;
+  - cuánto tiempo se guardan: respaldos 30 días, bitácora 2 años inmodificable;
+  - qué guarda el navegador: sesión en `sessionStorage`, carrito y favoritos en `localStorage`, sin cookies de seguimiento;
+  - los derechos del cliente (ver y corregir en Mi cuenta; copia o borrado por correo).
+- **Términos** (`pages/Terminos.jsx`) recoge las reglas del código:
+  - citas (`CitasController`): lunes a sábado de 8:00 a 20:00, hasta 60 días antes y al menos 1 h antes; 3 citas activas por mascota y 10 por cuenta; cambiar o cancelar hasta 2 h antes; 3 faltas en 90 días obligan a agendar por teléfono; hospedaje de 30 noches como máximo;
+  - pedidos: envío de Q35, gratis desde Q400 después de descuentos, y retiro en sede gratis (`Totales.php`); un pedido sin pagar se cancela a las 2 h (`PEDIDO_VENCE_HORAS`) y el cliente solo puede cancelarlo mientras está pendiente de pago;
+  - cupones: uno por pedido, con vencimiento o marca;
+  - PayPal cobra en dólares con el tipo de cambio del Banguat;
+  - solo opina quien compró el producto;
+  - cambios y devoluciones: según la Ley de Protección al Consumidor y Usuario (Decreto 006-2003).
+- **No se inventaron políticas del negocio:** no se fija un plazo de devolución ni exclusiones. Queda pendiente en `falta.md`.
+- **Comprobado** en Chromium a 390 px y 1366 px: los enlaces del pie de página llevan a cada página, que abre arriba, sin desborde horizontal ni errores de JS. `npm run lint` sin avisos.
