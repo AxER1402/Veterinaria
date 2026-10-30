@@ -27,8 +27,6 @@ Pendiente
 
 Lo que no se probó
 - Revisión en el navegador (2026-10-29, Chromium sin interfaz): 37 pantallas por rol (cliente, admin, veterinario, recepción, tienda y cliente con contraseña temporal), en escritorio (1366 px) y celular (390 px), sin errores de JS, sin peticiones fallidas y sin desborde horizontal. Se corrigieron el encabezado en celulares, las tablas sin desplazamiento, la sección fuera del rol y una petición prohibida de la tienda (ver `implementacionfaltante.md`). Falta probarlo en un teléfono real, y en Safari/iOS.
-  - Detalle menor sin corregir: en `/reservar`, en celular, el precio del servicio se corta dentro del selector («desde Q 2…»).
-- No se probó subir un adjunto del historial (laboratorio o radiografía) ni abrir su enlace firmado. La foto del catálogo sí se probó.
 - El reembolso por la pasarela no se probó con un pago real: falta tener claves.
 - `tests/seguridad.sh` se corrió el 2026-10-29 en local: 342 pasaron, 0 fallaron (detalle en `implementacionfaltante.md`). La prueba CP-36 necesita internet (clima).
 - Los correos nuevos (cita reprogramada, cambios de estado de pedidos) reutilizan la plantilla de citas de EmailJS. No se probaron con claves reales.
@@ -40,4 +38,3 @@ Otros pendientes
   - PDF SEC-1 regenerado el 2026-10-29 con los docs nuevos (27 páginas). Hay que volver a generarlo si cambian los docs o tras el ZAP contra el dominio.
 - Panel con `lazy()` (2026-10-29): el bundle principal bajó de 540 a 377 KB y Vite ya no avisa. La tienda descarga 421 KB de JS en vez de 540, y nada del panel.
 - Base local limpia (2026-10-29): solo la demo (12 usuarios, 13 mascotas, 42 citas, 13 pedidos, 14 reseñas), en quetzales. La bitácora se conservó. Respaldo previo: `backups/20261029-071659`. **Ojo:** `tests/seguridad.sh` vuelve a llenar la base de datos de prueba (clientes «compras…», mascotas «Firulais 123…», citas en los próximos 40 días). Decidido: en la presentación se muestra el CI en verde y no se corren las pruebas contra la base de la demo (`docs/08`). Para volver a limpiar: `ops/backup.sh`, borrar los volúmenes `huellitas_master_data`, `huellitas_slave_data` y `huellitas_redis_data` (no `audit_data`), `docker compose up -d --wait` y `ops/seed-demo.sh`.
-- El archivo `env` (sin punto) tiene secretos y no está en `.gitignore`: no subirlo. La contraseña root de la base local se mostró en una sesión de trabajo; conviene cambiarla.

@@ -508,3 +508,31 @@ Decisión del usuario: en la presentación **no** se corre `tests/seguridad.sh` 
 - el paso de pruebas guarda la salida con `tee`; con `shell: bash` corre con `pipefail`, así que un fallo no queda tapado;
 - un paso nuevo, `if: always()`, publica en la página de la corrida el resultado («Resultado: N pasaron, M fallaron») y cada `✘`.
 
+
+## 2026-10-29 · Reservar en celular, adjuntos del historial y contraseñas root
+
+### 1. `/reservar` en celular (390 px)
+
+- **Causa:** `.booking__steps` y `.booking__login` eran grids sin columnas definidas, así que la columna tomaba el ancho mínimo del contenido más largo (el texto de la opción y el botón con `nowrap`). La tarjeta quedaba 33 px más ancha que la pantalla: el precio del selector se cortaba («desde Q 2…»), la cuarta columna de horas quedaba tapada y el texto del paso 4 y el botón se salían. No se notaba como desplazamiento lateral porque `body` tiene `overflow-x: hidden`.
+- **Cambios:**
+  - `shop.css`: `.booking__steps` y `.booking__login` con `grid-template-columns: minmax(0, 1fr)`; el botón del paso 4 puede partirse en dos líneas.
+  - `index.css`: `.form-grid` usa `minmax(0, 1fr)` y `.field` tiene `min-width: 0`, para que ningún selector con texto largo ensanche un formulario.
+  - `BookingForm.jsx`: la opción muestra solo el nombre del servicio; el precio pasa a la línea de la sede («Desde **Q 250.00**. Se atiende en…»).
+- **Comprobado** en Chromium a 390 px, sin sesión y con la cuenta del cliente: el documento mide 390 px, las horas se ven en 3 columnas y el formulario del paso 4 cabe completo.
+
+### 2. Adjuntos del historial (probado de punta a punta)
+
+Sin cambios de código. Con la cuenta `veterinaria@huellitas.gt`, desde la ficha de un paciente, en el navegador:
+- se subieron un PDF (laboratorio) y un PNG (radiografía): Cloudinary los aceptó con la firma de `citas-service`, la API los registró (201) y aparecen en la ficha; sin errores de JS ni bloqueos de la CSP;
+- el enlace firmado devuelve el archivo idéntico y vence a los 600 s;
+- con la firma alterada, con un enlace vencido o con la URL sin firma (`private`), Cloudinary responde 401; como si fuera pública (`upload`), 404;
+- cliente, recepción y tienda reciben 403 al pedir la firma de subida; sin sesión, 401.
+
+Al terminar se borraron los dos archivos de Cloudinary (`destroy`) y sus filas de `historial_adjuntos`. Quedan en la bitácora los dos `HISTORIAL_REGISTRADO`.
+
+### 3. Contraseñas root de la base local
+
+- Se cambiaron `DB_ROOT_PASSWORD` (master y réplica) y `AUDIT_DB_ROOT_PASSWORD`, porque una se mostró en una sesión de trabajo. Respaldo previo: `backups/20261029-231956`.
+- `ALTER USER` en el master (la réplica lo recibe por replicación) y en la base de auditoría; `.env` actualizado y con permisos 600; los tres contenedores de base recreados para que su entorno no guarde la contraseña vieja.
+- Comprobado: la contraseña vieja da «Access denied» en las tres; la réplica sigue al día (IO y SQL en `Yes`, 0 s de retraso); la app y `ops/evidencia.sh` funcionan.
+- Los respaldos no cambian: se cifran con `BACKUP_PASSPHRASE`. Los healthchecks usan su propio usuario. El servidor no se tocó.
