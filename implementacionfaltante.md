@@ -556,3 +556,19 @@ Al terminar se borraron los dos archivos de Cloudinary (`destroy`) y sus filas d
   - cambios y devoluciones: según la Ley de Protección al Consumidor y Usuario (Decreto 006-2003).
 - **No se inventaron políticas del negocio:** no se fija un plazo de devolución ni exclusiones. Queda pendiente en `falta.md`.
 - **Comprobado** en Chromium a 390 px y 1366 px: los enlaces del pie de página llevan a cada página, que abre arriba, sin desborde horizontal ni errores de JS. `npm run lint` sin avisos.
+
+## 2026-10-29 · Equipo de demo en peluquería, paseos y entrenamiento
+
+- **Nuevo seed `db/seeds/03-profesionales.sql`**, que `ops/seed-demo.sh` corre después de los otros dos. Carga 6 profesionales:
+  - peluquería: Karla Juárez y Mónica Estrada;
+  - paseos: Kevin Rodas, Andrés Batz y Fernanda Coy;
+  - entrenamiento: Óscar Monterroso.
+- **Misma capacidad que antes:** con profesionales, el lugar de cada turno es una persona y la capacidad es cuántos trabajan a esa hora. Por eso se cargó la misma cantidad que los lugares fijos de `servicios.cupos` (2, 3 y 1). La primera persona de cada servicio trabaja de lunes a sábado, de 8:00 a 20:00; las demás tienen horarios parciales, así que en algunas franjas (por ejemplo, el sábado por la mañana en paseos) hay un lugar menos que antes.
+- **Ninguna cita queda sin asignar:** el seed pasa el lugar *k* de las citas que ya existían a la *k*-ésima persona del servicio. En la demo, 12 citas (8 de peluquería, 2 de paseos y 2 de entrenamiento) quedaron a nombre de Karla, Kevin y Óscar.
+- **Se puede repetir:** no duplica profesionales ni vuelve a mover citas. Se comprobó corriéndolo dos veces; las citas (42), su historial (101) y las mascotas (13) siguen igual. Respaldo previo: `backups/20261029-233937`.
+- **Comprobado:**
+  - `/api/citas/servicios` lista al equipo de cada servicio;
+  - la disponibilidad respeta cada horario: un miércoles, Andrés de 8:00 a 13:30, Fernanda de 14:00 a 19:30 y Kevin todo el día; un sábado, Andrés no tiene turnos;
+  - en el panel, la cita de peluquería del día aparece con «Karla Juárez» y «Equipo y horarios» muestra a las 8 personas.
+- `usuarios.md` tiene la tabla del equipo; `falta.md`, la nota de que estos nombres son de ejemplo.
+- Las pruebas del CI no cargan la demo, así que no les afecta.
