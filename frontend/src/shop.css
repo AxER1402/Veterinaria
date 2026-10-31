@@ -679,8 +679,14 @@
 /* El provisional ocupa el lugar del botón de Google hasta que este lo cubre. */
 .account__google-lugar { position: relative; height: 40px; }
 .account__google-provisional { position: absolute; inset: 0; width: min(100%, 400px); margin: auto; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 4px; background: var(--white); color: var(--gray); font-size: 0.875rem; }
-/* Si Google rechaza el origen, dibuja su botón sin estilos: el tope evita un logo gigante. */
 .account__google-boton { position: relative; display: flex; justify-content: center; color-scheme: light; max-height: 44px; overflow: hidden; }
+/* Si un bloqueador o el origen impiden su iframe, Google dibuja aquí un botón sin estilos, porque la CSP
+   no deja pasar los suyos. Sigue funcionando: se le dan estos. */
+.account__google-boton [role="button"] { display: flex; align-items: center; justify-content: center; width: min(100%, 400px); height: 40px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 4px; background: var(--white); color: var(--navy); font-size: 0.875rem; cursor: pointer; }
+.account__google-boton [role="button"] > div:not(:empty) { display: flex; align-items: center; gap: 10px; }
+.account__google-boton [role="button"] > div > div { flex: none; line-height: 0; }
+.account__google-boton [role="button"] svg { width: 18px; height: 18px; }
+.account__google-boton [role="button"] span + span { display: none; }
 .account__separador { display: flex; align-items: center; gap: 12px; margin: 0; color: var(--gray); font-size: 0.85rem; }
 .account__separador::before, .account__separador::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 .account__form { display: grid; gap: 18px; }
