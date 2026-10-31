@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import PageHeader from '../../components/PageHeader'
 import Field from '../../components/Field'
+import GoogleButton from '../../components/GoogleButton'
 import Loading from '../../components/Loading'
 import { useAuth } from '../../context/useAuth'
 
@@ -27,6 +28,7 @@ export default function Account() {
               Crear cuenta
             </button>
           </div>
+          <GoogleButton />
           {tab === 'ingresar' ? <LoginForm from={from} /> : <RegisterForm onDone={() => setTab('ingresar')} />}
         </div>
       </section>

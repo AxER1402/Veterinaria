@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 set -a; source .env; set +a
 
 docker compose up -d --wait mariadb-master mariadb-slave
-for f in db/master/12-historial-ampliado.sql db/master/13-roles-telefono.sql db/master/14-citas-agenda-v2.sql db/master/15-pedidos-v2.sql db/master/16-resenas.sql db/master/17-monitor-replica.sql db/master/18-profesionales.sql db/master/19-alta-clientes.sql db/master/20-resenas-moderacion.sql db/master/21-pagos-reembolso.sql db/master/22-catalogo-fichas.sql; do
+for f in db/master/12-historial-ampliado.sql db/master/13-roles-telefono.sql db/master/14-citas-agenda-v2.sql db/master/15-pedidos-v2.sql db/master/16-resenas.sql db/master/17-monitor-replica.sql db/master/18-profesionales.sql db/master/19-alta-clientes.sql db/master/20-resenas-moderacion.sql db/master/21-pagos-reembolso.sql db/master/22-catalogo-fichas.sql db/master/23-google.sql; do
     echo "→ $f"
     docker compose exec -T mariadb-master mariadb -uroot -p"$DB_ROOT_PASSWORD" < "$f"
 done

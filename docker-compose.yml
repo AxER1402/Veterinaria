@@ -73,6 +73,8 @@ services:
       DB_USER: auth_user
       DB_PASSWORD: ${AUTH_DB_PASSWORD:?falta AUTH_DB_PASSWORD}
       MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?falta MFA_ENCRYPTION_KEY}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      NOTIFICACIONES_URL: http://notificaciones-service:8085
     depends_on:
       mariadb-master: { condition: service_healthy }
       redis: { condition: service_healthy }

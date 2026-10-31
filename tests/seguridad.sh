@@ -852,6 +852,83 @@ esperar "cambiar la contraseña con la actual → 200" 200 "$(codigo -X PATCH -H
 esperar "PASSWORD_CAMBIADO sin la contraseña en la bitácora" "$ROLU|false|false" "$(evento_ultimo PASSWORD_CAMBIADO | jq -r '"\(.usuario_email)|\(.dato_nuevo.era_temporal)|\(tostring | test("Nueva12345|Segura123"))"')"
 esperar "la contraseña vieja ya no sirve" 401 "$(login_codigo "$ROLU" Segura123)"
 
+caso "CP-52 Inicio de sesión con Google: token falso, repetido y cuentas existentes (A07, S de STRIDE)"
+docker compose exec -T redis sh -c 'redis-cli --scan --pattern "login:*" | xargs -r redis-cli del' >/dev/null
+sqlg() { docker compose exec -T -e MYSQL_PWD="$DB_ROOT_PASSWORD" mariadb-master mariadb -N -uroot auth_db -e "$1"; }
+GCID=$(jq -r '.client_id // empty' <<<"$("${C[@]}" "$BASE/api/auth/google/config")")
+G_REINICIAR=
+if [[ -z "$GCID" ]]; then
+    esperar "sin GOOGLE_CLIENT_ID el servicio no acepta tokens → 503" 503 "$(codigo -X POST -H 'Content-Type: application/json' -d '{"credential":"x"}' "$BASE/api/auth/google")"
+    GCID=prueba.apps.googleusercontent.com; G_REINICIAR=1
+    GOOGLE_CLIENT_ID=$GCID docker compose up -d --wait auth-service >/dev/null 2>&1
+fi
+esperar "la configuración pública entrega el ID de cliente" "$GCID" "$("${C[@]}" "$BASE/api/auth/google/config" | jq -r .client_id)"
+# Los tokens de prueba se firman con una clave propia, puesta unos minutos en la caché de certificados.
+G_DIR=$(mktemp -d)
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$G_DIR/k.pem" -out "$G_DIR/c.pem" -subj /CN=prueba -days 1 2>/dev/null
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$G_DIR/otra.pem" -out /dev/null -subj /CN=otra -days 1 2>/dev/null
+jq -cn --arg c "$(cat "$G_DIR/c.pem")" '{prueba: $c}' | docker compose exec -T redis redis-cli -x SETEX google:certificados 300 >/dev/null
+b64u() { base64 -w0 | tr '+/' '-_' | tr -d '='; }
+g_datos() { # g_datos <sub> <email> [ajuste jq] → datos del token
+    jq -cn --arg aud "$GCID" --arg sub "$1" --arg email "$2" --argjson t "$(date +%s)" --arg j "$RANDOM$RANDOM$RANDOM" \
+        '{iss: "https://accounts.google.com", aud: $aud, sub: $sub, email: $email, email_verified: true, name: "Cliente Google", iat: $t, exp: ($t + 600), jti: $j}' | jq -c "${3:-.}"
+}
+g_firmar() { # g_firmar <datos> [clave] [kid] [alg] → token
+    local cab dat
+    cab=$(printf '{"alg":"%s","kid":"%s","typ":"JWT"}' "${4:-RS256}" "${3:-prueba}" | b64u); dat=$(printf '%s' "$1" | b64u)
+    printf '%s.%s.%s' "$cab" "$dat" "$(printf '%s.%s' "$cab" "$dat" | openssl dgst -sha256 -sign "${2:-$G_DIR/k.pem}" -binary | b64u)"
+}
+g_post() { # g_post <token> → "cuerpo<LF>código", reintentando en 429 (comparte cupo con /login)
+    local r i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        r=$("${C[@]}" -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"credential\":\"$1\"}" "$BASE/api/auth/google")
+        [[ "${r##*$'\n'}" != 429 ]] && break
+        sleep 3
+    done
+    printf '%s' "$r"
+}
+g_codigo() { local r; r=$(g_post "$1"); echo "${r##*$'\n'}"; }
+GSUB="g$SUF"; GMAIL="google$SUF@correo.gt"
+esperar "token que no es un JWT → 401" 401 "$(g_codigo basura.basura.basura)"
+esperar "firmado con otra clave → 401" 401 "$(g_codigo "$(g_firmar "$(g_datos "$GSUB" "$GMAIL")" "$G_DIR/otra.pem")")"
+esperar "con un certificado que no existe → 401" 401 "$(g_codigo "$(g_firmar "$(g_datos "$GSUB" "$GMAIL")" "$G_DIR/k.pem" desconocido)")"
+esperar "algoritmo none → 401" 401 "$(g_codigo "$(printf '{"alg":"none","kid":"prueba"}' | b64u).$(g_datos "$GSUB" "$GMAIL" | b64u).")"
+esperar "para otra aplicación (aud) → 401" 401 "$(g_codigo "$(g_firmar "$(g_datos "$GSUB" "$GMAIL" '.aud="otra.apps.googleusercontent.com"')")")"
+esperar "de otro emisor (iss) → 401" 401 "$(g_codigo "$(g_firmar "$(g_datos "$GSUB" "$GMAIL" '.iss="https://evil.example"')")")"
+esperar "token vencido → 401" 401 "$(g_codigo "$(g_firmar "$(g_datos "$GSUB" "$GMAIL" '.exp=(.iat-300)')")")"
+esperar "correo sin verificar por Google → 401" 401 "$(g_codigo "$(g_firmar "$(g_datos "$GSUB" "$GMAIL" '.email_verified=false')")")"
+esperar "ningún token falso creó la cuenta" 0 "$(sqlg "SELECT COUNT(*) FROM usuarios WHERE google_sub='$GSUB' OR email='$GMAIL'")"
+esperar "el intento falso queda en la bitácora" "(google)|FALLO" "$(evento_ultimo LOGIN_CLIENTE_FALLIDO | jq -r '"\(.usuario_email)|\(.resultado)"')"
+G_TOK=$(g_firmar "$(g_datos "$GSUB" "$GMAIL" '.email=(.email|ascii_upcase)')")
+r=$(g_post "$G_TOK")
+esperar "un token válido crea la cuenta → 200" 200 "${r##*$'\n'}"
+G_JWT=$(jq -r '.token // empty' <<<"${r%$'\n'*}")
+esperar "siempre con rol cliente y el correo en minúsculas" "cliente|$GMAIL|true" "$(jq -r '.usuario | "\(.rol)|\(.email)|\(.google)"' <<<"${r%$'\n'*}")"
+esperar "la sesión sirve" 200 "$(codigo -H "Authorization: Bearer $G_JWT" "$BASE/api/auth/me")"
+esperar "REGISTRO_CLIENTE con origen google" "$GMAIL|google" "$(evento_ultimo REGISTRO_CLIENTE | jq -r '"\(.usuario_email)|\(.dato_nuevo.origen)"')"
+esperar "LOGIN_CLIENTE_EXITOSO con método google" "$GMAIL|google" "$(evento_ultimo LOGIN_CLIENTE_EXITOSO | jq -r '"\(.usuario_email)|\(.dato_nuevo.metodo)"')"
+esperar "el mismo token no sirve dos veces → 401" 401 "$(g_codigo "$G_TOK")"
+r=$(g_post "$(g_firmar "$(g_datos "$GSUB" "otro$GMAIL" '.name="<script>alert(1)</script>"')")")
+esperar "otro token de esa cuenta entra en la misma, aunque cambie el correo" "200|1" "${r##*$'\n'}|$(sqlg "SELECT COUNT(*) FROM usuarios WHERE google_sub='$GSUB'")"
+r=$(g_post "$(g_firmar "$(g_datos "n$SUF" "nombre$SUF@correo.gt" '.name="<script>alert(1)</script>"')")")
+esperar "un nombre con código no se guarda" "nombre$SUF" "$(sqlg "SELECT nombre FROM usuarios WHERE google_sub='n$SUF'")"
+for correo in admin@huellitas.gt veterinaria@huellitas.gt "$CLIENTE"; do
+    esperar "una cuenta con contraseña no se vincula sola: $correo → 409" "409|0" "$(g_codigo "$(g_firmar "$(g_datos "x$RANDOM$SUF" "$correo")")")|$(sqlg "SELECT COUNT(*) FROM usuarios WHERE email='$correo' AND google_sub IS NOT NULL")"
+done
+esperar "la cuenta de Google no entra con contraseña" 401 "$(login_codigo "$GMAIL" Segura123)"
+esperar "la cuenta de Google no cambia contraseña → 409" 409 "$(codigo -X PATCH -H "Authorization: Bearer $G_JWT" -H 'Content-Type: application/json' -d '{"actual":"x","nueva":"Segura123"}' "$BASE/api/auth/password")"
+esperar "la cuenta de Google no configura MFA aquí → 409" 409 "$(codigo -X POST -H "Authorization: Bearer $G_JWT" "$BASE/api/auth/mfa/configurar")"
+G_ID=$(sqlg "SELECT id FROM usuarios WHERE google_sub='$GSUB'")
+esperar "una cuenta de Google no pasa a ser personal → 409" 409 "$(codigo -X PATCH -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d '{"rol":"recepcion"}' "$BASE/api/auth/admin/usuarios/$G_ID/rol")"
+esperar "los certificados no se publican por el gateway" 404 "$(codigo -X POST "$BASE/internal/notificaciones/google-certificados")"
+esperar "ni se entregan sin JWT de servicio" 401 "$(docker compose exec -T auth-service curl -s -o /dev/null -w '%{http_code}' -X POST http://notificaciones-service:8085/internal/notificaciones/google-certificados)"
+docker compose exec -T redis redis-cli DEL google:certificados >/dev/null
+esperar "con los certificados reales de Google, un token falso → 401" 401 "$(g_codigo "$(g_firmar "$(g_datos "$GSUB" "$GMAIL")")")"
+esperar "los certificados reales quedaron en caché" true "$(docker compose exec -T redis redis-cli GET google:certificados | jq 'length > 0')"
+docker compose exec -T redis redis-cli DEL google:certificados >/dev/null
+rm -rf "$G_DIR"
+[[ -n "$G_REINICIAR" ]] && docker compose up -d --wait auth-service >/dev/null 2>&1
+
 caso "CP-16 Rate limiting en /login (gateway, se corre al final)"
 codigos=$(for i in $(seq 1 15); do codigo -X POST -H 'Content-Type: application/json' -d '{"email":"flood@correo.gt","password":"x"}' "$BASE/api/auth/login"; echo; done)
 grep -q 429 <<<"$codigos" && ok "ráfaga de logins → 429" || mal "ninguna respuesta 429 en la ráfaga"

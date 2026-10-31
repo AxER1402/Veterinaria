@@ -43,6 +43,12 @@ export function AuthProvider({ children }) {
         setUser(d.usuario)
         return d.usuario
       },
+      loginGoogle: async (credential) => {
+        const d = await api('/api/auth/google', { method: 'POST', body: { credential }, auth: false })
+        setToken(d.token)
+        setUser(d.usuario)
+        return d.usuario
+      },
       setMfa: (mfa) => setUser((u) => (u ? { ...u, mfa } : u)),
       register: (nombre, email, password) =>
         api('/api/auth/registro', { method: 'POST', body: { nombre, email, password }, auth: false }),

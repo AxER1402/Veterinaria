@@ -10,6 +10,7 @@ use Huellitas\Db;
 use Huellitas\Env;
 use Huellitas\Guard;
 use Huellitas\Http;
+use Huellitas\Interno;
 use Huellitas\Jwt;
 use Huellitas\Validar;
 
@@ -21,6 +22,9 @@ final class AuthController
     private const MAX_LOGIN_POR_IP = 50;          // por IP en 15 min (holgado: varios clientes pueden compartir IP)
     private const IPS_SOSPECHOSAS = 3;
     private const DESAFIO_MFA_SEG = 300;          // el segundo paso del login vence en 5 min            // S (STRIDE): misma cuenta atacada desde ≥3 IPs
+    private const MAX_TOKEN_GOOGLE = 4096;
+    private const TOLERANCIA_TOKEN_GOOGLE = 120;  // un token repetido se recuerda hasta después de vencer
+    private const ORIGEN_GOOGLE = '(google)';     // en la bitácora, cuando el token no permite saber el correo
 
     // Hash fijo para gastar el mismo tiempo cuando el correo no existe (evita enumerar usuarios).
     // nosemgrep: detected-bcrypt-hash (señuelo sin contraseña asociada, no es un secreto)
@@ -106,6 +110,98 @@ final class AuthController
         return [200, $this->sesion($usuario, false)];
     }
 
+    /** Lo que necesita el botón de Google en el navegador. Sin client_id, el botón no se muestra. */
+    public function configGoogle(): array
+    {
+        return [200, ['client_id' => Env::get('GOOGLE_CLIENT_ID')]];
+    }
+
+    /**
+     * Entra o se registra con Google. Entrada: {credential}. Solo para clientes: el personal sigue con
+     * contraseña y verificación en dos pasos.
+     * Una cuenta que ya existe con ese correo no se vincula sola: como el registro no comprueba el
+     * correo, otra persona podría haberla creado antes y conservaría la contraseña.
+     */
+    public function loginGoogle(): array
+    {
+        $clientId = Env::get('GOOGLE_CLIENT_ID') ?? throw new ApiError(503, 'El inicio de sesión con Google no está disponible');
+        $token = Http::body()['credential'] ?? null;
+        if (!is_string($token) || $token === '' || strlen($token) > self::MAX_TOKEN_GOOGLE) {
+            throw new ApiError(422, 'Falta el token de Google', ['campo' => 'credential']);
+        }
+        if (Cache::golpe('login:ip:' . Http::ip(), self::BLOQUEO_SEG) > self::MAX_LOGIN_POR_IP) {
+            $this->fallo(self::ORIGEN_GOOGLE, null, 'demasiados intentos desde la IP');
+            throw new ApiError(429, 'Demasiados intentos. Intenta de nuevo en 15 minutos.');
+        }
+
+        $url = Env::get('NOTIFICACIONES_URL', 'http://notificaciones-service:8085') . '/internal/notificaciones/google-certificados';
+        $certificados = Interno::exigir($url, [], 'notificaciones')['certificados'] ?? [];
+        $datos = Google::verificar($token, $clientId, $certificados);
+        if ($datos === null) {
+            $this->fallo(self::ORIGEN_GOOGLE, null, 'token de Google no válido');
+            throw new ApiError(401, 'No se pudo verificar tu cuenta de Google');
+        }
+        // Cada token sirve una sola vez.
+        $vigencia = max(self::TOLERANCIA_TOKEN_GOOGLE, $datos['exp'] - time() + self::TOLERANCIA_TOKEN_GOOGLE);
+        if (!Cache::redis()->set('google:token:' . hash('sha256', $token), '1', ['nx', 'ex' => $vigencia])) {
+            $this->fallo($datos['email'], null, 'token de Google repetido');
+            throw new ApiError(401, 'No se pudo verificar tu cuenta de Google');
+        }
+
+        $consulta = Db::escritura()->prepare('SELECT id, nombre, email, telefono, password_hash, debe_cambiar_password, rol, activo, intentos_fallidos, bloqueado_hasta,
+                                                     mfa_activo, google_sub FROM usuarios WHERE google_sub = ?');
+        $consulta->execute([$datos['sub']]);
+        $usuario = $consulta->fetch() ?: $this->crearUsuarioGoogle($datos);
+        if (!$usuario['activo']) {
+            $this->fallo($usuario['email'], $usuario, 'cuenta desactivada (Google)');
+            throw new ApiError(401, 'Cuenta no disponible');
+        }
+        return [200, $this->sesion($usuario, false, 'google')];
+    }
+
+    private function crearUsuarioGoogle(array $datos): array
+    {
+        $email = Validar::email($datos);
+        $existe = Db::escritura()->prepare('SELECT 1 FROM usuarios WHERE email = ?');
+        $existe->execute([$email]);
+        if ($existe->fetchColumn()) {
+            $this->fallo($email, null, 'ya existe una cuenta con ese correo (Google)');
+            throw new ApiError(409, 'Ya existe una cuenta con ese correo. Entra con tu contraseña.');
+        }
+        $nombre = self::nombreGoogle($datos['name'] ?? null, $email);
+        // Nadie conoce esta contraseña: la cuenta entra con Google. Se guarda para no dejar el hash vacío.
+        $hash = password_hash(bin2hex(random_bytes(32)), PASSWORD_BCRYPT, self::BCRYPT);
+        $db = Db::escritura();
+        try {
+            $db->prepare('INSERT INTO usuarios (nombre, email, password_hash, rol, google_sub) VALUES (?, ?, ?, ?, ?)')
+                ->execute([$nombre, $email, $hash, 'cliente', $datos['sub']]);
+        } catch (\PDOException $e) {
+            // Dos peticiones a la vez: gana la primera. El índice único decide.
+            if ($e->getCode() === '23000') {
+                throw new ApiError(409, 'Ya existe una cuenta con ese correo. Entra con tu contraseña.');
+            }
+            throw $e;
+        }
+        $id = (int) $db->lastInsertId();
+        Auditoria::registrar('REGISTRO_CLIENTE', 'EXITO', [
+            'usuario_id' => $id, 'usuario_email' => $email, 'rol' => 'cliente',
+            'dato_nuevo' => ['nombre' => $nombre, 'email' => $email, 'origen' => 'google'],
+        ]);
+        return $this->usuarioPorId($id);
+    }
+
+    /** El nombre lo escribe el dueño de la cuenta de Google: se valida como el del registro. */
+    private static function nombreGoogle(mixed $nombre, string $email): string
+    {
+        try {
+            $datos = ['nombre' => $nombre];
+            Validar::sinAtaques($datos);
+            return Validar::texto($datos, 'nombre', 2, 100);
+        } catch (ApiError) {
+            return mb_substr(strstr($email, '@', true) ?: 'Cliente', 0, 100);
+        }
+    }
+
     /** Segundo paso del login. Entrada: {desafio, codigo} */
     public function verificarMfa(): array
     {
@@ -146,6 +242,7 @@ final class AuthController
         if ($usuario['mfa_activo']) {
             throw new ApiError(409, 'La verificación en dos pasos ya está activa');
         }
+        self::sinGoogle($usuario);
         $secreto = Totp::nuevoSecreto();
         Db::escritura()->prepare('UPDATE usuarios SET mfa_secreto = ?, mfa_ultimo_paso = NULL WHERE id = ?')
             ->execute([Totp::cifrar($secreto), $usuario['id']]);
@@ -191,7 +288,7 @@ final class AuthController
     }
 
     /** Emite el JWT después de un login correcto (con o sin segundo factor). */
-    private function sesion(array $usuario, bool $conMfa): array
+    private function sesion(array $usuario, bool $conMfa, ?string $metodo = null): array
     {
         if ((int) $usuario['intentos_fallidos'] > 0 || $usuario['bloqueado_hasta'] !== null) {
             Db::escritura()->prepare('UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = ?')->execute([$usuario['id']]);
@@ -199,7 +296,7 @@ final class AuthController
         [$token, $claims] = Jwt::tokenUsuario($usuario);
         Auditoria::registrar('LOGIN_CLIENTE_EXITOSO', 'EXITO', [
             'usuario_id' => (int) $usuario['id'], 'usuario_email' => $usuario['email'], 'rol' => $usuario['rol'],
-            'dato_nuevo' => ['jti' => $claims['jti'], 'expira' => date('c', $claims['exp']), 'mfa' => $conMfa],
+            'dato_nuevo' => ['jti' => $claims['jti'], 'expira' => date('c', $claims['exp']), 'mfa' => $conMfa] + ($metodo ? ['metodo' => $metodo] : []),
         ]);
         return ['token' => $token, 'expira_en' => Jwt::TTL_USUARIO, 'usuario' => $this->publico($usuario)];
     }
@@ -223,9 +320,17 @@ final class AuthController
     private function usuarioPorId(int $id): array
     {
         $consulta = Db::escritura()->prepare('SELECT id, nombre, email, telefono, password_hash, debe_cambiar_password, rol, activo, intentos_fallidos, bloqueado_hasta,
-                                                     mfa_activo, mfa_secreto, mfa_ultimo_paso FROM usuarios WHERE id = ?');
+                                                     mfa_activo, mfa_secreto, mfa_ultimo_paso, google_sub FROM usuarios WHERE id = ?');
         $consulta->execute([$id]);
         return $consulta->fetch() ?: throw new ApiError(401, 'Cuenta no disponible');
+    }
+
+    /** Una cuenta de Google no tiene contraseña propia: su seguridad se administra en Google. */
+    private static function sinGoogle(array $usuario): void
+    {
+        if ($usuario['google_sub'] !== null) {
+            throw new ApiError(409, 'Tu cuenta entra con Google: su seguridad se administra desde tu cuenta de Google');
+        }
     }
 
     public function logout(): array
@@ -243,7 +348,7 @@ final class AuthController
     public function me(): array
     {
         $claims = Guard::usuario();
-        $consulta = Db::escritura()->prepare('SELECT id, nombre, email, telefono, debe_cambiar_password, rol, activo, mfa_activo FROM usuarios WHERE id = ?');
+        $consulta = Db::escritura()->prepare('SELECT id, nombre, email, telefono, debe_cambiar_password, rol, activo, mfa_activo, google_sub FROM usuarios WHERE id = ?');
         $consulta->execute([$claims['sub']]);
         $usuario = $consulta->fetch();
         if (!$usuario || !$usuario['activo']) {
@@ -347,6 +452,7 @@ final class AuthController
         $claims = Guard::usuario();
         $datos = Http::body();
         $usuario = $this->usuarioPorId((int) $claims['sub']);
+        self::sinGoogle($usuario);
         if (!password_verify(is_string($datos['actual'] ?? null) ? $datos['actual'] : '', $usuario['password_hash'])) {
             throw new ApiError(422, 'La contraseña actual no es correcta', ['campo' => 'actual']);
         }
@@ -388,6 +494,9 @@ final class AuthController
         $usuario = $this->usuarioPorId($id);
         if ($usuario['rol'] === $rol) {
             return [200, ['usuario' => $this->publico($usuario)]];
+        }
+        if ($usuario['google_sub'] !== null) {
+            throw new ApiError(409, 'Esta cuenta entra con Google: el personal necesita una cuenta con contraseña');
         }
         Db::escritura()->prepare('UPDATE usuarios SET rol = ? WHERE id = ?')->execute([$rol, $id]);
         Auditoria::registrar('ROL_CAMBIADO', 'EXITO', Auditoria::actor($claims) + [
@@ -467,6 +576,7 @@ final class AuthController
     private function publico(array $u): array
     {
         return ['id' => (int) $u['id'], 'nombre' => $u['nombre'], 'email' => $u['email'], 'telefono' => $u['telefono'] ?? null, 'rol' => $u['rol'],
-                'mfa' => (bool) ($u['mfa_activo'] ?? false), 'cambiar_password' => (bool) ($u['debe_cambiar_password'] ?? false)];
+                'mfa' => (bool) ($u['mfa_activo'] ?? false), 'cambiar_password' => (bool) ($u['debe_cambiar_password'] ?? false),
+                'google' => ($u['google_sub'] ?? null) !== null];
     }
 }

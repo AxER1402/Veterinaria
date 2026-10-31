@@ -1,7 +1,7 @@
 
 Cómo actualizar un entorno ya levantado
 - Si el entorno se levantó cuando los precios estaban en dólares (la moneda por defecto de `pagos_db.pagos` es `USD`), correr primero `ops/backup.sh` y `ops/migrar-quetzales.sh`. `migrar-v2.sh` no lo incluye. Sin esto el webhook de Stripe rechaza los pagos en quetzales.
-- Correr `ops/migrar-v2.sh` y después `docker compose up -d --build --wait`. El script aplica, sin borrar datos, las migraciones `db/master/12` a `22` y `db/audit/02`, y se puede correr más de una vez.
+- Correr `ops/migrar-v2.sh` y después `docker compose up -d --build --wait`. El script aplica, sin borrar datos, las migraciones `db/master/12` a `23` y `db/audit/02`, y se puede correr más de una vez.
 - Datos de demostración: `ops/seed-demo.sh`. Carga clientes, mascotas, citas, historial, pedidos y 14 reseñas coherentes con los pedidos entregados. No borra nada y se puede repetir.
 - Variables nuevas o cambiadas en el `.env` (ver `.env.example`):
   - `PEDIDO_VENCE_HORAS=2`: antes era 24.
@@ -9,6 +9,7 @@ Cómo actualizar un entorno ya levantado
   - `DB_MAX_RETRASO_SEG`: opcional, 5 por defecto.
   - `STRIPE_OCULTAR_TARJETA`: opcional, 0 por defecto. Con 1 la tienda no ofrece tarjeta, pero Stripe sigue configurado.
   - `PAYPAL_TIPO_CAMBIO_AUTO`: opcional, 1 por defecto (tipo de cambio del Banguat). `PAYPAL_TIPO_CAMBIO` queda de respaldo.
+  - `GOOGLE_CLIENT_ID`: opcional. Sin él no se muestra el botón de Google.
 - Cuentas del personal para probar cada rol (veterinario, recepción, tienda): están en `usuarios.md`, todas con la contraseña `Personal#2026`.
 
 Pendiente
@@ -29,13 +30,14 @@ Pendiente
 Lo que no se probó
 - Revisión en el navegador (2026-10-29, Chromium sin interfaz): 37 pantallas por rol (cliente, admin, veterinario, recepción, tienda y cliente con contraseña temporal), en escritorio (1366 px) y celular (390 px), sin errores de JS, sin peticiones fallidas y sin desborde horizontal. Se corrigieron el encabezado en celulares, las tablas sin desplazamiento, la sección fuera del rol y una petición prohibida de la tienda (ver `implementacionfaltante.md`). Falta probarlo en un teléfono real, y en Safari/iOS.
 - El reembolso por la pasarela no se probó con un pago real: falta tener claves.
-- `tests/seguridad.sh` se corrió el 2026-10-29 en local: 342 pasaron, 0 fallaron (detalle en `implementacionfaltante.md`). La prueba CP-36 necesita internet (clima). En macOS se corre con `tests/seguridad-en-contenedor.sh`: 342 de 342 el 2026-10-30.
+- `tests/seguridad.sh` se corrió el 2026-10-30 con `tests/seguridad-en-contenedor.sh` (macOS): 373 pasaron, 0 fallaron. CP-36 (clima) y una comprobación de CP-52 (certificados de Google) necesitan internet.
+- Inicio de sesión con Google (2026-10-30): las pruebas usan tokens firmados con una clave propia. Falta entrar con una cuenta de Google real, y vincular una cuenta existente aún no se puede.
 - Los correos nuevos (cita reprogramada, cambios de estado de pedidos) reutilizan la plantilla de citas de EmailJS. No se probaron con claves reales.
 
 Otros pendientes
 - Docs (STRIDE, OWASP, ISO, PCI, BCP, guion, README) actualizados el 2026-10-29 con los roles del personal y los 38 eventos (catálogo en `docs/02-owasp-top10.md`, A09). Queda pendiente:
   - Los 38 eventos tienen prueba automática (CP-50 y CP-51 cubren los ocho que faltaban). `PAGO_REEMBOLSADO` con éxito sigue necesitando claves sandbox.
   - Decidido (2026-10-29): el `rol` de la bitácora se mantiene ampliado (`veterinario`, `recepcion`, `tienda`), aunque el enunciado dice `ENUM(admin,cliente,anonimo)`. La justificación está en `docs/08-guion-presentacion.md` (preguntas probables).
-  - PDF SEC-1 regenerado el 2026-10-29 con los docs nuevos (27 páginas). Hay que volver a generarlo si cambian los docs o tras el ZAP contra el dominio.
+  - PDF SEC-1 regenerado el 2026-10-29 con los docs nuevos (27 páginas). Hay que volver a generarlo: `docs/06-iso27001.md` cambió el 2026-10-30 (373 pruebas); también tras el ZAP contra el dominio.
 - Panel con `lazy()` (2026-10-29): el bundle principal bajó de 540 a 377 KB y Vite ya no avisa. La tienda descarga 421 KB de JS en vez de 540, y nada del panel.
 - Base local limpia (2026-10-29): solo la demo (12 usuarios, 13 mascotas, 42 citas, 13 pedidos, 14 reseñas), en quetzales. La bitácora se conservó. Respaldo previo: `backups/20261029-071659`. **Ojo:** `tests/seguridad.sh` vuelve a llenar la base de datos de prueba (clientes «compras…», mascotas «Firulais 123…», citas en los próximos 40 días). Decidido: en la presentación se muestra el CI en verde y no se corren las pruebas contra la base de la demo (`docs/08`). Para volver a limpiar: `ops/backup.sh`, borrar los volúmenes `huellitas_master_data`, `huellitas_slave_data` y `huellitas_redis_data` (no `audit_data`), `docker compose up -d --wait` y `ops/seed-demo.sh`.

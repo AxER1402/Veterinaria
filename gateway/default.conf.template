@@ -108,6 +108,12 @@ server {
         proxy_pass http://auth_service;
         include /etc/nginx/conf.d/proxy_comun.inc;
     }
+    # Entrar con Google: mismo límite estricto que /login.
+    location = /api/auth/google {
+        limit_req zone=login burst=10 nodelay;
+        proxy_pass http://auth_service;
+        include /etc/nginx/conf.d/proxy_comun.inc;
+    }
     location /api/auth/ {
         limit_req zone=auth burst=20 nodelay;
         proxy_pass http://auth_service;

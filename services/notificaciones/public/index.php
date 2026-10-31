@@ -5,6 +5,7 @@ const SERVICE_DIR = __DIR__ . '/..';
 require '/var/www/shared/bootstrap.php';
 
 use App\ClimaController;
+use App\GoogleController;
 use App\NotificacionesController;
 use Huellitas\Router;
 
@@ -21,5 +22,7 @@ $router->add('POST', '/internal/notificaciones/vacuna', fn() => $notificaciones-
 $router->add('POST', '/internal/notificaciones/verificar', fn() => $notificaciones->verificar());
 // Solo pedidos-service: el panel admin pide el clima a través de /api/pedidos/admin/clima.
 $router->add('POST', '/internal/notificaciones/clima', fn() => (new ClimaController())->actual());
+// Solo auth-service: certificados públicos para verificar el inicio de sesión con Google.
+$router->add('POST', '/internal/notificaciones/google-certificados', fn() => (new GoogleController())->certificados());
 
 $router->dispatch();

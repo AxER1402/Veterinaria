@@ -14,6 +14,8 @@ $router->add('GET',  '/salud', fn() => [200, ['estado' => 'ok', 'servicio' => 'a
 $router->add('POST', '/api/auth/registro', fn() => $auth->registro());
 $router->add('POST', '/api/auth/login', fn() => $auth->login());
 $router->add('POST', '/api/auth/login/mfa', fn() => $auth->verificarMfa());
+$router->add('GET',  '/api/auth/google/config', fn() => $auth->configGoogle());
+$router->add('POST', '/api/auth/google', fn() => $auth->loginGoogle());
 $router->add('POST', '/api/auth/logout', fn() => $auth->logout());
 $router->add('POST', '/api/auth/mfa/configurar', fn() => $auth->configurarMfa());
 $router->add('POST', '/api/auth/mfa/activar', fn() => $auth->activarMfa());

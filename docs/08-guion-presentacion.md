@@ -7,7 +7,7 @@ docker compose up -d && docker compose ps          # los 14 contenedores en heal
 gh run list --repo AxER1402/Veterinaria --workflow CI --limit 1   # la última corrida en main: completed success
 ```
 
-**No correr `tests/seguridad.sh` contra la base de la demo:** crea clientes «compras…», mascotas «Firulais 123…» y citas en los próximos 40 días, que después aparecen en la agenda y en Clientes. La evidencia de las pruebas es el CI: en cada push levanta el stack desde cero y corre las 342 comprobaciones y el simulacro DRP. Si alguien pide verlas en vivo, correrlas al final; para volver a dejar solo la demo, ver «Base local limpia» en `falta.md`.
+**No correr `tests/seguridad.sh` contra la base de la demo:** crea clientes «compras…», mascotas «Firulais 123…» y citas en los próximos 40 días, que después aparecen en la agenda y en Clientes. La evidencia de las pruebas es el CI: en cada push levanta el stack desde cero y corre las 373 comprobaciones y el simulacro DRP. Si alguien pide verlas en vivo, correrlas al final; para volver a dejar solo la demo, ver «Base local limpia» en `falta.md`.
 
 - Pestaña 1: la tienda (`/tienda`) en una ventana privada.
 - Pestaña 2: el panel `/admin`, con la sesión de admin ya iniciada.
@@ -15,7 +15,7 @@ gh run list --repo AxER1402/Veterinaria --workflow CI --limit 1   # la última c
 - Una terminal con letra grande en la carpeta del proyecto.
 - Si hay claves de Stripe: `stripe listen --forward-to https://localhost:8443/api/pagos/webhook/stripe --skip-verify` corriendo.
 - Tener a mano `docs/pdf/SEC-1-Huellitas-Seguridad.pdf` y `docs/zap/zap-baseline-2.html`.
-- Pestaña 3: la última corrida del CI en GitHub (Actions → CI), en el resumen de la corrida, «Pruebas de seguridad» dice «Resultado: 342 pasaron, 0 fallaron», y si algo fallara, mostraría cuál.
+- Pestaña 3: la última corrida del CI en GitHub (Actions → CI), en el resumen de la corrida, «Pruebas de seguridad» dice «Resultado: 373 pasaron, 0 fallaron», y si algo fallara, mostraría cuál.
 
 | Min | Bloque | Qué se muestra | Qué se dice (idea clave) |
 |---|---|---|---|
@@ -28,7 +28,7 @@ gh run list --repo AxER1402/Veterinaria --workflow CI --limit 1   # la última c
 | 6:15 | **Cambio de precio** | Catálogo: cambiar un precio → aparece `PRECIO_MODIFICADO` con el precio anterior y el nuevo | Trazabilidad de cada cambio administrativo |
 | 6:45 | **PCI-DSS y hardening** | `docs/evidencia/README.md`: SEC-3 (`SELECT * FROM pagos`) y SEC-5 (`docker ps`) | Sin tarjetas en la BD (las citas se pagan en la sede), BD y Redis sin puertos, contenedores como www-data, secretos solo en `.env` |
 | 7:30 | **Recuperación en vivo** | `ops/simulacro-drp.sh --si` (unos 40 s en total) | Ransomware destruye maestro y réplica. Se restauran el respaldo cifrado y los binlogs. RTO de unos 14 s, sin pérdida: los conteos de pedidos, pagos, citas e historial clínico coinciden |
-| 8:45 | **CI, ZAP, ALE/ROSI y cierre** | Pestaña del CI en verde (342 comprobaciones en 51 casos, en cada push) · `zap-baseline-2.html` (0 FAIL, 0 alertas medias) · tabla de ROSI de SEC-1 | La pérdida esperada baja de USD 24,300 a 1,910 al año, con USD 162 de presupuesto: ROSI de unas 137 veces |
+| 8:45 | **CI, ZAP, ALE/ROSI y cierre** | Pestaña del CI en verde (373 comprobaciones en 52 casos, en cada push) · `zap-baseline-2.html` (0 FAIL, 0 alertas medias) · tabla de ROSI de SEC-1 | La pérdida esperada baja de USD 24,300 a 1,910 al año, con USD 162 de presupuesto: ROSI de unas 137 veces |
 
 ## Comandos de la demo de ataques (min 3:45)
 

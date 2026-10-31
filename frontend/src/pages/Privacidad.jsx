@@ -5,7 +5,7 @@ import { business, locations } from '../data/content'
 // Cada dato que se menciona aquí corresponde a lo que la app guarda de verdad (ver docs/06-iso27001.md, A.5.34).
 export default function Privacidad() {
   return (
-    <LegalPage title="Aviso de privacidad" text="Qué datos tuyos y de tu mascota guardamos, para qué y con quién los compartimos." actualizado="29 de octubre de 2026">
+    <LegalPage title="Aviso de privacidad" text="Qué datos tuyos y de tu mascota guardamos, para qué y con quién los compartimos." actualizado="30 de octubre de 2026">
       <h2>Quién es responsable</h2>
       <p>
         {business.name} ({business.tagline.toLowerCase()}), con sede principal en {locations[0].address}, es responsable de los
@@ -45,6 +45,7 @@ export default function Privacidad() {
         <li><strong>Cloudinary</strong>, para guardar las fotos de los productos y los archivos del historial clínico. Los archivos clínicos son privados: solo se abren con un enlace firmado que vence a los 10 minutos.</li>
         <li><strong>EmailJS</strong>, para enviarte los correos de citas, recordatorios y pedidos.</li>
         <li><strong>Google Maps</strong>, para mostrar dónde están nuestras sedes. Al cargar el mapa, Google recibe tu dirección IP.</li>
+        <li><strong>Inicio de sesión con Google</strong>, si eliges usarlo. Google nos confirma tu nombre y tu correo; no recibimos tu contraseña de Google. Al mostrar el botón en la página de tu cuenta, Google recibe tu dirección IP.</li>
         <li><strong>Cloudflare R2</strong>, para guardar copias de seguridad cifradas.</li>
       </ul>
 

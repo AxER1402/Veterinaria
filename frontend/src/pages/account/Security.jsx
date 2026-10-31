@@ -16,11 +16,17 @@ export default function Security() {
 
   return (
     <>
-      <PageHeader compact title="Seguridad de la cuenta" text="Verificación en dos pasos con una app de autenticación." />
+      <PageHeader compact title="Seguridad de la cuenta" text={user.google ? 'Tu cuenta entra con Google.' : 'Verificación en dos pasos con una app de autenticación.'} />
       <section className="section">
         <div className="container account">
-          {user.mfa ? <Desactivar /> : <Activar />}
-          <CambiarPassword />
+          {user.google ? (
+            <p>Tu contraseña y la verificación en dos pasos se administran desde tu cuenta de Google.</p>
+          ) : (
+            <>
+              {user.mfa ? <Desactivar /> : <Activar />}
+              <CambiarPassword />
+            </>
+          )}
           <Link to="/cuenta/citas" className="link-arrow">← Mis citas</Link>
         </div>
       </section>

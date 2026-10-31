@@ -582,3 +582,19 @@ Al terminar se borraron los dos archivos de Cloudinary (`destroy`) y sus filas d
 - **«Último cupo» salía en todas las horas** al elegir a una persona o en servicios con un solo profesional, porque ahí `libres` siempre es 1. Ahora `SlotPicker` solo lo muestra si no se eligió persona y alguna hora del día tiene más de un lugar. Comprobado en Chromium: peluquería con Mónica, 0 de 16; entrenamiento, 0 de 24; peluquería sin elegir, 8 de 24 (antes de las 10:00 solo trabaja Karla).
 - **Términos:** decía que las vacunas son obligatorias, pero la reserva no las valida. Ahora pide traer el carné al día, como la FAQ. La decisión queda en `falta.md`.
 - **Confirmado en esta Mac:** el arreglo de `db/iniciar-mariadb.sh` con volúmenes nuevos y `ops/demo-pago-sin-claves.sh` (sin firma 400, firma falsa 400, firmado 200, pedido `pagado`).
+
+## 2026-10-30 · Publicación en veterinaria.lat, detrás de Caddy
+
+- **Servidor:** VPS propio, `/opt/huellitas`, compartido con otros sistemas. Caddy (en el sistema, no en Docker) atiende 80/443 y saca el certificado. Los scripts de `ops/vps/` no aplican: son para el Nginx del SGA.
+- **Pasos y bloque de Caddy:** `docs/07-despliegue.md` §2d. Comprobado antes en una copia con Caddy delante: suite completa, TLS 1.3, IP falsificada ignorada y gateway solo en `127.0.0.1`.
+- **Memoria medida:** unos 400 a 500 MiB en reposo, no 200; los límites suman 3,6 GiB.
+
+## 2026-10-30 · Inicio de sesión con Google
+
+- **Para clientes:** botón «Continuar con Google» en `/cuenta` (`GoogleButton.jsx`), que entra o crea la cuenta. Solo aparece con `GOOGLE_CLIENT_ID`. No usa el secreto de cliente: el botón entrega un token firmado y se comprueba con los certificados públicos de Google.
+- **`auth-service` sigue sin salida a Internet:** los certificados los trae `notificaciones-service` (`/internal/notificaciones/google-certificados`, solo para `auth-service`) y los guarda en Redis lo que indica Google. Quien controle Redis podría poner un certificado falso y entrar como cliente, no como personal.
+- **Comprobaciones del token (`Google.php`):** RS256 fijo, firma, `iss`, `aud`, `azp`, vigencia y `email_verified`. Cada token sirve una vez.
+- **Cuentas existentes:** no se vinculan solas, aunque el correo coincida. El registro no comprueba el correo: alguien podría haber creado la cuenta antes con un correo ajeno y conservaría la contraseña. El cliente ve un aviso para entrar con su contraseña. Falta decidir si se agrega vincular desde Seguridad.
+- **Personal:** no entra con Google. Una cuenta de Google no puede pasar a tener rol de personal, ni cambiar contraseña o activar MFA aquí (`409`).
+- **Identificador:** se usa `sub`, no el correo (`usuarios.google_sub`, `db/master/23-google.sql`, también en `ops/migrar-v2.sh`). Estas cuentas guardan una contraseña aleatoria que nadie conoce.
+- **Comprobado:** CP-52 (31 casos) con tokens firmados por una clave propia; suite 373 de 373.

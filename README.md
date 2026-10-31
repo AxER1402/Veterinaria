@@ -85,6 +85,8 @@ Todos los usuarios (app, BD y Redis) están en [`usuarios.md`](usuarios.md).
 | POST | `/api/auth/registro` | público. Crea siempre rol `cliente` |
 | POST | `/api/auth/login` | público, con rate limit |
 | POST | `/api/auth/login/mfa` `{desafio, codigo}` | segundo paso del login cuando la cuenta tiene MFA |
+| GET | `/api/auth/google/config` | público. ID de cliente del botón de Google (`null` si no está configurado) |
+| POST | `/api/auth/google` `{credential}` | público, con rate limit. Entra o registra un cliente con el token de Google |
 | POST | `/api/auth/mfa/configurar` · `/activar` · `/desactivar` | usuario. Verificación en dos pasos TOTP |
 | POST | `/api/auth/logout` | usuario. Revoca el JWT |
 | GET | `/api/auth/me` | usuario |
@@ -119,7 +121,7 @@ tests/seguridad.sh                 # en Linux
 tests/seguridad-en-contenedor.sh   # en macOS: la misma suite, en un contenedor Linux
 ```
 
-Corre los casos CP-01 a CP-51 (342 comprobaciones) contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto o moneda manipulados), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2, vencimiento de pedidos sin pagar, verificación en dos pasos, IP del cliente no falsificable, clima del panel y el módulo de citas (mascotas y citas ajenas, doble reserva simultánea, agenda y estados, correo con código HMAC, bloqueos de turnos, historial clínico, carné de vacunas, recordatorios y límite de citas por cliente), el alta de productos desde el panel, el tipo de cambio de PayPal, los roles del personal (mínimo privilegio y cambios auditados), reembolsos, reseñas, reprogramación de citas, horarios del equipo y correcciones del historial.
+Corre los casos CP-01 a CP-52 (373 comprobaciones) contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto o moneda manipulados), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2, vencimiento de pedidos sin pagar, verificación en dos pasos, IP del cliente no falsificable, clima del panel y el módulo de citas (mascotas y citas ajenas, doble reserva simultánea, agenda y estados, correo con código HMAC, bloqueos de turnos, historial clínico, carné de vacunas, recordatorios y límite de citas por cliente), el alta de productos desde el panel, el tipo de cambio de PayPal, los roles del personal (mínimo privilegio y cambios auditados), reembolsos, reseñas, reprogramación de citas, horarios del equipo, correcciones del historial e inicio de sesión con Google.
 
 > La ráfaga del CP-16 agota el cupo de `/login` del gateway. Si se repite la prueba enseguida, la suite espera sola a que se recupere (hasta ~1 min).
 

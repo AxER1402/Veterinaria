@@ -70,7 +70,37 @@ DOMINIO=huellitas.ejemplo.com bash ops/vps/3-nginx-https.sh               # bloq
 - Van separados porque un bloque 443 con un certificado inexistente tumbaría el `nginx -t` y, con él, al SGA.
 - El `proxy_pass` usa variable + `resolver`: si Huellitas está apagado, el Nginx del SGA igual arranca.
 - La IP real del cliente llega en `X-Real-IP` (el script la sobrescribe con `$remote_addr`) y el gateway solo la acepta desde la subred de `sga_sga_network` (`TRUSTED_PROXY`, que calcula el paso 1). Probado con un proxy de prueba: un `X-Forwarded-For` o `X-Real-IP` inventado por el cliente no llega a la bitácora (CP-35).
-- Consumo: unos 200 MiB en reposo; los límites de memoria suman unos 3,4 GB como máximo.
+- Consumo: unos 400 a 500 MiB en reposo; los límites de memoria suman unos 3,6 GB como máximo.
+
+## 2d. Detrás de un Caddy que ya atiende 80/443
+
+Caddy corre en el sistema y saca el certificado. El gateway escucha solo en `127.0.0.1`:
+
+```bash
+git clone <repo> /opt/huellitas && cd /opt/huellitas && ops/generar-env.sh
+# .env: COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml  SERVER_NAME=tienda.ejemplo.com
+#       HTTP_PORT=127.0.0.1:8088  HTTPS_PORT=127.0.0.1:8443  PUBLIC_HTTPS_PORT=443
+docker compose up -d --build --wait --wait-timeout 600
+# TRUSTED_PROXY en .env: la puerta de enlace de la red, con /32
+docker network inspect huellitas_publica --format '{{(index .IPAM.Config 0).Gateway}}'
+docker compose up -d --wait gateway
+```
+
+```caddyfile
+tienda.ejemplo.com {
+    tls {
+        protocols tls1.3
+    }
+    reverse_proxy https://127.0.0.1:8443 {
+        header_up X-Real-IP {remote_host}
+        transport http {
+            tls_insecure_skip_verify
+        }
+    }
+}
+```
+
+`caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile && systemctl reload caddy`. Caddy redirige HTTP con `308`, no `301`: contra este despliegue, la primera comprobación de CP-01 marca esa diferencia.
 
 ## 3. Después de desplegar
 

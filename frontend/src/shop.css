@@ -675,6 +675,12 @@
 .account__tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--soft); border-radius: 999px; padding: 5px; margin-bottom: 28px; }
 .account__tabs button { font: inherit; font-weight: 500; border: 0; background: transparent; color: var(--navy); padding: 10px; border-radius: 999px; cursor: pointer; }
 .account__tabs button.active { background: var(--white); box-shadow: var(--shadow); }
+.account__google { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.account__google:has(.account__separador) { margin-bottom: 18px; }
+/* Si Google rechaza el origen, dibuja su botón sin estilos: el tope evita un logo gigante. */
+.account__google-boton { display: flex; justify-content: center; color-scheme: light; max-height: 44px; overflow: hidden; }
+.account__separador { display: flex; align-items: center; gap: 12px; margin: 0; color: var(--gray); font-size: 0.85rem; }
+.account__separador::before, .account__separador::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 .account__form { display: grid; gap: 18px; }
 .account__hint { font-size: 0.85rem; color: var(--gray); margin: 0; text-align: center; }
 .account__bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 24px; color: var(--gray); flex-wrap: wrap; }
