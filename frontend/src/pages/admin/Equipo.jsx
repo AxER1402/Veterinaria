@@ -4,22 +4,26 @@ import Avatar from '../../components/Avatar'
 import Loading from '../../components/Loading'
 import { api } from '../../api'
 import Select from '../../components/Select'
+import { useClinica } from '../../context/useClinica'
+import { DIAS as DIAS_SEMANA, abreDomingo, horasDeSedes } from '../../data/horarios'
 
-const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
-const HORAS = Array.from({ length: 25 }, (_, i) => `${String(8 + Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`)
-const VACIO = { servicio: 'veterinaria', nombre: '', dias: [1, 2, 3, 4, 5, 6], hora_inicio: '08:00', hora_fin: '20:00', activo: true }
+const VACIO = { servicio: 'veterinaria', nombre: '', colegiado: '', usuario_id: null, dias: [1, 2, 3, 4, 5, 6], hora_inicio: '08:00', hora_fin: '20:00', activo: true }
 
 // Equipo de los servicios por turnos: cada profesional con sus días y horario. Un turno tiene tantos
 // lugares como profesionales trabajan a esa hora sin cita. Solo el admin edita; el servidor rechaza
 // un cambio que dejaría citas próximas fuera del horario.
 export default function Equipo({ editable }) {
+  const { sedes } = useClinica()
+  const DIAS = abreDomingo(sedes) ? DIAS_SEMANA : DIAS_SEMANA.slice(0, 6)
+  const [personal, setPersonal] = useState([])
   const [datos, setDatos] = useState(null)
   const [editando, setEditando] = useState(null) // id, 'nuevo' o null
   const [error, setError] = useState('')
 
   useEffect(() => {
     api('/api/citas/admin/equipo').then(setDatos).catch((e) => setError(e.message))
-  }, [])
+    if (editable) api('/api/auth/admin/personal').then((d) => setPersonal(d.personal)).catch(() => {})
+  }, [editable])
 
   const guardar = async (id, body) => {
     setError('')
@@ -40,7 +44,7 @@ export default function Equipo({ editable }) {
         {editable && editando !== 'nuevo' && <button className="btn btn--primary btn--xs barra__fin" onClick={() => setEditando('nuevo')}><Plus size={16} /> Agregar</button>}
       </div>
       {error && <p className="form-alert" role="alert">{error}</p>}
-      {editando === 'nuevo' && datos && <div className="admin-card"><ProfesionalForm inicial={VACIO} servicios={datos.servicios} onCancel={() => setEditando(null)} onSave={(b) => guardar(null, b)} /></div>}
+      {editando === 'nuevo' && datos && <div className="admin-card"><ProfesionalForm inicial={VACIO} servicios={datos.servicios} personal={personal} onCancel={() => setEditando(null)} onSave={(b) => guardar(null, b)} /></div>}
       {!datos ? !error && <Loading /> : datos.profesionales.length === 0 ? (
         <div className="vacio"><p>Sin equipo cargado: cada servicio usa su cantidad fija de lugares.</p></div>
       ) : grupos.map((g) => (
@@ -48,13 +52,13 @@ export default function Equipo({ editable }) {
           <h3>{g}</h3>
           <ul className="equipo-lista">
             {datos.profesionales.filter((p) => p.servicio.nombre === g).map((p) => (editando === p.id ? (
-              <li key={p.id} className="equipo-persona equipo-persona--form"><ProfesionalForm inicial={p} servicios={datos.servicios} onCancel={() => setEditando(null)} onSave={(b) => guardar(p.id, b)} /></li>
+              <li key={p.id} className="equipo-persona equipo-persona--form"><ProfesionalForm inicial={p} servicios={datos.servicios} personal={personal} onCancel={() => setEditando(null)} onSave={(b) => guardar(p.id, b)} /></li>
             ) : (
               <li key={p.id} className={`equipo-persona ${p.activo ? '' : 'is-apagada'}`}>
                 <Avatar nombre={p.nombre} />
                 <span className="fila__principal">
                   <strong>{p.nombre}{!p.activo && ' · inactivo'}</strong>
-                  <small>{p.hora_inicio}–{p.hora_fin} · {p.proximas} {p.proximas === 1 ? 'cita próxima' : 'citas próximas'}</small>
+                  <small>{p.hora_inicio}–{p.hora_fin} · {p.proximas} {p.proximas === 1 ? 'cita próxima' : 'citas próximas'}{p.colegiado && ` · Col. ${p.colegiado}`}</small>
                   <span className="equipo-dias" aria-label={`Días: ${p.dias.map((d) => DIAS[d - 1]).join(', ')}`}>
                     {DIAS.map((d, i) => <i key={d} className={p.dias.includes(i + 1) ? 'on' : ''} aria-hidden="true">{d[0]}</i>)}
                   </span>
@@ -69,7 +73,10 @@ export default function Equipo({ editable }) {
   )
 }
 
-function ProfesionalForm({ inicial, servicios, onCancel, onSave }) {
+function ProfesionalForm({ inicial, servicios, personal, onCancel, onSave }) {
+  const { sedes } = useClinica()
+  const DIAS = abreDomingo(sedes) ? DIAS_SEMANA : DIAS_SEMANA.slice(0, 6)
+  const HORAS = horasDeSedes(sedes)
   const [v, setV] = useState({ ...inicial, servicio: inicial.servicio?.slug || inicial.servicio })
   const set = (f) => (e) => setV((x) => ({ ...x, [f]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
   const dia = (d) => setV((x) => ({ ...x, dias: x.dias.includes(d) ? x.dias.filter((y) => y !== d) : [...x.dias, d].sort() }))
@@ -78,7 +85,7 @@ function ProfesionalForm({ inicial, servicios, onCancel, onSave }) {
   return (
     <form className="clinical-form equipo__form" onSubmit={(e) => {
       e.preventDefault()
-      onSave({ nombre: v.nombre, dias: v.dias, hora_inicio: v.hora_inicio, hora_fin: v.hora_fin, activo: v.activo, ...(nuevo ? { servicio: v.servicio } : {}) })
+      onSave({ nombre: v.nombre, colegiado: v.colegiado || '', usuario_id: v.usuario_id ?? null, dias: v.dias, hora_inicio: v.hora_inicio, hora_fin: v.hora_fin, activo: v.activo, ...(nuevo ? { servicio: v.servicio } : {}) })
     }}>
       <div className="agenda__form-row">
         <label>Nombre
@@ -90,6 +97,19 @@ function ProfesionalForm({ inicial, servicios, onCancel, onSave }) {
           </Select>
         </label>
       </div>
+      {v.servicio === 'veterinaria' && (
+        <div className="agenda__form-row">
+          <label>Número de colegiado
+            <input value={v.colegiado || ''} onChange={set('colegiado')} maxLength={20} placeholder="Sale en la receta" />
+          </label>
+          <label>Cuenta con la que firma fichas
+            <Select value={v.usuario_id ? String(v.usuario_id) : ''} onChange={(e) => setV((x) => ({ ...x, usuario_id: e.target.value ? Number(e.target.value) : null }))}>
+              <option value="">Sin cuenta</option>
+              {personal.filter((u) => ['admin', 'veterinario'].includes(u.rol)).map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
+            </Select>
+          </label>
+        </div>
+      )}
       <div className="chips-row" role="group" aria-label="Días que atiende">
         {DIAS.map((d, i) => (
           <button key={d} type="button" className={`chip ${v.dias.includes(i + 1) ? 'chip--active' : ''}`} aria-pressed={v.dias.includes(i + 1)} onClick={() => dia(i + 1)}>{d}</button>

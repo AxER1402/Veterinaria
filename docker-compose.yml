@@ -108,6 +108,7 @@ services:
     environment:
       <<: *php-env
       SERVICE_NAME: pedidos-service
+      CITAS_URL: http://citas-service:8087
       DB_HOST: mariadb-master
       DB_READ_HOST: mariadb-slave
       DB_NAME: pedidos_db
@@ -143,6 +144,7 @@ services:
     environment:
       <<: *php-env
       SERVICE_NAME: pedidos-service
+      CITAS_URL: http://citas-service:8087
       DB_HOST: mariadb-master
       DB_NAME: pedidos_db
       DB_USER: pedidos_user

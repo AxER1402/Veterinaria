@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Check } from 'lucide-react'
+import { ArrowLeft, Check, Printer } from 'lucide-react'
+import ReciboPedido from '../../components/ReciboPedido'
+import { PEDIDO_COBRADO } from '../../data/recibos'
 import Loading from '../../components/Loading'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { api } from '../../api'
@@ -152,6 +154,7 @@ export default function AdminPedido() {
             </ol>
             <p className="mono order-id">ID: {p.id}</p>
           </div>
+          {PEDIDO_COBRADO.includes(p.estado) && <Comprobante pedido={p} />}
         </div>
       </div>
       {dialogo && (
@@ -164,5 +167,53 @@ export default function AdminPedido() {
           onConfirm={(comentario) => cambiar(dialogo, comentario)} />
       )}
     </>
+  )
+}
+
+// Comprobante que recibió el cliente: imprimirlo, reenviarlo y comprobar el código ante un reclamo.
+function Comprobante({ pedido }) {
+  const [imprimir, setImprimir] = useState(false)
+  const cerrar = useCallback(() => setImprimir(false), [])
+  const [codigo, setCodigo] = useState('')
+  const [resultado, setResultado] = useState(null) // { ok, texto }
+  const [enviando, setEnviando] = useState(false)
+
+  const reenviar = async () => {
+    setEnviando(true)
+    try {
+      await api(`/api/pedidos/admin/${pedido.id}/comprobante/reenviar`, { method: 'POST' })
+      setResultado({ ok: true, texto: `Comprobante enviado a ${pedido.contacto.email}.` })
+    } catch (e) {
+      setResultado({ ok: false, texto: e.message })
+    } finally {
+      setEnviando(false)
+    }
+  }
+  const comprobar = async (e) => {
+    e.preventDefault()
+    try {
+      const d = await api(`/api/pedidos/admin/${pedido.id}/comprobante/verificar`, { method: 'POST', body: { codigo } })
+      setResultado(d.valido ? { ok: true, texto: 'El código es válido: el comprobante es de este pedido.' } : { ok: false, texto: 'El código no corresponde a este pedido.' })
+    } catch (err) {
+      setResultado({ ok: false, texto: err.message })
+    }
+  }
+
+  return (
+    <div className="admin-card comprobante">
+      <h2>Comprobante</h2>
+      <div className="comprobante__acciones">
+        <button className="btn btn--ghost btn--xs" onClick={() => setImprimir(true)}><Printer size={14} aria-hidden="true" /> Imprimir</button>
+        <button className="btn btn--ghost btn--xs" onClick={reenviar} disabled={enviando}>{enviando ? 'Enviando…' : 'Reenviar por correo'}</button>
+      </div>
+      <form className="comprobante__codigo" onSubmit={comprobar}>
+        <label>Comprobar código del cliente
+          <input value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="XXXX-XXXX-XXXX-XXXX" maxLength={19} className="mono" />
+        </label>
+        <button className="btn btn--dark btn--xs" disabled={codigo.length !== 19}>Comprobar</button>
+      </form>
+      {resultado && <p className={resultado.ok ? 'form-ok' : 'form-alert'} role="status">{resultado.texto}</p>}
+      {imprimir && <ReciboPedido pedido={pedido} onDone={cerrar} />}
+    </div>
   )
 }

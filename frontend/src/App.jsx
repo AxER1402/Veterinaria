@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Outlet, useLocation } from 'react-router-dom'
 import { ShopProvider } from './context/ShopContext'
 import { AuthProvider } from './context/AuthContext'
+import { ClinicaProvider } from './context/ClinicaContext'
 import Header from './components/Header'
 import Footer from './components/Footer'
 import CtaBanner from './components/CtaBanner'
@@ -46,6 +47,8 @@ const AdminCatalogo = lazy(() => import('./pages/admin/AdminCatalogo'))
 const AdminBitacora = lazy(() => import('./pages/admin/AdminBitacora'))
 const AdminClientes = lazy(() => import('./pages/admin/AdminClientes'))
 const AdminCliente = lazy(() => import('./pages/admin/AdminCliente'))
+const AdminCaja = lazy(() => import('./pages/admin/AdminCaja'))
+const AdminSedes = lazy(() => import('./pages/admin/AdminSedes'))
 
 // En el flujo de compra el banner de reservas distrae, así que se oculta.
 const NO_CTA = ['/carrito', '/checkout', '/cuenta']
@@ -83,6 +86,7 @@ function Layout() {
 export default function App() {
   return (
     <AuthProvider>
+      <ClinicaProvider>
       <ShopProvider>
         <BrowserRouter>
           <Routes>
@@ -99,6 +103,8 @@ export default function App() {
                 <Route path="bitacora" element={<AdminBitacora />} />
                 <Route path="clientes" element={<AdminClientes />} />
                 <Route path="clientes/:id" element={<AdminCliente />} />
+                <Route path="caja" element={<AdminCaja />} />
+                <Route path="sedes" element={<AdminSedes />} />
               </Route>
             </Route>
             <Route element={<Layout />}>
@@ -128,6 +134,7 @@ export default function App() {
           </Routes>
         </BrowserRouter>
       </ShopProvider>
+      </ClinicaProvider>
     </AuthProvider>
   )
 }

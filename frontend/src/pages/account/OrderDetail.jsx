@@ -1,4 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { Printer } from 'lucide-react'
+import ReciboPedido from '../../components/ReciboPedido'
+import { PEDIDO_COBRADO } from '../../data/recibos'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import CuentaMarco from '../../components/CuentaMarco'
 import Loading from '../../components/Loading'
@@ -16,6 +19,8 @@ export default function OrderDetail() {
   const [error, setError] = useState(null)
   const [cancelando, setCancelando] = useState(false)
   const [cancelError, setCancelError] = useState('')
+  const [imprimir, setImprimir] = useState(false)
+  const cerrarImpresion = useCallback(() => setImprimir(false), [])
 
   useEffect(() => {
     if (!user) return
@@ -44,7 +49,10 @@ export default function OrderDetail() {
       <CuentaMarco titulo={`Pedido #${shortId(order.id)}`} texto={formatDate(order.fecha)}>
         <div className="cart-layout cuenta__tarjeta">
           <div>
-            <p><span className={`status status--${status.tone}`}>{status.label}</span></p>
+            <p className="order__estado">
+              <span className={`status status--${status.tone}`}>{status.label}</span>
+              {PEDIDO_COBRADO.includes(order.estado) && <button className="btn btn--ghost btn--xs" onClick={() => setImprimir(true)}><Printer size={14} aria-hidden="true" /> Imprimir comprobante</button>}
+            </p>
             {order.estado === 'pendiente_pago' && <PaymentPanel order={order} onPaid={setOrder} />}
             {order.estado === 'pendiente_pago' && (
               <p className="order__cancel">
@@ -109,6 +117,7 @@ export default function OrderDetail() {
           </aside>
         </div>
       </CuentaMarco>
+      {imprimir && <ReciboPedido pedido={order} onDone={cerrarImpresion} />}
     </>
   )
 }

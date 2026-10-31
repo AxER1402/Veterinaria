@@ -16,12 +16,6 @@ use Huellitas\Validar;
 final class PedidosController
 {
     /** Sedes donde se puede retirar (las mismas del sitio). */
-    public const SEDES = [
-        'Clínica veterinaria y peluquería · 6a. avenida 9-35, zona 10',
-        'Guardería y hospedaje – Norte · Calzada José Milla y Vidaurre 10-55, zona 6',
-        'Paseadores y cuidadores – Sur · Calzada Aguilar Batres 34-70, zona 11',
-    ];
-
     /**
      * Transiciones del personal de tienda. pendiente_pago → pagado lo hace pagos-service.
      * Retiro: preparando → listo_retiro → entregado. Domicilio: preparando → enviado → entregado.
@@ -37,6 +31,67 @@ final class PedidosController
     ];
     /** Estados en los que el pedido ya está cobrado: cancelarlo deja un reembolso pendiente. */
     private const COBRADOS = ['pagado', 'preparando', 'listo_retiro', 'enviado', 'entregado'];
+
+    /** Sedes donde se retiran pedidos; las administra citas-service (el texto es el que queda en el pedido). */
+    public function sedes(): array
+    {
+        return [200, $this->sedesRetiro()];
+    }
+
+    private function sedesRetiro(): array
+    {
+        [$codigo, $json] = Interno::post($this->servicio('CITAS_URL', 'http://citas-service:8087', '/internal/citas/sedes-retiro'), []);
+        if ($codigo !== 200 || !is_array($json['sedes'] ?? null)) {
+            throw new ApiError(503, 'No pudimos cargar las sedes. Intenta de nuevo en un momento');
+        }
+        return ['sedes' => $json['sedes'], 'ubicaciones' => $json['ubicaciones'] ?? (object) []];
+    }
+
+    /** Vuelve a enviar el comprobante de un pedido ya pagado (si el primer correo falló o se perdió). */
+    public function reenviarComprobante(string $id): array
+    {
+        Guard::usuario(Guard::TIENDA);
+        $pago = $this->pagoDe($id);
+        [$codigo, $json] = Interno::post($this->servicio('NOTIFICACIONES_URL', 'http://notificaciones-service:8085', '/internal/notificaciones/pedido-pagado'),
+            ['pedido' => $this->detalle($id), 'metodo' => $pago['metodo'], 'referencia' => $pago['referencia']], 12);
+        if ($codigo !== 200 || ($json['enviado'] ?? false) !== true) {
+            throw new ApiError(502, 'El correo no salió. Revisa la configuración de correo o intenta más tarde');
+        }
+        return [200, ['enviado' => true]];
+    }
+
+    /** Comprueba el código que trae el comprobante de un cliente (ante un reclamo). */
+    public function verificarComprobante(string $id): array
+    {
+        Guard::usuario(Guard::TIENDA);
+        $d = Http::body();
+        $codigoPedido = is_string($d['codigo'] ?? null) ? trim($d['codigo']) : '';
+        if (!preg_match('/^[0-9A-Fa-f]{4}(-[0-9A-Fa-f]{4}){3}$/', $codigoPedido)) {
+            throw new ApiError(422, 'El código tiene el formato XXXX-XXXX-XXXX-XXXX', ['campo' => 'codigo']);
+        }
+        $pago = $this->pagoDe($id);
+        $total = number_format($this->detalle($id)['total'], 2, '.', '');
+        [$http, $json] = Interno::post($this->servicio('NOTIFICACIONES_URL', 'http://notificaciones-service:8085', '/internal/notificaciones/verificar'),
+            ['pedido_id' => $id, 'total' => $total, 'referencia' => $pago['referencia'], 'codigo' => $codigoPedido]);
+        if ($http !== 200 || !is_bool($json['valido'] ?? null)) {
+            throw new ApiError(503, 'No se pudo comprobar en este momento');
+        }
+        return [200, ['valido' => $json['valido']]];
+    }
+
+    /** @return array{metodo: string, referencia: string} el pago confirmado de un pedido */
+    private function pagoDe(string $id): array
+    {
+        $this->detalle($id);
+        [$http, $json] = Interno::post($this->servicio('PAGOS_URL', 'http://pagos-service:8084', '/internal/pagos/de-pedido'), ['pedido_id' => $id]);
+        if ($http === 404) {
+            throw new ApiError(409, 'Este pedido no tiene un pago confirmado');
+        }
+        if ($http !== 200 || !is_string($json['referencia'] ?? null)) {
+            throw new ApiError(503, 'No se pudo consultar el pago en este momento');
+        }
+        return ['metodo' => (string) $json['metodo'], 'referencia' => $json['referencia']];
+    }
 
     public function cupon(string $codigo): array
     {
@@ -75,7 +130,7 @@ final class PedidosController
         $sede = null;
         $direccion = null;
         if ($metodo === 'retiro') {
-            $sede = in_array($datos['sede'] ?? null, self::SEDES, true) ? $datos['sede'] : throw new ApiError(422, 'Sede no válida', ['campo' => 'sede']);
+            $sede = in_array($datos['sede'] ?? null, $this->sedesRetiro()['sedes'], true) ? $datos['sede'] : throw new ApiError(422, 'Sede no válida', ['campo' => 'sede']);
         } else {
             $direccion = [
                 'direccion' => Validar::texto($datos, 'direccion', 5, 200),

@@ -7,7 +7,7 @@ import PetIcon from '../../components/PetIcon'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { api } from '../../api'
 import { useAuth } from '../../context/useAuth'
-import { CITA_STATUS, ESPECIES, edad, formatReserva } from '../account/citas'
+import { ESPECIES, edad, estadoCita, formatReserva } from '../account/citas'
 import { STATUS, formatDate, shortId } from '../account/orderStatus'
 import { formatPrice } from '../../data/shop'
 import AgendarCita from './AgendarCita'
@@ -108,7 +108,7 @@ export default function AdminCliente() {
           {clinica.citas.map((c) => (
             <li key={c.id} className="fila fila--historial">
               <span className="fila__principal"><strong className="primera-mayuscula">{formatReserva(c, true)}</strong><small>{c.servicio.nombre} · {c.mascota.nombre}</small></span>
-              <span className={`status status--${CITA_STATUS[c.estado].tone}`}>{CITA_STATUS[c.estado].label}</span>
+              <span className={`status status--${estadoCita(c).tone}`}>{estadoCita(c).label}</span>
             </li>
           ))}
         </ul>

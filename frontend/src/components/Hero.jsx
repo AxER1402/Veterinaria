@@ -2,8 +2,10 @@ import { Link } from 'react-router-dom'
 import { MapPin, ArrowRight } from 'lucide-react'
 import { PawIcon } from './Brand'
 import { images } from '../data/content'
+import { useClinica } from '../context/useClinica'
 
 export default function Hero() {
+  const { horario, sedes } = useClinica()
   return (
     <section className="hero">
       <PawIcon className="hero__paw hero__paw--1" size={60} />
@@ -28,7 +30,7 @@ export default function Hero() {
             </Link>
           </div>
           <p className="hero__reviews">
-            <span>Lunes a sábado · 8:00 a 20:00 · 3 sedes en la Ciudad de Guatemala</span>
+            <span>{horario} · {sedes.length || 1} {sedes.length === 1 ? 'sede' : 'sedes'} en la Ciudad de Guatemala</span>
           </p>
         </div>
 

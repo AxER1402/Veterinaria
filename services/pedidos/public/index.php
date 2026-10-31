@@ -13,7 +13,7 @@ $pedidos = new PedidosController();
 $router->add('GET',   '/salud', fn() => [200, ['estado' => 'ok', 'servicio' => 'pedidos-service']]);
 
 // Públicos: el carrito se puede cotizar sin cuenta.
-$router->add('GET',   '/api/pedidos/sedes', fn() => [200, ['sedes' => PedidosController::SEDES]]);
+$router->add('GET',   '/api/pedidos/sedes', fn() => $pedidos->sedes());
 $router->add('GET',   '/api/pedidos/cupones/{codigo}', fn($p) => $pedidos->cupon($p['codigo']));
 $router->add('POST',  '/api/pedidos/cotizar', fn() => $pedidos->cotizar());
 $router->add('GET',   '/api/pedidos/metodos-pago', fn() => $pedidos->metodosPago());
@@ -24,6 +24,8 @@ $router->add('GET',   '/api/pedidos/admin/resumen', fn() => $pedidos->resumen())
 $router->add('GET',   '/api/pedidos/admin/clima', fn() => $pedidos->clima());
 $router->add('GET',   '/api/pedidos/admin/preparacion', fn() => $pedidos->preparacion());
 $router->add('GET',   '/api/pedidos/admin/clientes/{id}', fn($p) => $pedidos->deCliente((int) $p['id']));
+$router->add('POST',  '/api/pedidos/admin/{id}/comprobante/reenviar', fn($p) => $pedidos->reenviarComprobante($p['id']));
+$router->add('POST',  '/api/pedidos/admin/{id}/comprobante/verificar', fn($p) => $pedidos->verificarComprobante($p['id']));
 $router->add('PATCH', '/api/pedidos/admin/{id}/estado', fn($p) => $pedidos->cambiarEstado($p['id']));
 $router->add('PATCH', '/api/pedidos/admin/{id}/reembolso', fn($p) => $pedidos->registrarReembolso($p['id']));
 $router->add('POST',  '/api/pedidos/admin/{id}/reembolso/pasarela', fn($p) => $pedidos->reembolsarEnPasarela($p['id']));

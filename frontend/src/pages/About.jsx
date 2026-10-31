@@ -3,9 +3,11 @@ import HappyPets from '../components/HappyPets'
 import WhyUs from '../components/WhyUs'
 import Testimonials from '../components/Testimonials'
 import Reveal from '../components/Reveal'
-import { images, locations, stats } from '../data/content'
+import { images, stats } from '../data/content'
+import { useClinica } from '../context/useClinica'
 
 export default function About() {
+  const { sedes } = useClinica()
   return (
     <>
       <PageHero
@@ -15,7 +17,7 @@ export default function About() {
         cta={{ to: '/servicios', label: 'Ver servicios' }}
         image={images.nosotros}
         alt="Persona acariciando a un gato atigrado"
-        tag={<><strong>{locations.length}</strong> sedes en la ciudad</>}
+        tag={<><strong>{sedes.length || 1}</strong> {sedes.length === 1 ? 'sede' : 'sedes'} en la ciudad</>}
       />
       <HappyPets conEnlace={false} />
       <section className="stats">

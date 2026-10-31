@@ -10,12 +10,13 @@ import { PawIcon } from '../../components/Brand'
 import { pets, brands, tips, formatPrice, FREE_SHIPPING_FROM } from '../../data/shop'
 import { api } from '../../api'
 import { useShop } from '../../context/useShop'
-import { locations } from '../../data/content'
+import { useClinica } from '../../context/useClinica'
 
 const heroImage =
   'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?auto=format&fit=crop&w=1000&h=1000&q=75'
 
 export default function ShopHome() {
+  const { sedes } = useClinica()
   const { products } = useShop()
   const featured = products.filter((p) => p.featured)
 
@@ -56,7 +57,7 @@ export default function ShopHome() {
             <Store size={30} />
             <div>
               <strong>Retira en tienda</strong>
-              <p>{locations[0].address}</p>
+              <p>{(sedes.find((s) => s.retiro) || sedes[0])?.direccion}</p>
             </div>
           </div>
           <div className="perk">

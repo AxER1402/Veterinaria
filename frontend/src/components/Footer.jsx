@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom'
 import { Mail, Phone, Clock } from 'lucide-react'
 import { Logo, InstagramIcon, FacebookIcon } from './Brand'
-import { business, navLinks, services, locations } from '../data/content'
+import { business, navLinks, services } from '../data/content'
+import { useClinica } from '../context/useClinica'
 
 export default function Footer() {
+  const { telefono, tel, horario, sedes } = useClinica()
   return (
     <footer className="footer">
       <div className="container">
@@ -57,10 +59,10 @@ export default function Footer() {
           <div>
             <h4>Contacto</h4>
             <ul className="footer__contact">
-              <li><Phone size={16} /> <a href={`tel:${business.tel}`}>{business.phone}</a></li>
+              <li><Phone size={16} /> <a href={tel}>{telefono}</a></li>
               <li><Mail size={16} /> <a href={`mailto:${business.email}`}>{business.email}</a></li>
-              <li><Clock size={16} /> {business.hours}</li>
-              <li className="footer__address">{locations[0].address}</li>
+              <li><Clock size={16} /> {horario}</li>
+              <li className="footer__address">{sedes[0]?.direccion}</li>
             </ul>
           </div>
 

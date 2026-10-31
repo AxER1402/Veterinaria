@@ -56,6 +56,20 @@ function ResumenClinico({ veterinario }) {
         <Stat label="Vacunas por vencer" value={r.vacunas.length} note="Esta semana" />
         <Stat label="No asistieron" value={r.faltas.length} tone={r.faltas.length ? 'bad' : undefined} note="Últimos 14 días" />
       </div>
+      {r.por_revisar.length > 0 && (
+        <div className="admin-card resumen__revisar">
+          <h2>Por revisar ({r.por_revisar.length})</h2>
+          <p className="summary__hint">Citas que nadie cerró y consultas sin ficha. Una cita cerrada sola no cuenta como falta hasta que la confirmes en la agenda.</p>
+          <ul className="resumen__list">
+            {r.por_revisar.map((c) => (
+              <li key={c.id}>
+                <span><Link to={`/admin/agenda?fecha=${c.inicio.slice(0, 10)}`}>{c.mascota.nombre} · {c.servicio.nombre}</Link> · {c.cliente.nombre}</span>
+                <small>{formatCita(c.inicio)} · {c.por_revisar ? 'Se cerró sola' : 'Atendida sin ficha'}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {(r.vacunas.length > 0 || r.faltas.length > 0) && (
         <div className="admin-grid admin-grid--even">
           {r.vacunas.length > 0 && (

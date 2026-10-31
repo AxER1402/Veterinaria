@@ -3,13 +3,15 @@ import { Phone, Mail, Clock, CalendarHeart } from 'lucide-react'
 import PageHero from '../components/PageHero'
 import Locations from '../components/Locations'
 import { business, images } from '../data/content'
+import { useClinica } from '../context/useClinica'
 
 export default function Contact() {
-  const [dias, horas] = business.hours.split(' · ')
+  const { telefono, tel, horario } = useClinica()
+  const [dias, horas] = horario.split(', ')[0].split(' · ')
   const items = [
-    { icon: Phone, label: 'Llámanos', value: business.phone, href: `tel:${business.tel}` },
+    { icon: Phone, label: 'Llámanos', value: telefono, href: tel },
     { icon: Mail, label: 'Escríbenos', value: business.email, href: `mailto:${business.email}` },
-    { icon: Clock, label: 'Horario', value: business.hours },
+    { icon: Clock, label: 'Horario', value: horario },
   ]
 
   return (

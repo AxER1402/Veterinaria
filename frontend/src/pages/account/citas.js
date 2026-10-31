@@ -9,6 +9,9 @@ export const CITA_STATUS = {
   cancelada: { label: 'Cancelada', tone: 'bad' },
 }
 
+// Una cita que se cerró sola todavía no es una falta: falta que el personal la revise.
+export const estadoCita = (c) => (c.por_revisar ? { label: 'Por revisar', tone: 'warn' } : CITA_STATUS[c.estado])
+
 export const ESPECIES = [
   { value: 'perro', label: 'Perro', icon: Dog },
   { value: 'gato', label: 'Gato', icon: Cat },
@@ -20,7 +23,6 @@ export const ESPECIES = [
 ]
 
 // Teléfono de la clínica (el servidor también lo manda en /api/citas).
-export const TELEFONO_CLINICA = '+502 2385-6420'
 
 // Fecha del calendario del navegador en Y-m-d. No se usa toISOString(): eso da la fecha en UTC
 // y después de las 18:00 en Guatemala ya sería «mañana».

@@ -34,3 +34,9 @@ WHERE c.servicio IN ('peluqueria', 'paseos', 'entrenamiento')
 SELECT p.servicio, p.nombre, p.dias, LEFT(p.hora_inicio, 5) AS desde, LEFT(p.hora_fin, 5) AS hasta,
        (SELECT COUNT(*) FROM citas c WHERE c.servicio = p.servicio AND c.cupo = p.id) AS citas
 FROM profesionales p ORDER BY p.servicio, p.id;
+
+-- Número de colegiado de ejemplo: en un entorno real lo escribe el administrador en Equipo y horarios.
+UPDATE profesionales SET colegiado = '0000' WHERE id = 1 AND colegiado IS NULL;
+
+-- Número de colegiado de ejemplo: en un entorno real lo escribe el administrador en Equipo y horarios.
+UPDATE profesionales SET colegiado = '0000' WHERE id = 1 AND colegiado IS NULL;

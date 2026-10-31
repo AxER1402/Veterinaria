@@ -11,7 +11,8 @@ import { useAuth } from '../context/useAuth'
 import { services } from '../data/content'
 import { formatPrice } from '../data/shop'
 import PetIcon from './PetIcon'
-import { TELEFONO_CLINICA, formatDay, formatReserva, noches } from '../pages/account/citas'
+import { useClinica } from '../context/useClinica'
+import { formatDay, formatReserva, noches } from '../pages/account/citas'
 import Select from './Select'
 
 // Lo elegido antes de ir a ingresar: al volver, la reserva sigue donde estaba.
@@ -37,6 +38,7 @@ const TELEFONO = /^\+?[0-9 ()-]{7,20}$/
 const MOTIVOS = ['Control o chequeo', 'Vacunación', 'Vómitos o diarrea', 'Problema de piel', 'Cojera', 'No quiere comer', 'Otro']
 
 export default function BookingForm() {
+  const { telefono, tel } = useClinica()
   const { user, checking } = useAuth()
   const { pathname } = useLocation()
   const [params] = useSearchParams()
@@ -133,7 +135,7 @@ export default function BookingForm() {
                 )}
               </div>
               <p className="booking__urgent">
-                <Phone size={18} /> <span>¿Es una urgencia? No esperes una cita: llámanos al <a href={`tel:${TELEFONO_CLINICA.replace(/[^+\d]/g, '')}`}>{TELEFONO_CLINICA}</a>.</span>
+                <Phone size={18} /> <span>¿Es una urgencia? No esperes una cita: llámanos al <a href={tel}>{telefono}</a>.</span>
               </p>
             </aside>
           </div>

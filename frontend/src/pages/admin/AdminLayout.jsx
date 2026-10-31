@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useState } from 'react'
 import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { CalendarDays, ExternalLink, LayoutDashboard, LogOut, Menu, Package, PawPrint, ShieldCheck, Tags, UserRound, Users, X } from 'lucide-react'
+import { CalendarDays, ExternalLink, LayoutDashboard, LogOut, MapPin, Menu, Package, PawPrint, Receipt, ShieldCheck, Tags, UserRound, Users, X } from 'lucide-react'
 import { Logo } from '../../components/Brand'
 import Loading from '../../components/Loading'
 import { useAuth } from '../../context/useAuth'
@@ -15,8 +15,10 @@ const secciones = [
   { grupo: 'Clínica', to: '/admin/agenda', label: 'Agenda', icon: CalendarDays, roles: CLINICA, ayuda: 'Las citas de cada día, los bloqueos de turnos y el equipo.' },
   { grupo: 'Clínica', to: '/admin/pacientes', label: 'Pacientes', icon: PawPrint, roles: ['admin', 'veterinario'], ayuda: 'Busca una mascota para ver su historial y sus vacunas.' },
   { grupo: 'Clínica', to: '/admin/clientes', label: 'Clientes', icon: Users, ayuda: 'Datos de contacto de los clientes y sus mascotas.' },
+  { grupo: 'Clínica', to: '/admin/caja', label: 'Caja', icon: Receipt, roles: CLINICA, ayuda: 'Lo cobrado en la clínica y lo que falta cobrar.' },
   { grupo: 'Tienda', to: '/admin/pedidos', label: 'Pedidos', icon: Package, roles: ['admin', 'tienda'], ayuda: 'Prepara los pedidos, cambia su estado y revisa las ventas.' },
   { grupo: 'Tienda', to: '/admin/catalogo', label: 'Catálogo', icon: Tags, roles: ['admin', 'tienda'], ayuda: 'Productos, precios, existencias y reseñas.' },
+  { grupo: 'Ajustes', to: '/admin/sedes', label: 'Sedes y precios', icon: MapPin, roles: ['admin'], ayuda: 'Datos y horario de cada sede, y precios de los servicios.' },
   { grupo: 'Seguridad', to: '/admin/bitacora', label: 'Bitácora', icon: ShieldCheck, roles: ['admin'], ayuda: 'Quién hizo qué y cuándo. No se puede modificar.' },
 ]
 

@@ -1,8 +1,10 @@
 import PageHeader from './PageHeader'
 import { business } from '../data/content'
+import { useClinica } from '../context/useClinica'
 
 // Plantilla de Privacidad y Términos: encabezado, fecha de actualización y texto en una columna legible.
 export default function LegalPage({ title, text, actualizado, children }) {
+  const { telefono, tel, horario } = useClinica()
   return (
     <>
       <PageHeader title={title} text={text} compact />
@@ -13,7 +15,7 @@ export default function LegalPage({ title, text, actualizado, children }) {
           <h2>Contacto</h2>
           <p>
             Si tienes dudas sobre este texto, escríbenos a <a href={`mailto:${business.email}`}>{business.email}</a> o
-            llámanos al <a href={`tel:${business.tel}`}>{business.phone}</a> ({business.hours}).
+            llámanos al <a href={tel}>{telefono}</a> ({horario}).
           </p>
         </div>
       </section>

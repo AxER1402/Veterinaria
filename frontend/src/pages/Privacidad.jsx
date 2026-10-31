@@ -1,14 +1,16 @@
 import { Link } from 'react-router-dom'
 import LegalPage from '../components/LegalPage'
-import { business, locations } from '../data/content'
+import { business } from '../data/content'
+import { useClinica } from '../context/useClinica'
 
 // Cada dato que se menciona aquí corresponde a lo que la app guarda de verdad (ver docs/06-iso27001.md, A.5.34).
 export default function Privacidad() {
+  const { sedes } = useClinica()
   return (
     <LegalPage title="Aviso de privacidad" text="Qué datos tuyos y de tu mascota guardamos, para qué y con quién los compartimos." actualizado="30 de octubre de 2026">
       <h2>Quién es responsable</h2>
       <p>
-        {business.name} ({business.tagline.toLowerCase()}), con sede principal en {locations[0].address}, es responsable de los
+        {business.name} ({business.tagline.toLowerCase()}), con sede principal en {sedes[0]?.direccion}, es responsable de los
         datos que nos das al usar este sitio, la tienda y la reserva de citas.
       </p>
 
@@ -17,6 +19,7 @@ export default function Privacidad() {
         <li><strong>Tu cuenta:</strong> nombre, correo y teléfono. La contraseña no se guarda: solo un resumen irreversible (hash bcrypt) que sirve para comprobarla, no para recuperarla.</li>
         <li><strong>Tus mascotas:</strong> nombre, especie, raza, fecha de nacimiento, peso y las notas que agregues (por ejemplo, alergias o temperamento).</li>
         <li><strong>Tus citas:</strong> servicio, fecha, el motivo de la consulta, el teléfono de contacto y quién lleva a la mascota.</li>
+        <li><strong>Cobros en la clínica:</strong> a nombre de quién, qué se cobró, el monto y cómo se pagó, para darte tu recibo.</li>
         <li><strong>Historial clínico:</strong> lo que registra el veterinario en cada consulta (examen, diagnóstico, tratamiento, vacunas, resultados de laboratorio y radiografías).</li>
         <li><strong>Tus pedidos:</strong> productos, dirección de entrega o sede de retiro, y teléfono.</li>
         <li><strong>Pagos:</strong> solo la referencia que nos da la pasarela y el estado del pago. <strong>No vemos ni guardamos los datos de tu tarjeta</strong>: los escribes directamente en Stripe o PayPal.</li>

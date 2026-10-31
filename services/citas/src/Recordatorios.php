@@ -28,6 +28,7 @@ final class Recordatorios
         return [
             'recordatorios_cita' => $this->recordatoriosCita(),
             'avisos_vacuna'      => $this->avisosVacuna(),
+            'avisos_control'     => $this->avisosControl(),
             'no_asistio'         => $this->cerrarSinAtender(),
         ];
     }
@@ -79,7 +80,7 @@ final class Recordatorios
             }
             [$http, $json] = Interno::post($url, [
                 'vacuna_id' => $v['id'], 'vacuna' => $v['nombre'], 'proxima_dosis' => $v['proxima_dosis'], 'mascota' => $v['mascota'],
-                'cliente_nombre' => $v['cliente_nombre'], 'cliente_email' => $v['cliente_email'],
+                'cliente_nombre' => $v['cliente_nombre'], 'cliente_email' => $v['cliente_email'], 'sede' => $this->sedeClinica(),
             ], 12);
             $enviado = $http === 200 && ($json['enviado'] ?? false) === true;
             Auditoria::registrar('RECORDATORIO_ENVIADO', $enviado ? 'EXITO' : 'FALLO', [
@@ -90,6 +91,51 @@ final class Recordatorios
             $avisos[] = $v['id'];
         }
         return $avisos;
+    }
+
+    /**
+     * Aviso 7 días antes del control que el veterinario dejó indicado, si la mascota no tiene ya una
+     * consulta agendada ni otra consulta posterior.
+     */
+    private function avisosControl(): array
+    {
+        $db = Db::escritura();
+        $q = $db->prepare("SELECT h.id, h.proximo_control, m.id AS mascota_id, m.nombre AS mascota, m.id_cliente, c.cliente_nombre, c.cliente_email
+                             FROM historial_clinico h
+                             JOIN mascotas m ON m.id = h.mascota_id AND m.activa = 1
+                             JOIN citas c ON c.id = (SELECT u.id FROM citas u WHERE u.id_cliente = m.id_cliente ORDER BY u.created_at DESC LIMIT 1)
+                            WHERE h.control_aviso_at IS NULL AND h.proximo_control BETWEEN CURDATE() AND CURDATE() + INTERVAL ? DAY
+                              AND NOT EXISTS (SELECT 1 FROM historial_clinico n WHERE n.mascota_id = h.mascota_id AND n.fecha > h.fecha)
+                              AND NOT EXISTS (SELECT 1 FROM citas a WHERE a.mascota_id = h.mascota_id AND a.servicio = 'veterinaria'
+                                                                     AND a.estado IN ('pendiente','confirmada') AND a.inicio >= NOW())
+                            ORDER BY h.proximo_control LIMIT " . self::LOTE);
+        $q->execute([self::AVISO_VACUNA_DIAS]);
+        $url = rtrim(Env::get('NOTIFICACIONES_URL', 'http://notificaciones-service:8085'), '/') . '/internal/notificaciones/control';
+        $avisos = [];
+        foreach ($q->fetchAll() as $h) {
+            if (!$this->reclamar('historial_clinico', 'control_aviso_at', $h['id'])) {
+                continue;
+            }
+            [$http, $json] = Interno::post($url, [
+                'historial_id' => $h['id'], 'fecha' => $h['proximo_control'], 'mascota' => $h['mascota'],
+                'cliente_nombre' => $h['cliente_nombre'], 'cliente_email' => $h['cliente_email'], 'sede' => $this->sedeClinica(),
+            ], 12);
+            $enviado = $http === 200 && ($json['enviado'] ?? false) === true;
+            Auditoria::registrar('RECORDATORIO_ENVIADO', $enviado ? 'EXITO' : 'FALLO', [
+                'usuario_id' => (int) $h['id_cliente'], 'usuario_email' => $h['cliente_email'], 'rol' => 'cliente',
+                'dato_nuevo' => ['tipo' => 'control', 'historial_id' => $h['id'], 'mascota_id' => $h['mascota_id'], 'fecha' => $h['proximo_control']]
+                    + ($enviado ? [] : ['motivo' => $http === 200 ? 'el correo no salió' : "notificaciones respondió $http"]),
+            ]);
+            $avisos[] = $h['id'];
+        }
+        return $avisos;
+    }
+
+    /** Sede donde se dan las consultas: la dirección que va en los avisos clínicos. */
+    private function sedeClinica(): string
+    {
+        $sede = Db::escritura()->query("SELECT sede FROM servicios WHERE slug = 'veterinaria'")->fetchColumn();
+        return $sede ? Sedes::texto($sede) : '';
     }
 
     private function cerrarSinAtender(): array
@@ -111,7 +157,7 @@ final class Recordatorios
                     $db->rollBack();
                     continue;
                 }
-                $db->prepare("UPDATE citas SET estado = 'no_asistio' WHERE id = ?")->execute([$id]);
+                $db->prepare("UPDATE citas SET estado = 'no_asistio', cierre_automatico = 1 WHERE id = ?")->execute([$id]);
                 $db->prepare('INSERT INTO historial_citas (cita_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, ?, ?, NULL, ?)')
                     ->execute([$id, $c['estado'], 'no_asistio', 'Cierre automático: la cita pasó sin atenderse']);
                 $db->commit();

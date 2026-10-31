@@ -59,6 +59,12 @@ final class AuditController
         'HISTORIAL_CONSULTADO'    => ['citas-service'],
         'HISTORIAL_CORREGIDO'     => ['citas-service'],
         'RECORDATORIO_ENVIADO'    => ['citas-service'],
+        'SEDE_ACTUALIZADA'        => ['citas-service'],
+        'SEDE_ELIMINADA'          => ['citas-service'],
+        'SERVICIO_ACTUALIZADO'    => ['citas-service'],
+        'COBRO_REGISTRADO'        => ['citas-service'],
+        'COBRO_PAGADO'            => ['citas-service'],
+        'COBRO_ANULADO'           => ['citas-service'],
         // Extra: intentos de ver recursos ajenos (A01), útil para detectar enumeración.
         'ACCESO_DENEGADO'         => ['auth-service', 'catalogo-service', 'pedidos-service', 'pagos-service', 'citas-service'],
     ];

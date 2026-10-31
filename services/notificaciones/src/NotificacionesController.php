@@ -177,7 +177,7 @@ final class NotificacionesController
             'cita'                => '',
             'servicio'            => "Refuerzo: {$d['vacuna']}",
             'mascota'             => $d['mascota'],
-            'sede'                => 'Clínica veterinaria y peluquería · 6a. avenida 9-35, zona 10',
+            'sede'                => is_string($d['sede'] ?? null) ? $d['sede'] : '',
             'fecha'               => self::fechaLarga($fecha),
             'hora'                => '',
             'codigo_verificacion' => '',
@@ -185,6 +185,72 @@ final class NotificacionesController
             'usuario_email' => $email,
             'rol'           => 'cliente',
             'dato_nuevo'    => ['plantilla' => 'vacuna_por_vencer', 'proveedor' => 'EmailJS', 'vacuna_id' => $d['vacuna_id']],
+        ]);
+        return [200, ['enviado' => $enviado]];
+    }
+
+    /** Aviso de que se acerca el control indicado por el veterinario. Usa la misma plantilla que las citas. */
+    public function control(): array
+    {
+        Guard::servicio(['citas-service']);
+        $d = Http::body();
+        foreach (['historial_id', 'fecha', 'mascota', 'cliente_nombre', 'cliente_email'] as $campo) {
+            if (!is_string($d[$campo] ?? null) || $d[$campo] === '') {
+                throw new ApiError(422, 'Datos del control incompletos');
+            }
+        }
+        $email = filter_var($d['cliente_email'], FILTER_VALIDATE_EMAIL) ?: throw new ApiError(422, 'Correo inválido');
+        $fecha = \DateTimeImmutable::createFromFormat('!Y-m-d', $d['fecha']) ?: throw new ApiError(422, 'Fecha inválida');
+        $enviado = self::enviar('EMAILJS_TEMPLATE_CITA_ID', [
+            'to_email'            => $email,
+            'to_name'             => $d['cliente_nombre'],
+            'titulo'              => "Se acerca el control de {$d['mascota']}",
+            'mensaje'             => "El veterinario indicó un control para {$d['mascota']}. Reserva tu consulta para esa fecha.",
+            'estado'              => 'control',
+            'cita'                => '',
+            'servicio'            => 'Control veterinario',
+            'mascota'             => $d['mascota'],
+            'sede'                => is_string($d['sede'] ?? null) ? $d['sede'] : '',
+            'fecha'               => self::fechaLarga($fecha),
+            'hora'                => '',
+            'codigo_verificacion' => '',
+        ], [
+            'usuario_email' => $email,
+            'rol'           => 'cliente',
+            'dato_nuevo'    => ['plantilla' => 'control_por_venir', 'proveedor' => 'EmailJS', 'historial_id' => $d['historial_id']],
+        ]);
+        return [200, ['enviado' => $enviado]];
+    }
+
+    /** Recibo de un cobro en mostrador. Usa la misma plantilla que las citas. */
+    public function recibo(): array
+    {
+        Guard::servicio(['citas-service']);
+        $d = Http::body();
+        foreach (['cobro_id', 'recibo', 'total', 'cliente_nombre', 'cliente_email'] as $campo) {
+            if (!is_string($d[$campo] ?? null) || $d[$campo] === '') {
+                throw new ApiError(422, 'Datos del recibo incompletos');
+            }
+        }
+        $email = filter_var($d['cliente_email'], FILTER_VALIDATE_EMAIL) ?: throw new ApiError(422, 'Correo inválido');
+        $mascota = is_string($d['mascota'] ?? null) ? $d['mascota'] : '';
+        $enviado = self::enviar('EMAILJS_TEMPLATE_CITA_ID', [
+            'to_email'            => $email,
+            'to_name'             => $d['cliente_nombre'],
+            'titulo'              => "Recibo {$d['recibo']}",
+            'mensaje'             => "Recibimos tu pago de Q{$d['total']}. Puedes ver el detalle e imprimir el recibo en tu cuenta, en Mis citas.",
+            'estado'              => 'pagado',
+            'cita'                => '',
+            'servicio'            => "Recibo {$d['recibo']}",
+            'mascota'             => $mascota,
+            'sede'                => is_string($d['sede'] ?? null) ? $d['sede'] : '',
+            'fecha'               => self::fechaLarga(new \DateTimeImmutable('today')),
+            'hora'                => '',
+            'codigo_verificacion' => '',
+        ], [
+            'usuario_email' => $email,
+            'rol'           => 'cliente',
+            'dato_nuevo'    => ['plantilla' => 'recibo_cobro', 'proveedor' => 'EmailJS', 'cobro_id' => $d['cobro_id']],
         ]);
         return [200, ['enviado' => $enviado]];
     }

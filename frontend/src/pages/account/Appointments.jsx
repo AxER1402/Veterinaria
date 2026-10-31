@@ -1,6 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { CalendarHeart, Info, MapPin, Phone } from 'lucide-react'
+import { CalendarHeart, Info, MapPin, Phone, Printer } from 'lucide-react'
+import ReciboCobro from '../../components/ReciboCobro'
+import { METODOS_PAGO } from '../../data/recibos'
+import { useClinica } from '../../context/useClinica'
+import { formatPrice } from '../../data/shop'
+import { formatDate } from './orderStatus'
 import CuentaMarco from '../../components/CuentaMarco'
 import Loading from '../../components/Loading'
 import Modal from '../../components/Modal'
@@ -9,14 +14,14 @@ import { cuerpoReserva, eleccionLista } from '../../components/reserva'
 import { useAuth } from '../../context/useAuth'
 import { api } from '../../api'
 import PetIcon from '../../components/PetIcon'
-import { CITA_STATUS, TELEFONO_CLINICA, formatReserva } from './citas'
+import { estadoCita, formatReserva } from './citas'
 
 const TABS = [
   { id: 'proximas', label: 'Próximas' },
   { id: 'pasadas', label: 'Pasadas' },
   { id: 'canceladas', label: 'Canceladas' },
+  { id: 'recibos', label: 'Recibos' },
 ]
-const tel = TELEFONO_CLINICA.replace(/[^+\d]/g, '')
 const MES = new Intl.DateTimeFormat('es-GT', { month: 'short' })
 const DIA_SEMANA = new Intl.DateTimeFormat('es-GT', { weekday: 'short' })
 
@@ -26,10 +31,15 @@ export default function Appointments() {
   const [error, setError] = useState('')
   const [tab, setTab] = useState('proximas')
   const [reprogramar, setReprogramar] = useState(null)
+  const [recibos, setRecibos] = useState([])
+  const [imprimir, setImprimir] = useState(null)
+  const cerrarImpresion = useCallback(() => setImprimir(null), [])
+  const { telefono, tel } = useClinica()
 
   useEffect(() => {
     if (!user || user.rol === 'tienda') return
     api('/api/citas').then((d) => setCitas(d.citas)).catch((e) => setError(e.message))
+    api('/api/citas/cobros').then((d) => setRecibos(d.cobros)).catch(() => {})
   }, [user])
 
   if (checking) return <Loading />
@@ -51,25 +61,40 @@ export default function Appointments() {
       <CuentaMarco titulo="Mis citas" texto="Tus reservas en la clínica, la guardería y con los paseadores." acciones={<Link to="/reservar" className="btn btn--primary btn--sm">Nueva cita</Link>}>
           {error && <p className="form-alert">{error}</p>}
           {!citas && !error && <Loading />}
-          {citas && citas.length === 0 && (
+          {citas && citas.length === 0 && recibos.length === 0 && (
             <div className="empty-state">
               <CalendarHeart size={56} />
               <h3>Todavía no tienes citas</h3>
               <Link to="/reservar" className="btn btn--primary">Reservar una cita</Link>
             </div>
           )}
-          {citas && citas.length > 0 && (
+          {citas && (citas.length > 0 || recibos.length > 0) && (
             <>
               <div className="citas__head">
                 <div className="tabs" role="tablist" aria-label="Mis citas">
                   {TABS.map((t) => (
                     <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? 'tab--active' : ''}`} onClick={() => setTab(t.id)}>
-                      {t.label} <span>{grupos[t.id].length}</span>
+                      {t.label} <span>{t.id === 'recibos' ? recibos.length : grupos[t.id].length}</span>
                     </button>
                   ))}
                 </div>
               </div>
-              {grupos[tab].length === 0 ? (
+              {tab === 'recibos' ? (recibos.length === 0 ? <p className="booking__muted">Todavía no tienes recibos de la clínica.</p> : (
+                <ul className="lista">
+                  {recibos.map((r) => (
+                    <li key={r.id} className="fila fila--recibo">
+                      <span className="fila__principal">
+                        <strong>{r.lineas[0]?.concepto}{r.lineas.length > 1 && ` y ${r.lineas.length - 1} más`}{r.mascota && ` · ${r.mascota}`}</strong>
+                        <small><span className="mono">{r.recibo}</span> · {formatDate(r.cobrado_at || r.fecha)}{r.metodo && ` · ${METODOS_PAGO[r.metodo]}`}</small>
+                      </span>
+                      <strong className="fila__monto">{formatPrice(r.total)}</strong>
+                      {r.estado === 'pagado'
+                        ? <button className="btn btn--ghost btn--xs" onClick={() => setImprimir(r)}><Printer size={14} aria-hidden="true" /> Imprimir</button>
+                        : <span className="status status--warn">Por pagar</span>}
+                    </li>
+                  ))}
+                </ul>
+              )) : grupos[tab].length === 0 ? (
                 <p className="booking__muted">{tab === 'proximas' ? 'No tienes citas próximas.' : tab === 'pasadas' ? 'Todavía no hay citas pasadas.' : 'No has cancelado citas.'}</p>
               ) : (
                 <ul className={`citas ${tab !== 'proximas' ? 'citas--past' : ''}`}>
@@ -81,12 +106,13 @@ export default function Appointments() {
                 <span>
                   El <strong>código de verificación</strong> va en el correo de cada cita: muéstralo en la sede si te lo piden
                   y sirve para comprobar que la cita es tuya. Para cambiar una cita con menos de 2 horas, llámanos al{' '}
-                  <a href={`tel:${tel}`}>{TELEFONO_CLINICA}</a>. Si faltas a 3 citas en 3 meses, las próximas se agendan por teléfono.
+                  <a href={tel}>{telefono}</a>. Si faltas a 3 citas en 3 meses, las próximas se agendan por teléfono.
                 </span>
               </p>
             </>
           )}
       </CuentaMarco>
+      {imprimir && <ReciboCobro cobro={imprimir} onDone={cerrarImpresion} />}
       {reprogramar && (
         <Reprogramar cita={reprogramar} onClose={() => setReprogramar(null)} onDone={(c) => { replace(c); setReprogramar(null) }} />
       )}
@@ -98,7 +124,8 @@ function CitaRow({ cita, onChange, onReprogramar }) {
   const [confirming, setConfirming] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
-  const status = CITA_STATUS[cita.estado]
+  const status = estadoCita(cita)
+  const { telefono, tel } = useClinica()
   const inicio = new Date(cita.inicio)
 
   const cancelar = async () => {
@@ -138,7 +165,7 @@ function CitaRow({ cita, onChange, onReprogramar }) {
           </span>
         )}
         {onChange && !cita.puede_cancelar && ['pendiente', 'confirmada'].includes(cita.estado) && (
-          <small className="booking__muted"><Phone size={13} /> Para cambiarla, llámanos al <a href={`tel:${tel}`}>{TELEFONO_CLINICA}</a></small>
+          <small className="booking__muted"><Phone size={13} /> Para cambiarla, llámanos al <a href={tel}>{telefono}</a></small>
         )}
         {confirming && (
           <span className="cita__confirm">

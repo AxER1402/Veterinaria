@@ -36,6 +36,15 @@ export function AlertasClinicas({ mascota, compact = false }) {
 
 // Ficha de la consulta. Con `cita`, al guardarla la cita queda atendida; sin cita (urgencias o
 // gente que llega sin cita) se registra con la fecha de hoy. El servidor vuelve a validar todo.
+const sinTildes = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+// Aviso, no bloqueo: compara palabras; decide el veterinario.
+function coincideAlergia(alergias, medicamento) {
+  const nombre = sinTildes(medicamento)
+  if (nombre.length < 4) return false
+  return sinTildes(alergias).split(/[^a-z0-9]+/).some((p) => p.length >= 4 && (nombre.includes(p) || p.includes(nombre)))
+}
+
 export function ConsultaForm({ cita, mascota, onClose, onSaved }) {
   const pet = cita ? cita.mascota : mascota
   const [values, setValues] = useState(FICHA_VACIA)
@@ -147,6 +156,10 @@ export function ConsultaForm({ cita, mascota, onClose, onSaved }) {
               <label>Duración
                 <input value={m.duracion} onChange={setItem(setMedicamentos, i, 'duracion')} maxLength={60} placeholder="7 días" />
               </label>
+              <label>Lote
+                <input value={m.lote || ''} onChange={setItem(setMedicamentos, i, 'lote')} maxLength={40} placeholder="Opcional" />
+              </label>
+              {coincideAlergia(pet.alergias, m.nombre) && <p className="form-alert med-row__alerta" role="alert">Revisa antes de recetar: tiene alergia registrada a «{pet.alergias}».</p>}
               <button type="button" className="icon-btn icon-btn--ghost" aria-label={`Quitar medicamento ${i + 1}`}
                 onClick={() => setMedicamentos((l) => l.filter((_, j) => j !== i))}><Trash2 size={16} /></button>
             </div>
@@ -351,7 +364,7 @@ export function ConsultaItem({ consulta: c, onUpdated, onPrint }) {
       <div className="clinical__head">
         <strong>{formatCita(c.fecha)}</strong>
         {c.sin_cita && <span className="status status--warn">Sin cita</span>}
-        <small>Atendió {c.registrado_por}</small>
+        <small>Atendió {c.registrado_por}{c.registrado_colegiado && ` · Colegiado ${c.registrado_colegiado}`}</small>
       </div>
       {c.motivo && <p><b>Motivo:</b> {c.motivo}</p>}
       {c.anamnesis && <p><b>Anamnesis:</b> {c.anamnesis}</p>}
@@ -360,7 +373,7 @@ export function ConsultaItem({ consulta: c, onUpdated, onPrint }) {
       {c.tratamiento && <p><b>Tratamiento:</b> {c.tratamiento}</p>}
       {c.medicamentos.length > 0 && (
         <ul className="clinical__meds">
-          {c.medicamentos.map((m, i) => <li key={i}><b>{m.nombre}</b> {[m.dosis, m.frecuencia, m.duracion].filter(Boolean).join(' · ')}</li>)}
+          {c.medicamentos.map((m, i) => <li key={i}><b>{m.nombre}</b> {[m.dosis, m.frecuencia, m.duracion, m.lote && `Lote ${m.lote}`].filter(Boolean).join(' · ')}</li>)}
         </ul>
       )}
       {c.indicaciones && <p><b>Indicaciones:</b> {c.indicaciones}</p>}

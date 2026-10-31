@@ -52,6 +52,7 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
   const [metodo, setMetodo] = useState('')
   const [errors, setErrors] = useState({})
   const [sedes, setSedes] = useState([])
+  const [ubicaciones, setUbicaciones] = useState({})
   const [quote, setQuote] = useState(null)
   const [problem, setProblem] = useState('')
   const [sending, setSending] = useState(false)
@@ -65,7 +66,7 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
   }
 
   useEffect(() => {
-    api('/api/pedidos/sedes', { auth: false }).then((d) => setSedes(d.sedes)).catch(() => setSedes([]))
+    api('/api/pedidos/sedes', { auth: false }).then((d) => { setSedes(d.sedes); setUbicaciones(d.ubicaciones || {}) }).catch(() => setSedes([]))
     api('/api/pedidos/metodos-pago', { auth: false })
       .then((d) => { setMetodos(d.metodos); setMetodo(d.metodos[0] || '') })
       .catch(() => setMetodos([]))
@@ -162,7 +163,7 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
                 </Field>
                 {values.sede && (
                   <div className="field--full">
-                    <MapEmbed query={`${values.sede.split(' · ')[1]}, Ciudad de Guatemala`} title="Mapa de la sede elegida" />
+                    <MapEmbed query={ubicaciones[values.sede] || values.sede.split(' · ')[1]} title="Mapa de la sede elegida" />
                   </div>
                 )}
               </div>

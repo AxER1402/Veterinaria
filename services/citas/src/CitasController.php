@@ -20,14 +20,7 @@ use Huellitas\Validar;
  */
 final class CitasController
 {
-    public const SEDES = [
-        'centro' => 'Clínica veterinaria y peluquería · 6a. avenida 9-35, zona 10',
-        'norte'  => 'Guardería y hospedaje – Norte · Calzada José Milla y Vidaurre 10-55, zona 6',
-        'sur'    => 'Paseadores y cuidadores – Sur · Calzada Aguilar Batres 34-70, zona 11',
-    ];
-    public const TELEFONO_CLINICA = '+502 2385-6420';
-    private const APERTURA = 8;          // lunes a sábado, 8:00–20:00
-    private const CIERRE = 20;
+    private const ENTRADA = '08:00';     // hora de entrada de guardería y hospedaje (identifica sus cupos por día)
     private const TURNO_MIN = 30;
     private const ANTICIPACION_MIN = 60; // no se reserva un turno que empieza en menos de 1 h
     private const MAX_DIAS = 60;
@@ -67,16 +60,17 @@ final class CitasController
 
     public function servicios(): array
     {
-        $filas = Db::lectura()->query('SELECT slug, nombre, sede, modalidad, precio_desde FROM servicios WHERE activo = 1 ORDER BY sede, nombre')->fetchAll();
+        $filas = Db::lectura()->query('SELECT s.slug, s.nombre, s.sede, s.modalidad, s.precio_desde FROM servicios s JOIN sedes e ON e.codigo = s.sede AND e.activa = 1
+                                       WHERE s.activo = 1 ORDER BY e.orden, s.nombre')->fetchAll();
         $equipo = [];
         foreach (Db::lectura()->query('SELECT id, servicio, nombre FROM profesionales WHERE activo = 1 ORDER BY nombre')->fetchAll() as $p) {
             $equipo[$p['servicio']][] = ['id' => (int) $p['id'], 'nombre' => $p['nombre']];
         }
         return [200, ['servicios' => array_map(fn($s) => [
             'slug' => $s['slug'], 'nombre' => $s['nombre'], 'precio_desde' => (float) $s['precio_desde'], 'modalidad' => $s['modalidad'],
-            'sede' => ['codigo' => $s['sede'], 'nombre' => self::SEDES[$s['sede']]],
+            'sede' => ['codigo' => $s['sede'], 'nombre' => Sedes::texto($s['sede'])],
             'profesionales' => $s['modalidad'] === 'turno' ? ($equipo[$s['slug']] ?? []) : [],
-        ], $filas), 'telefono' => self::TELEFONO_CLINICA]];
+        ], $filas), 'telefono' => Sedes::telefono()]];
     }
 
     /**
@@ -93,7 +87,7 @@ final class CitasController
         $json = [
             'servicio'  => $servicio['slug'],
             'modalidad' => $servicio['modalidad'],
-            'sede'      => ['codigo' => $servicio['sede'], 'nombre' => self::SEDES[$servicio['sede']]],
+            'sede'      => ['codigo' => $servicio['sede'], 'nombre' => Sedes::texto($servicio['sede'])],
             'fecha'     => $dia,
             'turnos'    => $this->turnosDia($servicio, $dia, $this->ocupacion($db, $servicio, $dia, $dia), false, false, $profesional),
         ];
@@ -119,7 +113,7 @@ final class CitasController
             $turnos = $this->turnosDia($servicio, $dia, $ocupacion, false, false, $profesional);
             $libres = array_sum(array_column($turnos, 'libres'));
             $dias[] = ['fecha' => $dia, 'libres' => $libres,
-                       'estado' => (int) $d->format('N') === 7 ? 'cerrado' : ($libres > 0 ? 'libre' : 'lleno')];
+                       'estado' => Sedes::horario($servicio['sede'], $dia) === null ? 'cerrado' : ($libres > 0 ? 'libre' : 'lleno')];
         }
         $primero = array_values(array_filter($dias, fn($x) => $x['estado'] === 'libre'))[0]['fecha'] ?? null;
         return [200, ['servicio' => $servicio['slug'], 'primer_dia_libre' => $primero, 'dias' => $dias]];
@@ -206,6 +200,30 @@ final class CitasController
         return [200, ['mascota' => self::mascotaJson($this->mascotaPorId($id))]];
     }
 
+    /** El veterinario registra que la mascota falleció: su ficha se conserva y dejan de salir avisos y reservas. */
+    public function registrarFallecimiento(string $id): array
+    {
+        $claims = Guard::usuario(Guard::VETERINARIO);
+        $d = Http::body();
+        $m = $this->mascotaAdmin($id);
+        $fecha = self::fecha($d['fecha'] ?? date('Y-m-d'), true)->format('Y-m-d');
+        if ($fecha > date('Y-m-d')) {
+            throw new ApiError(422, 'La fecha no puede ser futura', ['campo' => 'fecha']);
+        }
+        $db = Db::escritura();
+        $q = $db->prepare('SELECT COUNT(*) FROM citas WHERE mascota_id = ? AND estado IN ' . self::ACTIVAS . ' AND inicio > NOW()');
+        $q->execute([$id]);
+        if ((int) $q->fetchColumn() > 0) {
+            throw new ApiError(409, 'Cancela primero sus citas próximas');
+        }
+        $db->prepare('UPDATE mascotas SET activa = 0, fallecida_el = ? WHERE id = ?')->execute([$fecha, $id]);
+        Auditoria::registrar('MASCOTA_ACTUALIZADA', 'EXITO', Auditoria::actor($claims) + [
+            'dato_anterior' => ['mascota_id' => $id, 'activa' => (bool) $m['activa']],
+            'dato_nuevo'    => ['mascota_id' => $id, 'activa' => false, 'fallecida_el' => $fecha],
+        ]);
+        return [200, ['ok' => true, 'fallecida_el' => $fecha]];
+    }
+
     /** No se borra: queda inactiva (sus citas pasadas siguen teniendo a quién apuntar). */
     public function desactivarMascota(string $id): array
     {
@@ -277,6 +295,7 @@ final class CitasController
                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         $db->beginTransaction();
         try {
+            $this->tomarLugarEnSede($db, $servicio, $inicio, null);
             $this->asignarCupo($db, $servicio, $inicio, $fin, null, fn(int $cupo) => $insertar->execute([
                 $id, $clienteId, $mascota['id'], $servicio['slug'], $servicio['sede'], $inicio, $fin, $cupo,
                 $contacto['nombre'], $contacto['email'], $contacto['telefono'], $notas]), $mascota['nombre'], $profesional);
@@ -301,17 +320,51 @@ final class CitasController
         return ['cita' => self::citaJson($this->citaPorId($id), $personal), 'aviso' => $aviso];
     }
 
+    /**
+     * Límite de mascotas a la vez en la sede (el que se elige en el panel, o 1 si es la única activa). El
+     * índice único solo ve un servicio, así que aquí se serializa: todas las reservas de la sede toman la
+     * misma fila antes de contar, y dos personas no pueden ganar el último lugar a la vez.
+     */
+    private function tomarLugarEnSede(\PDO $db, array $servicio, string $inicio, ?string $excluir): void
+    {
+        if ($servicio['modalidad'] !== 'turno') {
+            return; // guardería y hospedaje tienen sus propios cupos por día
+        }
+        $db->prepare('SELECT codigo FROM sedes WHERE codigo = ? FOR UPDATE')->execute([$servicio['sede']]);
+        $limite = Sedes::limite($servicio['sede']);
+        if ($limite === null) {
+            return;
+        }
+        $q = $db->prepare("SELECT COUNT(*) FROM citas c JOIN servicios s ON s.slug = c.servicio
+                            WHERE c.sede = ? AND c.inicio = ? AND c.ocupa = 1 AND s.modalidad = 'turno' AND c.id <> ? LOCK IN SHARE MODE");
+        $q->execute([$servicio['sede'], $inicio, $excluir ?? '']);
+        if ((int) $q->fetchColumn() >= $limite) {
+            throw self::sedeLlena($limite);
+        }
+    }
+
+    private static function sedeLlena(int $limite): ApiError
+    {
+        return new ApiError(409, $limite === 1 ? 'Ya hay una mascota agendada a esa hora en esta sede. Elige otra hora'
+            : "Esta sede ya atiende $limite mascotas a esa hora. Elige otra hora", ['campo' => 'hora', 'motivo' => 'sede_llena']);
+    }
+
     /** @return array{0: string, 1: ?string} inicio y fin («Y-m-d H:i:s») según la modalidad del servicio */
-    private function horario(array $servicio, array $datos, bool $personal, ?int $profesional = null): array
+    private function horario(array $servicio, array $datos, bool $personal, ?int $profesional = null, ?string $excluir = null): array
     {
         $fecha = self::fecha($datos['fecha'] ?? null);
         $dia = $fecha->format('Y-m-d');
-        $hora = $servicio['modalidad'] === 'turno' ? (is_string($datos['hora'] ?? null) ? $datos['hora'] : '') : '08:00';
+        $hora = $servicio['modalidad'] === 'turno' ? (is_string($datos['hora'] ?? null) ? $datos['hora'] : '') : self::ENTRADA;
         $db = Db::escritura();
-        $turno = array_values(array_filter($this->turnosDia($servicio, $dia, $this->ocupacion($db, $servicio, $dia, $dia), true, $personal, $profesional),
+        $ocupacion = $this->ocupacion($db, $servicio, $dia, $dia, $excluir);
+        $turno = array_values(array_filter($this->turnosDia($servicio, $dia, $ocupacion, true, $personal, $profesional),
             fn($t) => $t['hora'] === $hora))[0] ?? null;
         if ($turno === null) {
             throw new ApiError(422, $servicio['modalidad'] === 'turno' ? 'Ese turno no está disponible' : 'Ese día no está disponible', ['campo' => 'hora']);
+        }
+        $limite = $servicio['modalidad'] === 'turno' ? Sedes::limite($servicio['sede']) : null;
+        if ($limite !== null && ($ocupacion['en_sede']["$dia $hora"] ?? 0) >= $limite) {
+            throw self::sedeLlena($limite);
         }
         if ($turno['libres'] === 0) {
             throw new ApiError(409, $profesional !== null ? 'Ese profesional ya tiene ese turno ocupado. Elige otro' : 'Ese turno se acaba de llenar. Elige otro');
@@ -322,7 +375,7 @@ final class CitasController
             if ($this->libresEstadia($db, $servicio, $dia, $salida) === 0) {
                 throw new ApiError(409, 'No quedan lugares para esas noches. Elige otras fechas');
             }
-            $fin = "$salida 08:00:00";
+            $fin = "$salida " . self::ENTRADA . ':00';
         }
         return ["$dia $hora:00", $fin];
     }
@@ -330,11 +383,12 @@ final class CitasController
     /** Límites de la reserva en línea: por mascota, por cliente y por faltas recientes. */
     private function limitesCliente(\PDO $db, int $clienteId, array $mascota): void
     {
-        $q = $db->prepare('SELECT COUNT(*) FROM citas WHERE id_cliente = ? AND estado = ? AND inicio >= NOW() - INTERVAL ? DAY AND inicio < NOW()');
+        // Una cita que se cerró sola no cuenta: quizá sí llegó y nadie la registró.
+        $q = $db->prepare('SELECT COUNT(*) FROM citas WHERE id_cliente = ? AND estado = ? AND cierre_automatico = 0 AND inicio >= NOW() - INTERVAL ? DAY AND inicio < NOW()');
         $q->execute([$clienteId, 'no_asistio', self::FALTAS_DIAS]);
         if ((int) $q->fetchColumn() >= self::MAX_FALTAS) {
             throw new ApiError(409, 'Tienes ' . self::MAX_FALTAS . ' o más citas a las que no asististe en los últimos 3 meses. Para reservar, llámanos al '
-                . self::TELEFONO_CLINICA, ['motivo' => 'faltas']);
+                . Sedes::telefono(), ['motivo' => 'faltas']);
         }
         $q = $db->prepare('SELECT COUNT(*) FROM citas WHERE mascota_id = ? AND estado IN ' . self::ACTIVAS . ' AND inicio > NOW()');
         $q->execute([$mascota['id']]);
@@ -433,7 +487,7 @@ final class CitasController
         $claims = Guard::usuario(['cliente', ...Guard::CLINICA]);
         $q = Db::escritura()->prepare(self::SQL_CITA . ' WHERE c.id_cliente = ? ORDER BY c.inicio DESC LIMIT 200');
         $q->execute([(int) $claims['sub']]);
-        return [200, ['citas' => array_map(fn($c) => self::citaJson($c), $q->fetchAll()), 'telefono' => self::TELEFONO_CLINICA]];
+        return [200, ['citas' => array_map(fn($c) => self::citaJson($c), $q->fetchAll()), 'telefono' => Sedes::telefono()]];
     }
 
     public function cancelar(string $id): array
@@ -444,7 +498,7 @@ final class CitasController
             throw new ApiError(409, 'Esta cita ya no se puede cancelar');
         }
         if (strtotime($cita['inicio']) - time() < self::CANCELAR_HORAS * 3600) {
-            throw new ApiError(409, 'Solo se puede cancelar hasta ' . self::CANCELAR_HORAS . ' horas antes. Llámanos al ' . self::TELEFONO_CLINICA);
+            throw new ApiError(409, 'Solo se puede cancelar hasta ' . self::CANCELAR_HORAS . ' horas antes. Llámanos al ' . Sedes::telefono());
         }
         $this->moverEstado($cita, 'cancelada', $claims, 'Cancelada por el cliente', 'CITA_CANCELADA');
         return [200, ['cita' => self::citaJson($this->citaPorId($id))]];
@@ -465,7 +519,7 @@ final class CitasController
             throw new ApiError(409, 'Esta cita ya no se puede reprogramar');
         }
         if (!$personal && strtotime($cita['inicio']) - time() < self::CANCELAR_HORAS * 3600) {
-            throw new ApiError(409, 'Solo se puede reprogramar hasta ' . self::CANCELAR_HORAS . ' horas antes. Llámanos al ' . self::TELEFONO_CLINICA);
+            throw new ApiError(409, 'Solo se puede reprogramar hasta ' . self::CANCELAR_HORAS . ' horas antes. Llámanos al ' . Sedes::telefono());
         }
         $servicio = $this->servicio($cita['servicio']);
         $mascota = $this->mascotaPorId($cita['mascota_id']);
@@ -475,7 +529,7 @@ final class CitasController
             && ($datos['hora'] ?? null) === substr($cita['inicio'], 11, 5) && ($profesional === null || $profesional === (int) $cita['cupo'])) {
             throw new ApiError(422, 'Elige un día u hora distintos', ['campo' => 'hora']);
         }
-        [$inicio, $fin] = $this->horario($servicio, $datos + ['servicio' => $servicio['slug']], $personal, $profesional);
+        [$inicio, $fin] = $this->horario($servicio, $datos + ['servicio' => $servicio['slug']], $personal, $profesional, $id);
         if ($inicio === $cita['inicio'] && $fin === $cita['fin'] && ($profesional === null || $profesional === (int) $cita['cupo'])) {
             throw new ApiError(422, 'Elige un día u hora distintos', ['campo' => 'hora']);
         }
@@ -492,6 +546,7 @@ final class CitasController
             if ($q->fetchColumn() !== $cita['estado']) {
                 throw new ApiError(409, 'La cita cambió mientras tanto, recarga');
             }
+            $this->tomarLugarEnSede($db, $servicio, $inicio, $id);
             $this->asignarCupo($db, $servicio, $inicio, $fin, $id, fn(int $cupo) => $actualizar->execute([$inicio, $fin, $cupo, $estado, $id]), $mascota['nombre'],
                 $profesional, $servicio['profesionales'] ? (int) $cita['cupo'] : null);
             if ($this->bloqueado($db, $servicio['sede'], substr($inicio, 0, 10), substr($inicio, 11, 5))) {
@@ -543,7 +598,8 @@ final class CitasController
         $fecha = self::fecha($_GET['fecha'] ?? date('Y-m-d'), true);
         $lunes = $fecha->modify('-' . ((int) $fecha->format('N') - 1) . ' days');
         $sede = self::sedeFiltro();
-        $q = Db::escritura()->prepare('SELECT DATE(inicio) AS dia, estado, COUNT(*) AS n FROM citas WHERE inicio >= ? AND inicio < ? + INTERVAL 6 DAY'
+        $largo = Sedes::abreElDia(7) ? 7 : 6;
+        $q = Db::escritura()->prepare("SELECT DATE(inicio) AS dia, estado, COUNT(*) AS n FROM citas WHERE inicio >= ? AND inicio < ? + INTERVAL $largo DAY"
             . ($sede ? ' AND sede = ?' : '') . ' GROUP BY DATE(inicio), estado');
         $q->execute(array_filter([$lunes->format('Y-m-d'), $lunes->format('Y-m-d'), $sede]));
         $conteo = [];
@@ -551,7 +607,7 @@ final class CitasController
             $conteo[$f['dia']][$f['estado']] = (int) $f['n'];
         }
         $dias = [];
-        for ($i = 0; $i < 6; $i++) {
+        for ($i = 0; $i < $largo; $i++) {
             $dia = $lunes->modify("+$i days")->format('Y-m-d');
             $e = $conteo[$dia] ?? [];
             $dias[] = ['fecha' => $dia, 'activas' => array_sum($e) - ($e['cancelada'] ?? 0), 'pendientes' => $e['pendiente'] ?? 0,
@@ -582,7 +638,7 @@ final class CitasController
         $claims = Guard::usuario(Guard::CLINICA);
         $d = Http::body();
         $fecha = self::fecha($d['fecha'] ?? null);
-        $sede = isset($d['sede']) && $d['sede'] !== '' ? (isset(self::SEDES[$d['sede']]) ? $d['sede'] : throw new ApiError(422, 'Sede no válida')) : null;
+        $sede = isset($d['sede']) && $d['sede'] !== '' ? (Sedes::activa($d['sede']) ? $d['sede'] : throw new ApiError(422, 'Sede no válida')) : null;
         $q = Db::escritura()->prepare(self::SQL_CITA . " WHERE c.estado = 'pendiente' AND c.inicio > NOW() AND c.inicio >= ? AND c.inicio < ? + INTERVAL 1 DAY"
             . ($sede ? ' AND c.sede = ?' : ''));
         $q->execute(array_filter([$fecha->format('Y-m-d'), $fecha->format('Y-m-d'), $sede]));
@@ -617,7 +673,7 @@ final class CitasController
         $claims = Guard::usuario(Guard::CLINICA);
         $d = Http::body();
         Validar::sinAtaques($d);
-        $sede = is_string($d['sede'] ?? null) && isset(self::SEDES[$d['sede']]) ? $d['sede'] : throw new ApiError(422, 'Sede no válida', ['campo' => 'sede']);
+        $sede = is_string($d['sede'] ?? null) && Sedes::activa($d['sede']) ? $d['sede'] : throw new ApiError(422, 'Sede no válida', ['campo' => 'sede']);
         $fecha = self::fecha($d['fecha'] ?? null);
         $dia = $fecha->format('Y-m-d');
         $todoElDia = ($d['hora_inicio'] ?? '') === '' && ($d['hora_fin'] ?? '') === '';
@@ -707,6 +763,10 @@ final class CitasController
         if (in_array($nuevo, ['atendida', 'no_asistio'], true) && substr($cita['inicio'], 0, 10) > date('Y-m-d')) {
             throw new ApiError(422, 'Solo se marca como atendida o no asistió el día de la cita o después', ['campo' => 'estado']);
         }
+        // Una consulta atendida siempre tiene su ficha: se marca sola al guardarla el veterinario.
+        if ($nuevo === 'atendida' && $cita['servicio'] === self::SERVICIO_CLINICO && $cita['historial_id'] === null) {
+            throw new ApiError(422, 'Una consulta se marca atendida al guardar su ficha clínica', ['campo' => 'estado']);
+        }
         $reversion = in_array("{$cita['estado']}>$nuevo", self::REVERSIONES, true);
         if ($reversion && $cita['estado'] === 'atendida' && $cita['historial_id'] !== null) {
             throw new ApiError(409, 'Esta consulta ya tiene ficha clínica: corrígela con una adenda');
@@ -725,6 +785,25 @@ final class CitasController
         if (in_array($nuevo, ['confirmada', 'cancelada'], true) && $cita['inicio'] > date('Y-m-d H:i:s')) {
             $this->notificar($nuevo, $this->citaPorId($id), $comentario);
         }
+        return [200, ['cita' => self::citaJson($this->citaPorId($id), true)]];
+    }
+
+    /** El personal confirma que el cliente de verdad faltó a una cita que se cerró sola: desde aquí cuenta. */
+    public function confirmarFalta(string $id): array
+    {
+        $claims = Guard::usuario(Guard::CLINICA);
+        $cita = $this->citaPorId($id) ?? throw new ApiError(404, 'Cita no encontrada');
+        if ($cita['estado'] !== 'no_asistio' || !(int) $cita['cierre_automatico']) {
+            throw new ApiError(409, 'Esta cita no está por revisar');
+        }
+        $db = Db::escritura();
+        $db->prepare('UPDATE citas SET cierre_automatico = 0 WHERE id = ? AND cierre_automatico = 1')->execute([$id]);
+        $db->prepare('INSERT INTO historial_citas (cita_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$id, 'no_asistio', 'no_asistio', (int) $claims['sub'], 'Falta confirmada por el personal']);
+        Auditoria::registrar('CITA_ESTADO_CAMBIADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_anterior' => ['cita_id' => $id, 'estado' => 'no_asistio', 'cierre_automatico' => true],
+            'dato_nuevo'    => ['cita_id' => $id, 'estado' => 'no_asistio', 'cierre_automatico' => false, 'comentario' => 'Falta confirmada'],
+        ]);
         return [200, ['cita' => self::citaJson($this->citaPorId($id), true)]];
     }
 
@@ -788,8 +867,9 @@ final class CitasController
             throw new ApiError(422, 'Elige un servicio por turnos', ['campo' => 'servicio']);
         }
         $dias = $d['dias'] ?? (isset($actual) ? array_map('intval', explode(',', $actual['dias'])) : [1, 2, 3, 4, 5, 6]);
-        if (!is_array($dias) || !$dias || array_diff($dias, [1, 2, 3, 4, 5, 6])) {
-            throw new ApiError(422, 'Elige al menos un día de lunes a sábado', ['campo' => 'dias']);
+        $validos = array_filter([1, 2, 3, 4, 5, 6, 7], fn($n) => $n < 7 || Sedes::abreElDia(7));
+        if (!is_array($dias) || !$dias || array_diff($dias, $validos)) {
+            throw new ApiError(422, count($validos) === 7 ? 'Elige al menos un día' : 'Elige al menos un día de lunes a sábado', ['campo' => 'dias']);
         }
         sort($dias);
         $inicio = self::horaTurno($d['hora_inicio'] ?? substr($actual['hora_inicio'] ?? '08:00', 0, 5), 'hora_inicio');
@@ -804,6 +884,7 @@ final class CitasController
         $nuevo = [
             'servicio' => $servicio, 'nombre' => isset($d['nombre']) ? Validar::texto($d, 'nombre', 3, 80) : ($actual['nombre'] ?? Validar::texto($d, 'nombre', 3, 80)),
             'usuario_id' => array_key_exists('usuario_id', $d) ? (is_int($d['usuario_id']) && $d['usuario_id'] > 0 ? $d['usuario_id'] : null) : ($actual['usuario_id'] ?? null),
+            'colegiado' => array_key_exists('colegiado', $d) ? (isset($d['colegiado']) && $d['colegiado'] !== '' ? Validar::texto($d, 'colegiado', 1, 20) : null) : ($actual['colegiado'] ?? null),
             'dias' => implode(',', $dias), 'hora_inicio' => "$inicio:00", 'hora_fin' => "$fin:00", 'activo' => (int) $activo,
         ];
 
@@ -817,11 +898,11 @@ final class CitasController
                 $n = count($fuera);
                 throw new ApiError(409, "Tiene $n " . ($n === 1 ? 'cita próxima' : 'citas próximas') . ' fuera de ese horario. Reprográmalas primero en la agenda', ['citas' => $n]);
             }
-            $db->prepare('UPDATE profesionales SET nombre = ?, usuario_id = ?, dias = ?, hora_inicio = ?, hora_fin = ?, activo = ? WHERE id = ?')
-                ->execute([$nuevo['nombre'], $nuevo['usuario_id'], $nuevo['dias'], $nuevo['hora_inicio'], $nuevo['hora_fin'], $nuevo['activo'], $id]);
+            $db->prepare('UPDATE profesionales SET nombre = ?, usuario_id = ?, colegiado = ?, dias = ?, hora_inicio = ?, hora_fin = ?, activo = ? WHERE id = ?')
+                ->execute([$nuevo['nombre'], $nuevo['usuario_id'], $nuevo['colegiado'], $nuevo['dias'], $nuevo['hora_inicio'], $nuevo['hora_fin'], $nuevo['activo'], $id]);
         } else {
-            $db->prepare('INSERT INTO profesionales (servicio, nombre, usuario_id, dias, hora_inicio, hora_fin, activo) VALUES (?, ?, ?, ?, ?, ?, ?)')
-                ->execute([$servicio, $nuevo['nombre'], $nuevo['usuario_id'], $nuevo['dias'], $nuevo['hora_inicio'], $nuevo['hora_fin'], $nuevo['activo']]);
+            $db->prepare('INSERT INTO profesionales (servicio, nombre, usuario_id, colegiado, dias, hora_inicio, hora_fin, activo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+                ->execute([$servicio, $nuevo['nombre'], $nuevo['usuario_id'], $nuevo['colegiado'], $nuevo['dias'], $nuevo['hora_inicio'], $nuevo['hora_fin'], $nuevo['activo']]);
             $id = (int) $db->lastInsertId();
         }
         Auditoria::registrar('PROFESIONAL_ACTUALIZADO', 'EXITO', Auditoria::actor($claims) + [
@@ -835,7 +916,7 @@ final class CitasController
     {
         return [
             'id' => (int) $p['id'], 'servicio' => ['slug' => $p['servicio'], 'nombre' => $p['servicio_nombre'] ?? $p['servicio']], 'nombre' => $p['nombre'],
-            'usuario_id' => $p['usuario_id'] !== null ? (int) $p['usuario_id'] : null, 'dias' => array_map('intval', explode(',', $p['dias'])),
+            'usuario_id' => $p['usuario_id'] !== null ? (int) $p['usuario_id'] : null, 'colegiado' => $p['colegiado'], 'dias' => array_map('intval', explode(',', $p['dias'])),
             'hora_inicio' => substr($p['hora_inicio'], 0, 5), 'hora_fin' => substr($p['hora_fin'], 0, 5), 'activo' => (bool) $p['activo'],
         ];
     }
@@ -846,7 +927,7 @@ final class CitasController
     public function contadoresClientes(): array
     {
         Guard::usuario(Guard::CLINICA);
-        $q = Db::escritura()->query("SELECT id_cliente, SUM(estado = 'cancelada') AS canceladas, SUM(estado = 'no_asistio') AS faltas,
+        $q = Db::escritura()->query("SELECT id_cliente, SUM(estado = 'cancelada') AS canceladas, SUM(estado = 'no_asistio' AND cierre_automatico = 0) AS faltas,
                                             SUM(estado = 'atendida') AS atendidas, COUNT(DISTINCT mascota_id) AS mascotas
                                        FROM citas GROUP BY id_cliente");
         $r = [];
@@ -870,7 +951,7 @@ final class CitasController
         $contar = fn(string $e) => count(array_filter($citas, fn($c) => $c['estado'] === $e));
         return [200, [
             'mascotas' => $mascotas, 'citas' => $citas,
-            'contadores' => ['canceladas' => $contar('cancelada'), 'faltas' => $contar('no_asistio'), 'atendidas' => $contar('atendida')],
+            'contadores' => ['canceladas' => $contar('cancelada'), 'faltas' => count(array_filter($citas, fn($c) => $c['estado'] === 'no_asistio' && !$c['por_revisar'])), 'atendidas' => $contar('atendida')],
             'telefono' => $citas[0]['cliente']['telefono'] ?? null,
         ]];
     }
@@ -890,12 +971,18 @@ final class CitasController
                                   AND NOT EXISTS (SELECT 1 FROM vacunas n WHERE n.mascota_id = v.mascota_id AND n.tipo = v.tipo AND n.nombre = v.nombre
                                                   AND n.fecha_aplicacion > v.fecha_aplicacion)
                                 ORDER BY v.proxima_dosis LIMIT 30")->fetchAll();
-        $faltas = $db->query(self::SQL_CITA . " WHERE c.estado = 'no_asistio' AND c.inicio >= CURDATE() - INTERVAL 14 DAY ORDER BY c.inicio DESC LIMIT 20")->fetchAll();
+        $faltas = $db->query(self::SQL_CITA . " WHERE c.estado = 'no_asistio' AND c.cierre_automatico = 0 AND c.inicio >= CURDATE() - INTERVAL 14 DAY ORDER BY c.inicio DESC LIMIT 20")->fetchAll();
+        // Lo que quedó sin aclarar: citas cerradas solas y consultas atendidas sin ficha.
+        $revisar = $db->query(self::SQL_CITA . " WHERE c.inicio >= CURDATE() - INTERVAL 60 DAY
+                                                  AND ((c.estado = 'no_asistio' AND c.cierre_automatico = 1)
+                                                    OR (c.estado = 'atendida' AND c.servicio = '" . self::SERVICIO_CLINICO . "' AND h.id IS NULL))
+                                                ORDER BY c.inicio DESC LIMIT 30")->fetchAll();
         return [200, [
             'hoy' => ['total' => array_sum($porEstado) - (int) ($porEstado['cancelada'] ?? 0), 'por_estado' => array_map('intval', $porEstado)],
             'pendientes' => array_map(fn($p) => ['fecha' => $p['dia'], 'citas' => (int) $p['n']], $pendientes),
             'vacunas' => $vacunas,
             'faltas' => array_map(fn($c) => self::citaJson($c, true), $faltas),
+            'por_revisar' => array_map(fn($c) => self::citaJson($c, true), $revisar),
         ]];
     }
 
@@ -988,6 +1075,7 @@ final class CitasController
     public function registrarHistorial(string $id): array
     {
         $claims = Guard::usuario(Guard::VETERINARIO);
+        $firma = $this->firmante($claims);
         $d = Http::body();
         Validar::sinAtaques($d);
         $cita = $this->citaPorId($id) ?? throw new ApiError(404, 'Cita no encontrada');
@@ -1014,7 +1102,7 @@ final class CitasController
                 throw new ApiError(409, "Una cita $anterior no lleva historial");
             }
             try {
-                $this->insertarFicha($db, $historialId, $id, $cita['mascota_id'], $cita['inicio'], $ficha, $claims);
+                $this->insertarFicha($db, $historialId, $id, $cita['mascota_id'], $cita['inicio'], $ficha, $claims, $firma);
             } catch (\PDOException $e) {
                 if (($e->errorInfo[1] ?? null) === 1062) {
                     throw new ApiError(409, 'Esta consulta ya tiene su historial registrado');
@@ -1022,7 +1110,7 @@ final class CitasController
                 throw $e;
             }
             if ($anterior !== 'atendida') {
-                $db->prepare("UPDATE citas SET estado = 'atendida' WHERE id = ?")->execute([$id]);
+                $db->prepare("UPDATE citas SET estado = 'atendida', cierre_automatico = 0 WHERE id = ?")->execute([$id]);
                 $db->prepare('INSERT INTO historial_citas (cita_id, estado_anterior, estado_nuevo, cambiado_por, comentario) VALUES (?, ?, ?, ?, ?)')
                     ->execute([$id, $anterior, 'atendida', (int) $claims['sub'], 'Consulta registrada en el historial clínico']);
             }
@@ -1042,10 +1130,28 @@ final class CitasController
         return [201, ['historial' => $this->consultaPorId($cita['mascota_id'], $historialId)]];
     }
 
+    /**
+     * Quién firma lo clínico. Un administrador solo escribe en la ficha si su cuenta está vinculada a un
+     * veterinario del equipo; así un diagnóstico nunca queda a nombre de alguien que no lo es.
+     * @return array{nombre: ?string, colegiado: ?string}
+     */
+    private function firmante(array $claims): array
+    {
+        $q = Db::escritura()->prepare('SELECT nombre, colegiado FROM profesionales WHERE usuario_id = ? AND servicio = ? AND activo = 1 ORDER BY id LIMIT 1');
+        $q->execute([(int) $claims['sub'], self::SERVICIO_CLINICO]);
+        $p = $q->fetch();
+        if (!$p && $claims['rol'] !== 'veterinario') {
+            Auditoria::registrar('ACCESO_DENEGADO', 'FALLO', Auditoria::actor($claims) + ['dato_nuevo' => ['recurso' => 'ficha clínica', 'motivo' => 'la cuenta no está vinculada a un veterinario']]);
+            throw new ApiError(403, 'Solo un veterinario escribe en la ficha. Si lo eres, vincula tu cuenta en Agenda → Equipo y horarios', ['motivo' => 'sin_vincular']);
+        }
+        return ['nombre' => $p['nombre'] ?? null, 'colegiado' => $p['colegiado'] ?? null];
+    }
+
     /** Consulta sin cita previa (urgencias o gente que llega sin cita): queda con la fecha y hora de ahora. */
     public function registrarConsultaSinCita(string $mascotaId): array
     {
         $claims = Guard::usuario(Guard::VETERINARIO);
+        $firma = $this->firmante($claims);
         $d = Http::body();
         Validar::sinAtaques($d);
         $m = $this->mascotaAdmin($mascotaId);
@@ -1057,7 +1163,7 @@ final class CitasController
         $historialId = Jwt::uuid();
         $db->beginTransaction();
         try {
-            $this->insertarFicha($db, $historialId, null, $mascotaId, date('Y-m-d H:i:s'), $ficha, $claims);
+            $this->insertarFicha($db, $historialId, null, $mascotaId, date('Y-m-d H:i:s'), $ficha, $claims, $firma);
             $db->commit();
         } catch (\Throwable $e) {
             $db->rollBack();
@@ -1071,6 +1177,7 @@ final class CitasController
     public function agregarAdenda(string $historialId): array
     {
         $claims = Guard::usuario(Guard::VETERINARIO);
+        $firma = $this->firmante($claims);
         $d = Http::body();
         Validar::sinAtaques($d);
         $q = Db::escritura()->prepare('SELECT id, mascota_id, cita_id FROM historial_clinico WHERE id = ?');
@@ -1081,8 +1188,8 @@ final class CitasController
         }
         $texto = Validar::texto($d, 'texto', 3, 1000);
         $db = Db::escritura();
-        $db->prepare('INSERT INTO historial_adendas (historial_id, texto, registrado_por, registrado_email) VALUES (?, ?, ?, ?)')
-            ->execute([$historialId, $texto, (int) $claims['sub'], $claims['email']]);
+        $db->prepare('INSERT INTO historial_adendas (historial_id, texto, registrado_por, registrado_email, registrado_nombre) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$historialId, $texto, (int) $claims['sub'], $claims['email'], $firma['nombre']]);
         // A.5.34: el texto de la corrección no va a la bitácora, igual que el diagnóstico.
         Auditoria::registrar('HISTORIAL_CORREGIDO', 'EXITO', Auditoria::actor($claims) + [
             'dato_nuevo' => ['adenda_id' => (int) $db->lastInsertId(), 'historial_id' => $historialId, 'cita_id' => $h['cita_id'], 'mascota_id' => $h['mascota_id']],
@@ -1184,18 +1291,18 @@ final class CitasController
         return [200, ['mascota' => self::mascotaJson($m), 'vacunas' => $this->historialMascota($mascotaId)['vacunas']]];
     }
 
-    private function insertarFicha(\PDO $db, string $id, ?string $citaId, string $mascotaId, string $fecha, array $f, array $claims): void
+    private function insertarFicha(\PDO $db, string $id, ?string $citaId, string $mascotaId, string $fecha, array $f, array $claims, array $firma): void
     {
         $db->prepare('INSERT INTO historial_clinico (id, cita_id, mascota_id, fecha, motivo, anamnesis, peso_kg, temperatura_c, frecuencia_cardiaca,
                           frecuencia_respiratoria, mucosas, hidratacion, condicion_corporal, diagnostico, tratamiento, indicaciones, proximo_control,
-                          registrado_por, registrado_email)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                          registrado_por, registrado_email, registrado_nombre, registrado_colegiado)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
             ->execute([$id, $citaId, $mascotaId, $fecha, $f['motivo'], $f['anamnesis'], $f['peso_kg'], $f['temperatura_c'], $f['frecuencia_cardiaca'],
                        $f['frecuencia_respiratoria'], $f['mucosas'], $f['hidratacion'], $f['condicion_corporal'], $f['diagnostico'], $f['tratamiento'],
-                       $f['indicaciones'], $f['proximo_control'], (int) $claims['sub'], $claims['email']]);
-        $insMed = $db->prepare('INSERT INTO medicamentos (historial_id, nombre, dosis, frecuencia, duracion) VALUES (?, ?, ?, ?, ?)');
+                       $f['indicaciones'], $f['proximo_control'], (int) $claims['sub'], $claims['email'], $firma['nombre'], $firma['colegiado']]);
+        $insMed = $db->prepare('INSERT INTO medicamentos (historial_id, nombre, dosis, frecuencia, duracion, lote) VALUES (?, ?, ?, ?, ?, ?)');
         foreach ($f['medicamentos'] as $med) {
-            $insMed->execute([$id, $med['nombre'], $med['dosis'], $med['frecuencia'], $med['duracion']]);
+            $insMed->execute([$id, $med['nombre'], $med['dosis'], $med['frecuencia'], $med['duracion'], $med['lote']]);
         }
         $insVacuna = $db->prepare('INSERT INTO vacunas (id, mascota_id, historial_id, tipo, nombre, lote, fecha_aplicacion, proxima_dosis, registrado_por)
                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -1236,7 +1343,7 @@ final class CitasController
         $q->execute([$mascotaId]);
         $medicamentos = [];
         foreach ($q->fetchAll() as $d) {
-            $medicamentos[$d['historial_id']][] = ['nombre' => $d['nombre'], 'dosis' => $d['dosis'], 'frecuencia' => $d['frecuencia'], 'duracion' => $d['duracion']];
+            $medicamentos[$d['historial_id']][] = ['nombre' => $d['nombre'], 'dosis' => $d['dosis'], 'frecuencia' => $d['frecuencia'], 'duracion' => $d['duracion'], 'lote' => $d['lote']];
         }
         $q = $db->prepare('SELECT a.* FROM historial_adjuntos a JOIN historial_clinico h ON h.id = a.historial_id WHERE h.mascota_id = ? ORDER BY a.id');
         $q->execute([$mascotaId]);
@@ -1294,15 +1401,16 @@ final class CitasController
                 'adendas' => $adendas[$h['id']] ?? [],
                 'adjuntos' => $adjuntos[$h['id']] ?? [],
                 'registrado_por' => self::autor($h),
+                'registrado_colegiado' => $h['registrado_colegiado'],
             ], $consultas),
             'vacunas' => $lista,
         ];
     }
 
-    /** Quién registró algo: su correo, o su id en los registros anteriores a que se guardara el correo. */
+    /** Quién registró algo: su nombre del equipo; si no, su correo o, en lo más antiguo, su id. */
     private static function autor(array $fila): string
     {
-        return $fila['registrado_email'] ?? 'Usuario #' . $fila['registrado_por'];
+        return $fila['registrado_nombre'] ?? $fila['registrado_email'] ?? 'Usuario #' . $fila['registrado_por'];
     }
 
     /** Valida la ficha clínica completa. Solo el diagnóstico es obligatorio. */
@@ -1355,7 +1463,7 @@ final class CitasController
         ];
     }
 
-    /** @return list<array{nombre: string, dosis: ?string, frecuencia: ?string, duracion: ?string}> */
+    /** @return list<array{nombre: string, dosis: ?string, frecuencia: ?string, duracion: ?string, lote: ?string}> */
     private static function medicamentos(mixed $lista): array
     {
         if (!is_array($lista) || !array_is_list($lista) || count($lista) > self::MAX_MEDICAMENTOS) {
@@ -1367,7 +1475,8 @@ final class CitasController
             }
             $opcional = fn(string $campo) => isset($m[$campo]) && $m[$campo] !== '' ? Validar::texto($m, $campo, 1, 60) : null;
             return ['nombre' => Validar::texto($m, 'nombre', 2, 80), 'dosis' => $opcional('dosis'), 'frecuencia' => $opcional('frecuencia'),
-                    'duracion' => $opcional('duracion')];
+                    'duracion' => $opcional('duracion'),
+                    'lote' => isset($m['lote']) && $m['lote'] !== '' ? Validar::texto($m, 'lote', 1, 40) : null];
         }, $lista);
     }
 
@@ -1411,11 +1520,12 @@ final class CitasController
     // ---------- Apoyo ----------
 
     private const SQL_CITA = 'SELECT c.*, m.nombre AS mascota_nombre, m.especie, m.raza, m.notas AS mascota_notas, m.alergias, m.enfermedades_cronicas,
-                                     s.nombre AS servicio_nombre, s.modalidad, pr.nombre AS profesional_nombre,
-                                     h.id AS historial_id
+                                     s.nombre AS servicio_nombre, s.modalidad, s.precio_desde AS servicio_precio, pr.nombre AS profesional_nombre,
+                                     h.id AS historial_id, co.id AS cobro_id, co.numero AS cobro_numero, co.estado AS cobro_estado, co.total AS cobro_total
                                 FROM citas c JOIN mascotas m ON m.id = c.mascota_id JOIN servicios s ON s.slug = c.servicio
                                 LEFT JOIN profesionales pr ON pr.servicio = c.servicio AND pr.id = c.cupo
-                                LEFT JOIN historial_clinico h ON h.cita_id = c.id';
+                                LEFT JOIN historial_clinico h ON h.cita_id = c.id
+                                LEFT JOIN cobros co ON co.cita_id = c.id AND co.vigente = 1';
 
     /** Cambio de estado con bloqueo de fila: dos personas no pisan el mismo cambio. */
     private function moverEstado(array $cita, string $nuevo, array $claims, ?string $comentario, string $evento): void
@@ -1429,8 +1539,11 @@ final class CitasController
             if ($anterior !== $cita['estado']) {
                 throw new ApiError(409, 'La cita cambió mientras tanto, recarga');
             }
+            if ($anterior === 'cancelada') {
+                $this->tomarLugarEnSede($db, $this->servicio($cita['servicio']), $cita['inicio'], $cita['id']);
+            }
             try {
-                $db->prepare('UPDATE citas SET estado = ? WHERE id = ?')->execute([$nuevo, $cita['id']]);
+                $db->prepare('UPDATE citas SET estado = ?, cierre_automatico = 0 WHERE id = ?')->execute([$nuevo, $cita['id']]);
             } catch (\PDOException $e) {
                 // Reactivar una cancelada vuelve a ocupar su cupo: si otra cita lo tomó, el índice único lo impide.
                 if (($e->errorInfo[1] ?? null) === 1062) {
@@ -1456,15 +1569,22 @@ final class CitasController
      * En hospedaje cuenta las estadías que pasan cada noche; en el resto, las citas de cada turno.
      * @return array{citas: array<string, int>, bloqueos: array<string, list<array>>}
      */
-    private function ocupacion(\PDO $db, array $servicio, string $desde, string $hasta): array
+    private function ocupacion(\PDO $db, array $servicio, string $desde, string $hasta, ?string $excluir = null): array
     {
         $citas = [];
+        $enSede = [];
+        if ($servicio['modalidad'] === 'turno' && Sedes::limite($servicio['sede']) !== null) {
+            $q = $db->prepare("SELECT DATE_FORMAT(c.inicio, '%Y-%m-%d %H:%i') AS turno, COUNT(*) AS n FROM citas c JOIN servicios s ON s.slug = c.servicio
+                                WHERE c.sede = ? AND s.modalidad = 'turno' AND c.ocupa = 1 AND c.id <> ? AND c.inicio >= ? AND c.inicio < ? + INTERVAL 1 DAY GROUP BY c.inicio");
+            $q->execute([$servicio['sede'], $excluir ?? '', $desde, $hasta]);
+            $enSede = array_map('intval', array_column($q->fetchAll(), 'n', 'turno'));
+        }
         if ($servicio['modalidad'] === 'estadia') {
             $q = $db->prepare('SELECT inicio, fin FROM citas WHERE servicio = ? AND ocupa = 1 AND inicio < ? + INTERVAL 1 DAY AND fin > ?');
             $q->execute([$servicio['slug'], $hasta, $desde]);
             foreach ($q->fetchAll() as $e) {
-                for ($n = substr($e['inicio'], 0, 10); "$n 08:00:00" < $e['fin']; $n = date('Y-m-d', strtotime("$n +1 day"))) {
-                    $citas["$n 08:00"] = ($citas["$n 08:00"] ?? 0) + 1;
+                for ($n = substr($e['inicio'], 0, 10); "$n " . self::ENTRADA . ':00' < $e['fin']; $n = date('Y-m-d', strtotime("$n +1 day"))) {
+                    $citas["$n " . self::ENTRADA] = ($citas["$n " . self::ENTRADA] ?? 0) + 1;
                 }
             }
         } else {
@@ -1482,7 +1602,7 @@ final class CitasController
         foreach ($q->fetchAll() as $b) {
             $bloqueos[$b['fecha']][] = $b;
         }
-        return ['citas' => $citas, 'ocupados' => $ocupados ?? [], 'bloqueos' => $bloqueos];
+        return ['citas' => $citas, 'ocupados' => $ocupados ?? [], 'bloqueos' => $bloqueos, 'en_sede' => $enSede];
     }
 
     /** Ids de los profesionales del servicio que trabajan ese día y hora, sin los de $ocupados. */
@@ -1520,17 +1640,21 @@ final class CitasController
      */
     private function turnosDia(array $servicio, string $dia, array $ocupacion, bool $llenos, bool $personal, ?int $profesional = null): array
     {
-        if ((int) date('N', strtotime($dia)) === 7) {
-            return []; // domingo cerrado
+        $abierto = Sedes::horario($servicio['sede'], $dia);
+        if ($abierto === null) {
+            return []; // ese día la sede no abre
         }
         $horas = [];
         if ($servicio['modalidad'] === 'turno') {
-            for ($min = self::APERTURA * 60; $min < self::CIERRE * 60; $min += self::TURNO_MIN) {
+            [$h, $m] = array_map('intval', explode(':', $abierto['abre']));
+            [$hc, $mc] = array_map('intval', explode(':', $abierto['cierra']));
+            for ($min = $h * 60 + $m; $min < $hc * 60 + $mc; $min += self::TURNO_MIN) {
                 $horas[] = sprintf('%02d:%02d', intdiv($min, 60), $min % 60);
             }
         } else {
-            $horas[] = sprintf('%02d:00', self::APERTURA);
+            $horas[] = self::ENTRADA;
         }
+        $limiteSede = $servicio['modalidad'] === 'turno' ? Sedes::limite($servicio['sede']) : null;
         $limite = $personal ? time() - self::TURNO_MIN * 60 : time() + self::ANTICIPACION_MIN * 60;
         $turnos = [];
         foreach ($horas as $hora) {
@@ -1558,6 +1682,9 @@ final class CitasController
             } else {
                 $libres = (int) $servicio['cupos'] - ($ocupacion['citas']["$dia $hora"] ?? 0);
             }
+            if ($limiteSede !== null) {
+                $libres = min($libres, $limiteSede - ($ocupacion['en_sede']["$dia $hora"] ?? 0));
+            }
             if ($libres > 0 || $llenos) {
                 $turnos[] = ['hora' => $hora, 'libres' => max(0, $libres)];
             }
@@ -1572,7 +1699,7 @@ final class CitasController
         $ocupacion = $this->ocupacion($db, $servicio, $entrada, $ultima);
         $libres = (int) $servicio['cupos'];
         for ($n = $entrada; $n < $salida; $n = date('Y-m-d', strtotime("$n +1 day"))) {
-            $libres = min($libres, (int) $servicio['cupos'] - ($ocupacion['citas']["$n 08:00"] ?? 0));
+            $libres = min($libres, (int) $servicio['cupos'] - ($ocupacion['citas']["$n " . self::ENTRADA] ?? 0));
         }
         return max(0, $libres);
     }
@@ -1607,7 +1734,7 @@ final class CitasController
             'tipo'       => $tipo,
             'comentario' => $comentario,
             'cita'       => [
-                'id' => $c['id'], 'inicio' => substr($c['inicio'], 0, 16), 'servicio' => $c['servicio_nombre'], 'sede' => self::SEDES[$c['sede']],
+                'id' => $c['id'], 'inicio' => substr($c['inicio'], 0, 16), 'servicio' => $c['servicio_nombre'], 'sede' => Sedes::texto($c['sede']),
                 'mascota' => $c['mascota_nombre'], 'cliente_nombre' => $c['cliente_nombre'], 'cliente_email' => $c['cliente_email'],
             ],
         ], 12);
@@ -1622,16 +1749,17 @@ final class CitasController
         return ($json['enviado'] ?? false) === true;
     }
 
-    /** Hora «HH:MM» de un turno válido (8:00 a 20:00 cada 30 min; 20:00 solo como fin). */
+    /** Hora «HH:MM» de un turno válido: cada 30 min, dentro del horario de las sedes activas. */
     private static function horaTurno(mixed $valor, string $campo): string
     {
         if (is_string($valor) && preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/', $valor, $m)) {
-            $min = (int) $m[1] * 60 + (int) $m[2];
-            if ($min % self::TURNO_MIN === 0 && $min >= self::APERTURA * 60 && $min <= self::CIERRE * 60) {
+            [$abre, $cierra] = Sedes::rango();
+            if (((int) $m[2]) % self::TURNO_MIN === 0 && $valor >= $abre && $valor <= $cierra) {
                 return $valor;
             }
         }
-        throw new ApiError(422, 'Hora no válida: de 08:00 a 20:00, cada 30 minutos', ['campo' => $campo]);
+        [$abre, $cierra] = Sedes::rango();
+        throw new ApiError(422, "Hora no válida: de $abre a $cierra, cada 30 minutos", ['campo' => $campo]);
     }
 
     private function bloqueoPorId(int $id): ?array
@@ -1644,7 +1772,7 @@ final class CitasController
     private static function bloqueoJson(array $b): array
     {
         return [
-            'id' => (int) $b['id'], 'sede' => ['codigo' => $b['sede'], 'nombre' => self::SEDES[$b['sede']]], 'fecha' => $b['fecha'],
+            'id' => (int) $b['id'], 'sede' => ['codigo' => $b['sede'], 'nombre' => Sedes::texto($b['sede'])], 'fecha' => $b['fecha'],
             'hora_inicio' => $b['hora_inicio'] !== null ? substr($b['hora_inicio'], 0, 5) : null,
             'hora_fin' => $b['hora_fin'] !== null ? substr($b['hora_fin'], 0, 5) : null,
             'motivo' => $b['motivo'],
@@ -1655,7 +1783,8 @@ final class CitasController
     private function servicio(mixed $slug): array
     {
         if (is_string($slug) && preg_match('/^[a-z]{3,30}$/', $slug)) {
-            $q = Db::escritura()->prepare('SELECT slug, nombre, sede, modalidad, cupos FROM servicios WHERE slug = ? AND activo = 1');
+            $q = Db::escritura()->prepare('SELECT s.slug, s.nombre, s.sede, s.modalidad, s.cupos, s.precio_desde FROM servicios s JOIN sedes e ON e.codigo = s.sede AND e.activa = 1
+                                            WHERE s.slug = ? AND s.activo = 1');
             $q->execute([$slug]);
             if ($s = $q->fetch()) {
                 // Solo los servicios por turnos tienen equipo; sin profesionales activos, cupos numéricos.
@@ -1674,7 +1803,7 @@ final class CitasController
         if ($sede === null || $sede === '') {
             return null;
         }
-        return is_string($sede) && isset(self::SEDES[$sede]) ? $sede : throw new ApiError(422, 'Sede no válida', ['campo' => 'sede']);
+        return Sedes::existe($sede) ? $sede : throw new ApiError(422, 'Sede no válida', ['campo' => 'sede']);
     }
 
     /** Fecha Y-m-d entre hoy y MAX_DIAS (el personal puede consultar días pasados). */
@@ -1795,6 +1924,7 @@ final class CitasController
             'esterilizado' => $m['esterilizado'] !== null ? (bool) $m['esterilizado'] : null, 'color' => $m['color'], 'microchip' => $m['microchip'],
             'fecha_nacimiento' => $m['fecha_nacimiento'], 'peso_kg' => $m['peso_kg'] !== null ? (float) $m['peso_kg'] : null,
             'alergias' => $m['alergias'], 'enfermedades_cronicas' => $m['enfermedades_cronicas'], 'notas' => $m['notas'],
+            'fallecida_el' => $m['fallecida_el'] ?? null,
         ];
     }
 
@@ -1806,10 +1936,12 @@ final class CitasController
             'inicio'   => str_replace(' ', 'T', substr($c['inicio'], 0, 16)),
             'fin'      => $c['fin'] !== null ? str_replace(' ', 'T', substr($c['fin'], 0, 16)) : null,
             'servicio' => ['slug' => $c['servicio'], 'nombre' => $c['servicio_nombre'], 'modalidad' => $c['modalidad']],
-            'sede'     => ['codigo' => $c['sede'], 'nombre' => self::SEDES[$c['sede']]],
+            'sede'     => ['codigo' => $c['sede'], 'nombre' => Sedes::texto($c['sede'])],
             'profesional' => $c['profesional_nombre'],
             'mascota'  => ['id' => $c['mascota_id'], 'nombre' => $c['mascota_nombre'], 'especie' => $c['especie']],
             'notas'    => $c['notas'],
+            'por_revisar' => $c['estado'] === 'no_asistio' && (int) $c['cierre_automatico'] === 1,
+            'cobro'    => $c['cobro_id'] !== null ? ['id' => $c['cobro_id'], 'recibo' => CobrosController::numeroRecibo((int) $c['cobro_numero']), 'estado' => $c['cobro_estado'], 'total' => (float) $c['cobro_total']] : null,
             'codigo_verificacion' => $c['codigo_verificacion'],
             'puede_cancelar' => in_array($c['estado'], ['pendiente', 'confirmada'], true)
                 && strtotime($c['inicio']) - time() >= self::CANCELAR_HORAS * 3600,
@@ -1817,6 +1949,7 @@ final class CitasController
         if ($personal) {
             $json['cupo'] = (int) $c['cupo'];
             $json['clinica'] = $c['servicio'] === self::SERVICIO_CLINICO;
+            $json['servicio']['precio_desde'] = (float) $c['servicio_precio'];
             $json['tiene_historial'] = $c['historial_id'] !== null;
             $json['cliente'] = ['id' => (int) $c['id_cliente'], 'nombre' => $c['cliente_nombre'], 'email' => $c['cliente_email'], 'telefono' => $c['telefono']];
             $json['mascota'] += ['raza' => $c['raza'], 'notas' => $c['mascota_notas'], 'alergias' => $c['alergias'],

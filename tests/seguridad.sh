@@ -608,6 +608,8 @@ PELU=$(cita_pasada "$M1" peluqueria 11:00)
 PROX=$(gt -d "+1 year" +%F)
 FICHA=$(jq -nc --arg p "$PROX" '{peso_kg:15.2, diagnostico:"Otitis leve en oído derecho", tratamiento:"Gotas óticas cada 12 h por 7 días", vacunas:[{nombre:"Rabia", lote:"RB-2291", proxima_dosis:$p}, {nombre:"Séxtuple", proxima_dosis:$p}]}')
 esperar "un cliente no puede registrar historial → 403" 403 "$(historial "$CONSULTA" "$T2" "$FICHA" | tail -1)"
+esperar "un administrador sin vincular no escribe en la ficha → 403" 403 "$(historial "$CONSULTA" "$ADMIN" "$FICHA" | tail -1)"
+esperar "se vincula su cuenta a un veterinario del equipo" 200 "$(codigo -X PATCH -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d "$(jq -nc --argjson u "$(auth_json GET "$ADMIN" /api/auth/me | jq '.usuario.id')" '{usuario_id:$u, colegiado:"T-1234"}')" "$BASE/api/citas/admin/equipo/2")"
 esperar "en una cita futura → 422" 422 "$(historial "$CITA3" "$ADMIN" "$FICHA" | tail -1)"
 esperar "en una cita de peluquería → 422" 422 "$(historial "$PELU" "$ADMIN" "$FICHA" | tail -1)"
 esperar "sin diagnóstico → 422" 422 "$(historial "$CONSULTA" "$ADMIN" "$(jq -c 'del(.diagnostico)' <<<"$FICHA")" | tail -1)"
@@ -663,6 +665,7 @@ esperar "si se reservó hace unas horas no se manda (ya recibió el de la reserv
 esperar "la vacuna que vence en 5 días se avisa" "1|Leptospirosis" "$(sqlc "SELECT aviso_at IS NOT NULL FROM vacunas WHERE id='$VAC_POR_VENCER'")|$(eventos RECORDATORIO_ENVIADO | jq -r --arg v "$VAC_POR_VENCER" '.[] | select(.dato_nuevo.vacuna_id==$v) | .dato_nuevo.vacuna')"
 esperar "una dosis ya renovada no se avisa" 0 "$(sqlc "SELECT aviso_at IS NOT NULL FROM vacunas WHERE id='$VAC_RENOVADA'")"
 esperar "la cita de hace 3 días sin atender queda «no asistió»" no_asistio "$(sqlc "SELECT estado FROM citas WHERE id='$VIEJA'")"
+esperar "y queda marcada como cierre automático, por revisar" 1 "$(sqlc "SELECT cierre_automatico FROM citas WHERE id='$VIEJA'")"
 esperar "CITA_ESTADO_CAMBIADO con origen cierre automático" "confirmada|no_asistio|cierre automático" "$(eventos CITA_ESTADO_CAMBIADO | jq -r --arg c "$VIEJA" '.[] | select(.dato_nuevo.cita_id==$c) | "\(.dato_anterior.estado)|\(.dato_nuevo.estado)|\(.dato_nuevo.origen)"')"
 esperar "la de ayer se deja abierta (el admin aún puede registrarla)" confirmada "$(sqlc "SELECT estado FROM citas WHERE id='$PELU'")"
 antes=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auditoria/eventos?accion=RECORDATORIO_ENVIADO&limite=1" | jq -r '.eventos[0].id')
@@ -928,6 +931,232 @@ esperar "los certificados reales quedaron en caché" true "$(docker compose exec
 docker compose exec -T redis redis-cli DEL google:certificados >/dev/null
 rm -rf "$G_DIR"
 [[ -n "$G_REINICIAR" ]] && docker compose up -d --wait auth-service >/dev/null 2>&1
+
+caso "CP-53 Sedes, horarios y precios desde el panel (A01, A03, A09)"
+respiro
+sede_patch() { "${C[@]}" -o /dev/null -w '%{http_code}' -X PATCH -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$3" "$BASE/api/citas/admin/sedes/$2"; }
+srv_patch() { "${C[@]}" -o /dev/null -w '%{http_code}' -X PATCH -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$3" "$BASE/api/citas/admin/servicios/$2"; }
+publicas=$("${C[@]}" "$BASE/api/citas/sedes")
+esperar "las sedes activas son públicas" true "$(jq '[.sedes[].codigo] | index("centro") != null' <<<"$publicas")"
+esperar "lo público no trae datos internos" false "$(jq '.sedes[0] | has("simultaneas") or has("citas_proximas")' <<<"$publicas")"
+esperar "sin token, el panel de sedes → 401" 401 "$(codigo "$BASE/api/citas/admin/sedes")"
+esperar "un cliente no administra sedes → 403" 403 "$(codigo -H "Authorization: Bearer $T2" "$BASE/api/citas/admin/sedes")"
+esperar "un cliente no cambia una sede → 403" 403 "$(sede_patch "$T2" centro '{"direccion":"Otra dirección 1-23"}')"
+esperar "un cliente no cambia precios → 403" 403 "$(srv_patch "$T2" veterinaria '{"precio_desde":1}')"
+DIR_ORIG=$(jq -r '.sedes[] | select(.codigo=="centro") | .direccion' <<<"$publicas")
+esperar "XSS en el nombre → 400" 400 "$(sede_patch "$ADMIN" centro '{"nombre":"<script>alert(1)</script>"}')"
+esperar "teléfono no válido → 422" 422 "$(sede_patch "$ADMIN" centro '{"telefono":"abc"}')"
+esperar "mascotas a la vez 0 → 422" 422 "$(sede_patch "$ADMIN" centro '{"simultaneas":0}')"
+esperar "cierre antes de la apertura → 422" 422 "$(sede_patch "$ADMIN" centro '{"horarios":[{"dia":1,"abre":"12:00","cierra":"10:00"}]}')"
+esperar "hora fuera de los 30 minutos → 422" 422 "$(sede_patch "$ADMIN" centro '{"horarios":[{"dia":1,"abre":"08:15","cierra":"10:00"}]}')"
+esperar "una sede cerrada toda la semana → 422" 422 "$(sede_patch "$ADMIN" centro '{"horarios":[{"dia":1,"abre":null,"cierra":null}]}')"
+esperar "desactivar una sede con servicios → 409" 409 "$(sede_patch "$ADMIN" centro '{"activa":false}')"
+esperar "cambiar la dirección → 200" 200 "$(sede_patch "$ADMIN" centro "{\"direccion\":\"Avenida Prueba $SUF\"}")"
+esperar "la dirección nueva llega a las reservas" true "$("${C[@]}" "$BASE/api/citas/servicios" | jq --arg s "Avenida Prueba $SUF" '[.servicios[] | select(.sede.codigo=="centro") | .sede.nombre | contains($s)] | all')"
+esperar "y a la lista de retiro de la tienda" true "$("${C[@]}" "$BASE/api/pedidos/sedes" | jq --arg s "Avenida Prueba $SUF" '[.sedes[] | contains($s)] | any')"
+esperar "SEDE_ACTUALIZADA guarda la dirección anterior y la nueva" "$DIR_ORIG|Avenida Prueba $SUF|admin@huellitas.gt" "$(evento_ultimo SEDE_ACTUALIZADA | jq -r '"\(.dato_anterior.direccion)|\(.dato_nuevo.direccion)|\(.usuario_email)"')"
+esperar "se restaura la dirección" 200 "$(sede_patch "$ADMIN" centro "$(jq -nc --arg d "$DIR_ORIG" '{direccion:$d}')")"
+esperar "la ruta interna no se publica por el gateway" 404 "$(codigo -X POST "$BASE/internal/citas/sedes-retiro")"
+esperar "ni responde sin JWT de servicio" 401 "$(docker compose exec -T auth-service curl -s -o /dev/null -w '%{http_code}' -X POST http://citas-service:8087/internal/citas/sedes-retiro)"
+PRECIO=$("${C[@]}" "$BASE/api/citas/servicios" | jq -r '.servicios[] | select(.slug=="veterinaria") | .precio_desde')
+esperar "precio no válido → 422" 422 "$(srv_patch "$ADMIN" veterinaria '{"precio_desde":-5}')"
+esperar "cambiar un precio → 200" 200 "$(srv_patch "$ADMIN" veterinaria '{"precio_desde":321.5}')"
+esperar "el precio nuevo es público" 321.5 "$("${C[@]}" "$BASE/api/citas/sedes" | jq '.servicios[] | select(.slug=="veterinaria") | .precio_desde')"
+esperar "SERVICIO_ACTUALIZADO guarda el precio anterior y el nuevo" "$PRECIO|321.5" "$(evento_ultimo SERVICIO_ACTUALIZADO | jq -r '"\(.dato_anterior.precio_desde)|\(.dato_nuevo.precio_desde)"')"
+srv_patch "$ADMIN" veterinaria "{\"precio_desde\":$PRECIO}" >/dev/null
+NUEVA=$(auth_json POST "$ADMIN" /api/citas/admin/sedes "$(jq -nc --arg n "Sede Prueba $SUF" '{nombre:$n, direccion:"Calle de prueba 1-23", telefono:"+502 5555-1234", horarios:([range(1;7)|{dia:., abre:"10:00", cierra:"12:00"}])}')")
+SEDE_N=$(jq -r .creada <<<"$NUEVA")
+esperar "crear una sede nueva (la base ya no se limita a tres)" true "$("${C[@]}" "$BASE/api/citas/sedes" | jq --arg c "$SEDE_N" '[.sedes[].codigo] | index($c) != null')"
+SRV_LIBRE=$(jq -r '[.servicios[] | select(.citas_proximas==0 and .modalidad=="turno" and .activo)][0].slug // empty' <<<"$NUEVA")
+if [[ -n "$SRV_LIBRE" ]]; then
+    SEDE_SRV=$(jq -r --arg s "$SRV_LIBRE" '.servicios[] | select(.slug==$s) | .sede' <<<"$NUEVA")
+    DIA_H=$(gt -d "+$(( 42 + 10#$SUF % 14 )) day" +%F); [[ $(gt -d "$DIA_H" +%u) == 7 ]] && DIA_H=$(gt -d "$DIA_H +1 day" +%F)
+    esperar "mover un servicio sin citas a la sede nueva → 200" 200 "$(srv_patch "$ADMIN" "$SRV_LIBRE" "{\"sede\":\"$SEDE_N\"}")"
+    esperar "los turnos siguen el horario de esa sede (10:00 a 11:30)" "10:00|11:30" "$(disp "$DIA_H" "$SRV_LIBRE" | jq -r '"\(.turnos[0].hora)|\(.turnos[-1].hora)"')"
+    esperar "se devuelve a su sede" 200 "$(srv_patch "$ADMIN" "$SRV_LIBRE" "{\"sede\":\"$SEDE_SRV\"}")"
+fi
+esperar "desactivar una sede sin servicios ni citas → 200" 200 "$(sede_patch "$ADMIN" "$SEDE_N" '{"activa":false}')"
+esperar "ya no se muestra en el sitio" false "$("${C[@]}" "$BASE/api/citas/sedes" | jq --arg c "$SEDE_N" '[.sedes[].codigo] | index($c) != null')"
+
+borrar_sede() { "${C[@]}" -w '\n%{http_code}' -X DELETE -H "Authorization: Bearer $1" "$BASE/api/citas/admin/sedes/$2"; }
+esperar "sin token no se elimina una sede → 401" 401 "$(codigo -X DELETE "$BASE/api/citas/admin/sedes/$SEDE_N")"
+esperar "un cliente no elimina sedes → 403" 403 "$(borrar_sede "$T2" "$SEDE_N" | tail -1)"
+r=$(borrar_sede "$ADMIN" centro)
+esperar "una sede con servicios no se elimina → 409" "409|true" "$(tail -1 <<<"$r")|$(head -n -1 <<<"$r" | jq '.servicios | length > 0')"
+esperar "una sede inexistente → 404" 404 "$(borrar_sede "$ADMIN" no-existe | tail -1)"
+CITA_N=$(cita_bd "$M1" peluqueria "$(gt -d '+9 day' '+%F') 10:00:00" "$(gt '+%F %T')" "$CLIENTE2")
+sqlc "UPDATE citas SET sede='$SEDE_N' WHERE id='$CITA_N'"
+r=$(borrar_sede "$ADMIN" "$SEDE_N")
+esperar "con una cita próxima no se elimina → 409" "409|1" "$(tail -1 <<<"$r")|$(head -n -1 <<<"$r" | jq .citas)"
+sqlc "UPDATE citas SET sede='centro', estado='cancelada' WHERE id='$CITA_N'"
+# Una cita pasada en esa sede: al eliminarla debe seguir diciendo dónde fue.
+sqlc "UPDATE citas SET sede='$SEDE_N' WHERE id='$CONSULTA'"
+esperar "sin servicios ni citas próximas se elimina → 200" 200 "$(borrar_sede "$ADMIN" "$SEDE_N" | tail -1)"
+esperar "SEDE_ELIMINADA guarda qué sede y quién" "$SEDE_N|Sede Prueba $SUF|admin@huellitas.gt" "$(evento_ultimo SEDE_ELIMINADA | jq -r '"\(.dato_nuevo.codigo)|\(.dato_anterior.nombre)|\(.usuario_email)"')"
+esperar "ya no sale en el panel" false "$(auth_json GET "$ADMIN" /api/citas/admin/sedes | jq --arg c "$SEDE_N" '[.sedes[].codigo] | index($c) != null')"
+esperar "ni se puede editar → 404" 404 "$(sede_patch "$ADMIN" "$SEDE_N" '{"activa":true}')"
+esperar "ni eliminar otra vez → 404" 404 "$(borrar_sede "$ADMIN" "$SEDE_N" | tail -1)"
+esperar "ni recibe servicios → 422" 422 "$(srv_patch "$ADMIN" veterinaria "{\"sede\":\"$SEDE_N\"}")"
+esperar "la fila sigue en la base, sin borrarse" 1 "$(sqlc "SELECT COUNT(*) FROM sedes WHERE codigo='$SEDE_N' AND eliminada_el IS NOT NULL")"
+esperar "la cita pasada conserva dónde fue" true "$(auth_json GET "$ADMIN" "/api/citas/admin/agenda?fecha=$(gt -d yesterday +%F)&sede=$SEDE_N" | jq --arg c "$CONSULTA" --arg n "Sede Prueba $SUF" '[.citas[] | select(.id==$c) | .sede.nombre | contains($n)] | any')"
+sqlc "UPDATE citas SET sede='centro' WHERE id='$CONSULTA'"
+
+caso "CP-54 Mascotas a la vez en una sede: sin doble reserva, aun con peticiones simultáneas (A04)"
+respiro
+agendar() { # agendar <mascota> <servicio> <día> <hora> → cuerpo<LF>código
+    "${C[@]}" -w '\n%{http_code}' -X POST -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' \
+        -d "$(jq -nc --arg m "$1" --arg s "$2" --arg d "$3" --arg h "$4" '{mascota_id:$m, servicio:$s, fecha:$d, hora:$h, nombre:"Dueña Prueba", email:"duena@correo.gt", telefono:"+502 5512-3478", notas:"Revisión general"}')" "$BASE/api/citas/admin/citas"
+}
+DIA_L=$(gt -d "+$(( 20 + 10#$SUF % 18 )) day" +%F); [[ $(gt -d "$DIA_L" +%u) == 7 ]] && DIA_L=$(gt -d "$DIA_L +1 day" +%F)
+PA=$(mascota "$T2" "Limite A $SUF"); PB=$(mascota "$T2" "Limite B $SUF"); PC=$(mascota "$T2" "Limite C $SUF")
+esperar "sin límite elegido y con varias sedes: consulta a las 09:00 → 201" 201 "$(agendar "$PA" veterinaria "$DIA_L" 09:00 | tail -1)"
+esperar "y peluquería a la misma hora (otra persona) → 201" 201 "$(agendar "$PB" peluqueria "$DIA_L" 09:00 | tail -1)"
+aviso=$(auth_json PATCH "$ADMIN" /api/citas/admin/sedes/centro '{"simultaneas":1}' | jq -r '.aviso // empty')
+esperar "al poner 1 a la vez, avisa de los horarios que ya lo superan" true "$(grep -q 'más de 1 a la vez' <<<"$aviso" && echo true || echo false)"
+r=$(agendar "$PA" veterinaria "$DIA_L" 10:00); CITA_L=$(head -n -1 <<<"$r" | jq -r .cita.id)
+esperar "con 1 a la vez: la primera mascota a las 10:00 → 201" 201 "$(tail -1 <<<"$r")"
+r=$(agendar "$PB" peluqueria "$DIA_L" 10:00)
+esperar "otra mascota a esa hora en otro servicio → 409" "409|sede_llena" "$(tail -1 <<<"$r")|$(head -n -1 <<<"$r" | jq -r .motivo)"
+esperar "el cliente tampoco puede reservarla → 409" 409 "$(reservar "$T2" "$PC" 10:00 "$DIA_L" | tail -1)"
+esperar "esa hora deja de ofrecerse en los dos servicios" 0 "$( (disp "$DIA_L" veterinaria; disp "$DIA_L" peluqueria) | jq -s '[.[].turnos[] | select(.hora=="10:00")] | length')"
+esperar "la hora siguiente sigue libre" 1 "$(disp "$DIA_L" peluqueria | jq '[.turnos[] | select(.hora=="10:30")][0].libres')"
+r=$(agendar "$PB" peluqueria "$DIA_L" 11:00); CITA_M=$(head -n -1 <<<"$r" | jq -r .cita.id)
+esperar "otra cita a las 11:00 → 201" 201 "$(tail -1 <<<"$r")"
+mover() { "${C[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d "{\"fecha\":\"$DIA_L\",\"hora\":\"$2\"}" "$BASE/api/citas/$1/reprogramar"; }
+esperar "reprogramarla a una hora ocupada → 409" 409 "$(mover "$CITA_M" 10:00)"
+esperar "reprogramarla a una hora libre → 200" 200 "$(mover "$CITA_M" 11:30)"
+esperar "cancelar libera el lugar" 200 "$(estado "$CITA_L" "$ADMIN" cancelada | tail -1)"
+esperar "otra mascota toma ese horario → 201" 201 "$(agendar "$PC" peluqueria "$DIA_L" 10:00 | tail -1)"
+esperar "reactivar la cancelada ya no cabe → 409" 409 "$("${C[@]}" -o /dev/null -w '%{http_code}' -X PATCH -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d '{"estado":"pendiente","comentario":"Se reactivó por error"}' "$BASE/api/citas/admin/$CITA_L/estado")"
+# Varias reservas a la vez, de mascotas y servicios distintos, por el último lugar: solo una puede ganar.
+respiro
+PAR_DIR=$(mktemp -d); i=0
+for s in veterinaria peluqueria veterinaria peluqueria veterinaria peluqueria; do i=$((i+1)); PM[$i]=$(mascota "$T2" "Par $i $SUF"); done
+i=0
+for s in veterinaria peluqueria veterinaria peluqueria veterinaria peluqueria; do i=$((i+1)); (agendar "${PM[$i]}" "$s" "$DIA_L" 14:00 | tail -1 >"$PAR_DIR/$i") & done
+wait
+esperar "6 reservas simultáneas a la misma hora: exactamente 1 entra" 1 "$(for f in "$PAR_DIR"/*; do cat "$f"; echo; done | grep -c '^201$')"
+esperar "y en la base queda una sola" 1 "$(sqlc "SELECT COUNT(*) FROM citas WHERE sede='centro' AND inicio='$DIA_L 14:00:00' AND ocupa=1")"
+rm -rf "$PAR_DIR"
+esperar "con 2 a la vez entran dos" 200 "$(sede_patch "$ADMIN" centro '{"simultaneas":2}')"
+esperar "la segunda a las 14:00 → 201" 201 "$(agendar "$PA" veterinaria "$DIA_L" 14:00 | tail -1)"
+esperar "la tercera → 409" 409 "$(agendar "$PB" peluqueria "$DIA_L" 14:00 | tail -1)"
+# Si solo queda una sede activa, sin elegir nada, se atiende de una en una.
+esperar "se vuelve a automático" 200 "$(sede_patch "$ADMIN" centro '{"simultaneas":null}')"
+SEDES_ON=$(sqlc "SELECT GROUP_CONCAT(CONCAT('''', codigo, '''')) FROM sedes WHERE activa = 1 AND codigo <> 'centro'")
+sqlc "UPDATE sedes SET activa = 0 WHERE codigo IN ($SEDES_ON)"
+esperar "con una sola sede activa, el límite automático es 1" 1 "$(auth_json GET "$ADMIN" /api/citas/admin/sedes | jq '.sedes[] | select(.codigo=="centro") | .limite')"
+esperar "la primera a las 15:00 → 201" 201 "$(agendar "$PA" veterinaria "$DIA_L" 15:00 | tail -1)"
+esperar "la segunda a esa hora → 409" 409 "$(agendar "$PB" peluqueria "$DIA_L" 15:00 | tail -1)"
+esperar "los servicios de una sede apagada no se ofrecen" 0 "$("${C[@]}" "$BASE/api/citas/servicios" | jq '[.servicios[] | select(.sede.codigo != "centro")] | length')"
+sqlc "UPDATE sedes SET activa = 1 WHERE codigo IN ($SEDES_ON)"
+esperar "con varias sedes activas vuelve a decidir el equipo" 201 "$(agendar "$PB" peluqueria "$DIA_L" 15:00 | tail -1)"
+
+caso "CP-55 Parte clínica: faltas, ficha, firma y fallecimiento (A01, A.5.34, R de STRIDE)"
+respiro
+CONSULTA2=$(cita_pasada "$PA" veterinaria 11:30)
+PELU2=$(cita_pasada "$PB" peluqueria 12:00)
+esperar "una consulta no se marca atendida sin su ficha → 422" 422 "$(estado "$CONSULTA2" "$ADMIN" atendida | tail -1)"
+esperar "peluquería sí se marca atendida sin ficha → 200" 200 "$(estado "$PELU2" "$ADMIN" atendida | tail -1)"
+FICHA2=$(jq -nc '{diagnostico:"Control general sin hallazgos", medicamentos:[{nombre:"Probiótico", dosis:"1 sobre", lote:"LT-77"}]}')
+r=$(historial "$CONSULTA2" "$ADMIN" "$FICHA2")
+esperar "guardar la ficha la marca atendida → 201" "201|atendida" "$(tail -1 <<<"$r")|$(sqlc "SELECT estado FROM citas WHERE id='$CONSULTA2'")"
+esperar "la ficha queda firmada con nombre y colegiado" "Dr. Luis Pérez|T-1234" "$(head -n -1 <<<"$r" | jq -r '"\(.historial.registrado_por)|\(.historial.registrado_colegiado)"')"
+esperar "el medicamento guarda su lote" LT-77 "$(head -n -1 <<<"$r" | jq -r '.historial.medicamentos[0].lote')"
+T_F=$(login "$(post /api/auth/registro "$(jq -nc --arg e "faltas$SUF@correo.gt" '{nombre:"Faltas Prueba", email:$e, password:"Segura123"}')" >/dev/null; echo "faltas$SUF@correo.gt")" Segura123)
+PF=$(mascota "$T_F" "Faltas $SUF")
+for h in 8 9 10; do cita_bd "$PF" peluqueria "$(gt -d "-$h day" '+%F') 10:00:00" "$(gt -d "-$((h+2)) day" '+%F %T')" "faltas$SUF@correo.gt" >/dev/null; done
+sqlc "UPDATE citas SET estado='no_asistio', cierre_automatico=1 WHERE mascota_id='$PF'"
+DIA_F=$(gt -d "+$(( 3 + 10#$SUF % 15 )) day" +%F); [[ $(gt -d "$DIA_F" +%u) == 7 ]] && DIA_F=$(gt -d "$DIA_F +1 day" +%F)
+HORA_F=$(disp "$DIA_F" veterinaria | jq -r '.turnos[0].hora')
+r=$(reservar "$T_F" "$PF" "$HORA_F" "$DIA_F")
+esperar "3 citas cerradas solas no bloquean al cliente → 201" 201 "$(tail -1 <<<"$r")"
+CITA_F=$(head -n -1 <<<"$r" | jq -r .cita.id)
+revisar=$(auth_json GET "$ADMIN" /api/citas/admin/resumen)
+esperar "aparecen por revisar en el panel" 3 "$(jq --arg m "$PF" '[.por_revisar[] | select(.mascota.id==$m)] | length' <<<"$revisar")"
+esperar "y todavía no cuentan como falta" 0 "$(jq --arg m "$PF" '[.faltas[] | select(.mascota.id==$m)] | length' <<<"$revisar")"
+cerradas=$(sqlc "SELECT id FROM citas WHERE mascota_id='$PF' AND estado='no_asistio'")
+PRIMERA=$(head -1 <<<"$cerradas")
+esperar "un cliente no confirma faltas → 403" 403 "$(codigo -X POST -H "Authorization: Bearer $T2" "$BASE/api/citas/admin/$PRIMERA/confirmar-falta")"
+for c in $cerradas; do codigo -X POST -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/$c/confirmar-falta" >/dev/null; done
+esperar "confirmar otra vez la misma → 409" 409 "$(codigo -X POST -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/$PRIMERA/confirmar-falta")"
+HORA_F2=$(disp "$DIA_F" veterinaria | jq -r '.turnos[1].hora')
+PF2=$(mascota "$T_F" "Faltas Dos $SUF")
+r=$(reservar "$T_F" "$PF2" "$HORA_F2" "$DIA_F")
+esperar "confirmadas las 3 faltas, ya no reserva en línea → 409" "409|faltas" "$(tail -1 <<<"$r")|$(head -n -1 <<<"$r" | jq -r .motivo)"
+fallecer() { "${C[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$3" "$BASE/api/citas/admin/mascotas/$2/fallecimiento"; }
+esperar "un cliente no registra un fallecimiento → 403" 403 "$(fallecer "$T2" "$PF" '{}')"
+esperar "con citas próximas se pide cancelarlas → 409" 409 "$(fallecer "$ADMIN" "$PF" '{}')"
+estado "$CITA_F" "$ADMIN" cancelada >/dev/null
+esperar "sin citas próximas → 200" 200 "$(fallecer "$ADMIN" "$PF" '{}')"
+esperar "ya no se le puede agendar → 422" 422 "$(agendar "$PF" veterinaria "$DIA_F" "$HORA_F2" | tail -1)"
+esperar "su ficha se conserva" 200 "$(codigo -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/mascotas/$PF/historial")"
+HIST_C=$(cat /proc/sys/kernel/random/uuid)
+sqlc "INSERT INTO historial_clinico (id, mascota_id, fecha, diagnostico, proximo_control, registrado_por) VALUES ('$HIST_C', '$PC', NOW(), 'Control indicado', '$(gt -d '+5 day' +%F)', 1)"
+sqlc "UPDATE citas SET estado='cancelada' WHERE mascota_id='$PC' AND servicio='veterinaria'"
+cita_bd "$PC" peluqueria "$(gt -d '-40 day' '+%F') 10:00:00" "$(gt '+%F %T')" "$CLIENTE2" >/dev/null
+docker compose exec -T citas-recordatorios php /var/www/app/bin/recordatorios.php >/dev/null
+esperar "el próximo control se avisa una vez, 7 días antes" 1 "$(sqlc "SELECT control_aviso_at IS NOT NULL FROM historial_clinico WHERE id='$HIST_C'")"
+esperar "RECORDATORIO_ENVIADO del control" "control" "$(eventos RECORDATORIO_ENVIADO | jq -r --arg h "$HIST_C" '.[] | select(.dato_nuevo.historial_id==$h) | .dato_nuevo.tipo')"
+
+caso "CP-56 Cobros y recibos (A01, A04, A09, R de STRIDE)"
+respiro
+cobrar() { "${C[@]}" -w '\n%{http_code}' -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$2" "$BASE/api/citas/admin/cobros"; }
+CUENTA=$(jq -nc --arg c "$CONSULTA2" '{cita_id:$c, lineas:[{concepto:"Consulta veterinaria", cantidad:1, precio_unitario:250, subtotal:1}, {concepto:"Vacuna de refuerzo", cantidad:2, precio_unitario:75.5}]}')
+esperar "sin token → 401" 401 "$(codigo -X POST -H 'Content-Type: application/json' -d "$CUENTA" "$BASE/api/citas/admin/cobros")"
+esperar "un cliente no cobra → 403" 403 "$(cobrar "$T2" "$CUENTA" | tail -1)"
+esperar "sin conceptos → 422" 422 "$(cobrar "$ADMIN" "$(jq -nc --arg c "$CONSULTA2" '{cita_id:$c, lineas:[]}')" | tail -1)"
+esperar "precio negativo → 422" 422 "$(cobrar "$ADMIN" "$(jq -nc --arg c "$CONSULTA2" '{cita_id:$c, lineas:[{concepto:"Consulta", cantidad:1, precio_unitario:-5}]}')" | tail -1)"
+esperar "total en cero → 422" 422 "$(cobrar "$ADMIN" "$(jq -nc --arg c "$CONSULTA2" '{cita_id:$c, lineas:[{concepto:"Consulta", cantidad:1, precio_unitario:0}]}')" | tail -1)"
+esperar "XSS en el concepto → 400" 400 "$(cobrar "$ADMIN" "$(jq -nc --arg c "$CONSULTA2" '{cita_id:$c, lineas:[{concepto:"<script>alert(1)</script>", cantidad:1, precio_unitario:5}]}')" | tail -1)"
+esperar "una cita inexistente → 404" 404 "$(cobrar "$ADMIN" "$(jq -nc --arg c "$(cat /proc/sys/kernel/random/uuid)" '{cita_id:$c, lineas:[{concepto:"Consulta", cantidad:1, precio_unitario:5}]}')" | tail -1)"
+r=$(cobrar "$ADMIN" "$CUENTA"); COBRO=$(head -n -1 <<<"$r" | jq -r .cobro.id)
+esperar "el total lo calcula el servidor, no el navegador" "201|401|pendiente" "$(tail -1 <<<"$r")|$(head -n -1 <<<"$r" | jq -r '"\(.cobro.total)|\(.cobro.estado)"')"
+esperar "una cita no tiene dos cobros vigentes → 409" 409 "$(cobrar "$ADMIN" "$CUENTA" | tail -1)"
+pagar() { "${C[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$3" "$BASE/api/citas/admin/cobros/$2/pagar"; }
+anular() { "${C[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$3" "$BASE/api/citas/admin/cobros/$2/anular"; }
+esperar "método de pago no válido → 422" 422 "$(pagar "$ADMIN" "$COBRO" '{"metodo":"bitcoin"}')"
+esperar "un cliente no marca como pagado → 403" 403 "$(pagar "$T2" "$COBRO" '{"metodo":"efectivo"}')"
+esperar "pagar en efectivo → 200" 200 "$(pagar "$ADMIN" "$COBRO" '{"metodo":"efectivo"}')"
+esperar "pagarlo dos veces → 409" 409 "$(pagar "$ADMIN" "$COBRO" '{"metodo":"efectivo"}')"
+HOY=$(gt +%F)
+caja=$(auth_json GET "$ADMIN" "/api/citas/admin/cobros?desde=$HOY&hasta=$HOY")
+esperar "la caja del día suma lo recibido por método" true "$(jq '.por_metodo.efectivo >= 401' <<<"$caja")"
+esperar "un cliente no ve la caja → 403" 403 "$(codigo -H "Authorization: Bearer $T2" "$BASE/api/citas/admin/cobros")"
+esperar "el cliente ve su recibo" true "$(auth_json GET "$T2" /api/citas/cobros | jq --arg c "$COBRO" '[.cobros[].id] | index($c) != null')"
+esperar "otro cliente no lo ve" false "$(auth_json GET "$T3" /api/citas/cobros | jq --arg c "$COBRO" '[.cobros[].id] | index($c) != null')"
+reg=$(evento_ultimo COBRO_PAGADO)
+esperar "COBRO_PAGADO guarda total, método y quién" "401|efectivo|admin@huellitas.gt" "$(jq -r '"\(.dato_nuevo.total)|\(.dato_nuevo.metodo)|\(.usuario_email)"' <<<"$reg")"
+esperar "los conceptos no van a la bitácora" false "$(evento_ultimo COBRO_REGISTRADO | jq '[.. | strings] | any(test("Vacuna de refuerzo"))')"
+auth_json PATCH "$ADMIN" "/api/auth/admin/usuarios/$ROL_ID/rol" '{"rol":"recepcion"}' >/dev/null
+T_REC=$(login "$ROLU" Nueva12345)
+esperar "recepción ve la caja" 200 "$(codigo -H "Authorization: Bearer $T_REC" "$BASE/api/citas/admin/cobros")"
+esperar "recepción no anula un cobro ya pagado → 403" 403 "$(anular "$T_REC" "$COBRO" '{"motivo":"Error de digitación"}')"
+esperar "recepción no administra sedes → 403" 403 "$(codigo -H "Authorization: Bearer $T_REC" "$BASE/api/citas/admin/sedes")"
+esperar "recepción no escribe fichas → 403" 403 "$(historial "$CONSULTA2" "$T_REC" "$FICHA2" | tail -1)"
+esperar "anular sin motivo → 422" 422 "$(anular "$ADMIN" "$COBRO" '{}')"
+esperar "el administrador anula con motivo → 200" 200 "$(anular "$ADMIN" "$COBRO" '{"motivo":"Error de digitación"}')"
+esperar "COBRO_ANULADO guarda el motivo" "Error de digitación|pagado" "$(evento_ultimo COBRO_ANULADO | jq -r '"\(.dato_nuevo.motivo)|\(.dato_anterior.estado)"')"
+esperar "anular dos veces → 409" 409 "$(anular "$ADMIN" "$COBRO" '{"motivo":"Otra vez"}')"
+esperar "ya anulado, la cita admite otro cobro → 201" 201 "$(cobrar "$T_REC" "$CUENTA" | tail -1)"
+auth_json PATCH "$ADMIN" "/api/auth/admin/usuarios/$ROL_ID/rol" '{"rol":"tienda"}' >/dev/null
+T_TI=$(login "$ROLU" Nueva12345)
+esperar "tienda no ve la caja de la clínica → 403" 403 "$(codigo -H "Authorization: Bearer $T_TI" "$BASE/api/citas/admin/cobros")"
+PAGADO=$(pedido_pagado)
+SIN_PAGO=$(nuevo_pedido | cut -d' ' -f1)
+comprobar() { "${C[@]}" -w '\n%{http_code}' -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$3" "$BASE/api/pedidos/admin/$2/comprobante/verificar"; }
+esperar "un cliente no comprueba comprobantes → 403" 403 "$(comprobar "$T2" "$PAGADO" '{"codigo":"AAAA-AAAA-AAAA-AAAA"}' | tail -1)"
+esperar "código con formato inválido → 422" 422 "$(comprobar "$T_TI" "$PAGADO" '{"codigo":"123"}' | tail -1)"
+esperar "un pedido sin pago → 409" 409 "$(comprobar "$T_TI" "$SIN_PAGO" '{"codigo":"AAAA-AAAA-AAAA-AAAA"}' | tail -1)"
+esperar "un código falso → no es válido" false "$(comprobar "$T_TI" "$PAGADO" '{"codigo":"AAAA-AAAA-AAAA-AAAA"}' | head -n -1 | jq .valido)"
+REF_P=$(docker compose exec -T -e MYSQL_PWD="$DB_ROOT_PASSWORD" mariadb-master mariadb -N -uroot pagos_db -e "SELECT payment_intent_id FROM pagos WHERE id_pedido='$PAGADO' AND estado='confirmado' LIMIT 1")
+TOT_P=$(docker compose exec -T -e MYSQL_PWD="$DB_ROOT_PASSWORD" mariadb-master mariadb -N -uroot pedidos_db -e "SELECT total FROM pedidos WHERE id='$PAGADO'")
+COD_P=$(printf '%s|%s|%s' "$PAGADO" "$TOT_P" "$REF_P" | openssl dgst -sha256 -hmac "$COMPROBANTE_SECRET" | awk '{print toupper(substr($2,1,16))}' | sed 's/.\{4\}/&-/g; s/-$//')
+esperar "el código real del comprobante → válido" true "$(comprobar "$T_TI" "$PAGADO" "{\"codigo\":\"$COD_P\"}" | head -n -1 | jq .valido)"
+reenvio=$(codigo -X POST -H "Authorization: Bearer $T_TI" "$BASE/api/pedidos/admin/$PAGADO/comprobante/reenviar")
+esperar "reenviar el comprobante responde (sale el correo o avisa que no salió)" true "$([[ $reenvio == 200 || $reenvio == 502 ]] && echo true || echo false)"
+esperar "reenviar uno sin pago → 409" 409 "$(codigo -X POST -H "Authorization: Bearer $T_TI" "$BASE/api/pedidos/admin/$SIN_PAGO/comprobante/reenviar")"
+auth_json PATCH "$ADMIN" "/api/auth/admin/usuarios/$ROL_ID/rol" '{"rol":"cliente"}' >/dev/null
 
 caso "CP-16 Rate limiting en /login (gateway, se corre al final)"
 codigos=$(for i in $(seq 1 15); do codigo -X POST -H 'Content-Type: application/json' -d '{"email":"flood@correo.gt","password":"x"}' "$BASE/api/auth/login"; echo; done)

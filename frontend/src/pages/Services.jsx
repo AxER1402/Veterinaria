@@ -3,8 +3,21 @@ import PageHero from '../components/PageHero'
 import Reveal from '../components/Reveal'
 import Faq from '../components/Faq'
 import { images, services } from '../data/content'
+import { useClinica } from '../context/useClinica'
+
+// El sufijo («/ noche») sale del texto del servicio; el monto, de lo que se administra en el panel.
+function precioDesde(s, servicios) {
+  const actual = servicios.find((x) => x.slug === s.slug)
+  if (!actual) return s.price
+  const monto = Number.isInteger(actual.precio_desde) ? actual.precio_desde : actual.precio_desde.toFixed(2)
+  return s.price.replace(/Q[\d.,]+/, `Q${monto}`)
+}
 
 export default function Services() {
+  const { servicios, cargando } = useClinica()
+  const precioTexto = (s) => precioDesde(s, servicios)
+  // Un servicio apagado en el panel deja de ofrecerse.
+  const visibles = cargando ? services : services.filter((s) => servicios.some((x) => x.slug === s.slug))
   return (
     <>
       <PageHero
@@ -18,7 +31,7 @@ export default function Services() {
       />
       <section className="section">
         <div className="container service-list">
-          {services.map((s, i) => {
+          {visibles.map((s, i) => {
             const Icon = s.icon
             return (
               <Reveal key={s.slug} id={s.slug} className={`service-row ${i % 2 ? 'service-row--reverse' : ''}`}>
@@ -32,7 +45,7 @@ export default function Services() {
                   <h2>{s.title}</h2>
                   <p>{s.description}</p>
                   <div className="service-row__footer">
-                    <span className="price">{s.price}</span>
+                    <span className="price">{precioTexto(s)}</span>
                     <Link to={`/reservar?servicio=${s.slug}`} className="btn btn--primary btn--sm">
                       Reservar
                     </Link>

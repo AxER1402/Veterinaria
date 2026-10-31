@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { Menu, X, Phone, Heart, ShoppingBag, User, ShieldCheck } from 'lucide-react'
 import { Logo } from './Brand'
-import { business, navLinks } from '../data/content'
+import { navLinks } from '../data/content'
+import { useClinica } from '../context/useClinica'
 import { useShop } from '../context/useShop'
 import { useAuth } from '../context/useAuth'
 
@@ -10,6 +11,7 @@ const COMPACTO_DESDE = 80
 const SCROLL_MINIMO = 6
 
 export default function Header() {
+  const { telefono, tel } = useClinica()
   const [open, setOpen] = useState(false)
   const [compacto, setCompacto] = useState(false)
   const { totals, wishlist, openDrawer } = useShop()
@@ -51,7 +53,7 @@ export default function Header() {
             <Link to={user ? '/cuenta/citas' : '/cuenta'} className="nav__link"><User size={20} /> {user ? 'Mi cuenta' : 'Ingresar'}</Link>
             <Link to="/favoritos" className="nav__link"><Heart size={20} /> Favoritos{wishlist.length > 0 && ` (${wishlist.length})`}</Link>
             {isStaff && <NavLink to="/admin" className="nav__link"><ShieldCheck size={20} /> Panel de la clínica</NavLink>}
-            <a href={`tel:${business.tel}`} className="nav__link"><Phone size={20} /> {business.phone}</a>
+            <a href={tel} className="nav__link"><Phone size={20} /> {telefono}</a>
             <Link to="/reservar" className="btn btn--primary btn--block">Reservar cita</Link>
           </div>
         </nav>

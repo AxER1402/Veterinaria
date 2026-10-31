@@ -20,7 +20,6 @@ export const business = {
   name: 'Huellitas',
   tagline: 'Clínica veterinaria y cuidado de mascotas',
   phone: '+502 2385-6420',
-  tel: '+50223856420',
   email: 'hola@huellitas.gt',
   hours: 'Lun a Sáb · 8:00 – 20:00',
 }
@@ -162,24 +161,6 @@ export const testimonials = [
     owner: 'Diego M.',
     text: 'No es fácil encontrar quién atienda bien a un conejo. Con Coco tuvieron paciencia, la revisaron sin estresarla y me dieron una dieta clara.',
     image: unsplash('photo-1425082661705-1834bfd09dca', 200, 200),
-  },
-]
-
-export const locations = [
-  {
-    title: 'Clínica veterinaria y peluquería',
-    address: '6a. avenida 9-35, zona 10',
-    map: 'https://maps.google.com/?q=6a.+avenida+9-35+zona+10+Guatemala',
-  },
-  {
-    title: 'Guardería y hospedaje – Norte',
-    address: 'Calzada José Milla y Vidaurre 10-55, zona 6',
-    map: 'https://maps.google.com/?q=Calzada+José+Milla+y+Vidaurre+10-55+zona+6+Guatemala',
-  },
-  {
-    title: 'Paseadores y cuidadores – Sur',
-    address: 'Calzada Aguilar Batres 34-70, zona 11',
-    map: 'https://maps.google.com/?q=Calzada+Aguilar+Batres+34-70+zona+11+Guatemala',
   },
 ]
 

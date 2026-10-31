@@ -1659,6 +1659,7 @@ a.fila:focus-visible { outline: 2px solid var(--yellow-dark); }
 .semana__dia.active { background: var(--navy); border-color: var(--navy); color: var(--white); }
 .semana__dia.active strong { color: var(--white); }
 .semana__dia i { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--yellow-dark); }
+.cita-fila__estado { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 .cita-fila { display: grid; grid-template-columns: 74px auto minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; background: var(--white); }
 .cita-fila__hora { display: grid; font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; line-height: 1.25; color: var(--navy); }
 .cita-fila__hora small { font-family: var(--font-body); font-weight: 300; font-size: 0.78rem; color: var(--gray); }
@@ -1805,7 +1806,7 @@ a.paciente:hover { border-color: var(--yellow-dark); }
   .cita-fila { position: relative; grid-template-columns: 58px minmax(0, 1fr); gap: 8px 10px; padding: 12px; align-items: start; }
   .cita-fila__icono { display: none; }
   .cita-fila__datos { padding-right: 28px; }
-  .cita-fila > .status { grid-column: 2; justify-self: start; }
+  .cita-fila__estado { grid-column: 2; justify-self: start; justify-content: flex-start; }
   .cita-fila__acciones { display: contents; }
   .cita-fila__acciones .btn { grid-column: 1 / -1; justify-content: center; }
   .cita-fila__acciones .menu-acciones { position: absolute; top: 8px; right: 8px; }
@@ -1986,3 +1987,92 @@ a.paciente:hover { border-color: var(--yellow-dark); }
   .carrito__total { grid-area: total; align-self: center; }
   .carrito__linea .remove { grid-area: quitar; align-self: start; }
 }
+
+/* ---------- Caja y cobros ---------- */
+.fila--cobro { grid-template-columns: minmax(0, 1fr) 110px auto minmax(150px, auto); }
+.fila--cobro__acciones { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.caja { margin-top: 14px; }
+.fila--recibo { grid-template-columns: minmax(0, 1fr) auto auto; }
+.cobro { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.cobro__lineas { display: grid; gap: 10px; margin: 0; padding: 0; border: 0; }
+.cobro__lineas legend { padding: 0; margin-bottom: 8px; font-weight: 500; color: var(--navy); }
+.cobro__linea { display: grid; grid-template-columns: minmax(0, 1fr) 72px 110px 34px; align-items: end; gap: 10px; }
+.cobro__total { display: flex; justify-content: space-between; align-items: baseline; margin: 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--navy); }
+.cobro__total strong { font-family: var(--font-display); font-weight: 600; font-size: 1.35rem; color: var(--navy); }
+.cobro__metodos { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cobro .segmentos { justify-self: start; }
+.cobro__hallados { list-style: none; margin: 6px 0 0; padding: 4px; border: 1px solid var(--line); border-radius: var(--radius-control); }
+.cobro__hallados button { display: flex; justify-content: space-between; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; font: inherit; color: var(--navy); text-align: left; cursor: pointer; }
+.cobro__hallados button:hover { background: var(--sky); }
+.cobro__hallados small { color: var(--gray); }
+.comprobante__acciones { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.comprobante__codigo { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.comprobante__codigo label { flex: 1 1 200px; display: grid; gap: 4px; color: var(--gray); font-size: 0.85rem; }
+.comprobante__codigo input { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 0.9rem; }
+.comprobante .form-ok, .comprobante .form-alert { margin: 12px 0 0; }
+.order__estado { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ficha__fallecio { justify-self: center; font-size: 0.86rem; }
+.med-row__alerta { grid-column: 1 / -1; margin: 0; font-size: 0.88rem; }
+.resumen__revisar { margin-bottom: 14px; background: #fff8d6; }
+.resumen__revisar .summary__hint { margin: 4px 0 8px; }
+
+/* ---------- Sedes y precios ---------- */
+.sedes-admin { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; list-style: none; margin: 0; padding: 0; }
+.sede-admin { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 16px; border-radius: 14px; background: var(--white); }
+.sede-admin__icono { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--sky); color: var(--navy); }
+.sede-admin__datos h3 { margin: 0 0 2px; font-size: 1.1rem; }
+.sede-admin__datos p { margin: 0; color: var(--gray); font-size: 0.92rem; }
+.sede-admin__tel { display: flex; align-items: center; gap: 6px; }
+.sede-admin__datos .sede-admin__horario { margin-top: 6px; color: var(--navy); font-weight: 500; font-size: 0.88rem; }
+.sede-admin__estado { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; max-width: 360px; }
+.sede-admin__estado small { color: var(--gray); font-size: 0.82rem; }
+.sede-form { padding: clamp(16px, 2vw, 24px); border-radius: 14px; background: var(--white); margin-bottom: 12px; }
+.sedes-admin__form .sede-form { margin-bottom: 0; }
+.sede-form h3 { margin: 0 0 14px; font-size: 1.15rem; }
+.sede-form__cuerpo { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(300px, 1fr); gap: 20px; align-items: start; margin-bottom: 14px; }
+.sede-form__datos { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
+.sede-form__datos .summary__hint { margin: -4px 0 0; }
+.sede-form__eliminar { margin-left: auto; }
+.sede-form__checks { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.sede-form__horario { display: grid; gap: 6px; margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
+.sede-form__horario legend { padding: 0 6px; font-weight: 500; color: var(--navy); }
+.sede-dia { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 42px; }
+.sede-dia.is-cerrado small { color: var(--gray); }
+.sede-dia__horas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.sede-dia__horas .ctl { padding: 6px 8px; font-size: 0.88rem; }
+.servicios-nota { margin-bottom: 12px; }
+.fila--servicio { grid-template-columns: minmax(0, 1fr) minmax(170px, 240px) 130px auto 84px; }
+.servicio-campo { display: grid; gap: 3px; min-width: 0; }
+.servicio-campo span { color: var(--gray); font-size: 0.76rem; }
+.servicio-campo .ctl { padding: 7px 9px; font-size: 0.9rem; }
+.servicio-campo--precio input { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--white); font: inherit; font-size: 0.9rem; color: var(--navy); text-align: right; }
+.servicio-campo--precio input:focus { outline: none; border-color: var(--yellow-dark); box-shadow: 0 0 0 3px rgba(255, 209, 0, 0.3); }
+@media print {
+  .hoja-recibo__tabla { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  .hoja-recibo__tabla th, .hoja-recibo__tabla td { padding: 4px 6px; border-bottom: 1px solid #000; text-align: left; color: #000; }
+  .hoja-recibo__tabla th:nth-child(n + 2), .hoja-recibo__tabla td:nth-child(n + 2) { text-align: right; }
+  .hoja-recibo__fila { display: flex; justify-content: space-between; margin: 2px 0; }
+  .hoja-recibo__total { margin-top: 6px; font-size: 14pt; font-weight: 700; }
+  .hoja-recibo__aviso { margin-top: 24px; font-size: 9pt; }
+}
+@media (max-width: 1100px) {
+  .sede-form__cuerpo { grid-template-columns: minmax(0, 1fr); }
+  .fila--servicio { grid-template-columns: minmax(0, 1fr) 130px auto; }
+  .fila--servicio .servicio-campo:not(.servicio-campo--precio) { grid-column: 1 / -1; grid-row: 2; }
+  .fila--servicio > .btn { grid-column: 1 / -1; justify-self: end; }
+}
+@media (max-width: 760px) {
+  .fila--cobro { grid-template-columns: minmax(0, 1fr) auto; }
+  .fila--cobro .status { justify-self: start; }
+  .fila--cobro__acciones { justify-content: flex-end; }
+  .fila--recibo { grid-template-columns: minmax(0, 1fr) auto; }
+  .fila--recibo > .btn, .fila--recibo > .status { grid-column: 1 / -1; justify-self: start; }
+  .cobro__linea { grid-template-columns: minmax(0, 1fr) 64px 34px; }
+  .cobro__linea label:first-child { grid-column: 1 / -1; }
+  .sede-admin { grid-template-columns: auto minmax(0, 1fr); }
+  .sede-admin__estado { grid-column: 1 / -1; justify-content: flex-start; max-width: none; }
+  .fila--servicio { grid-template-columns: minmax(0, 1fr) auto; }
+  .fila--servicio .servicio-campo--precio { grid-column: 1 / -1; grid-row: 3; }
+  .fila--servicio .servicio-campo:not(.servicio-campo--precio) { grid-row: 2; }
+}
+

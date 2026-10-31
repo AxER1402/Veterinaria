@@ -282,4 +282,16 @@ final class PagosController
             'rol'           => in_array($a['rol'] ?? null, ['admin', 'cliente'], true) ? $a['rol'] : 'anonimo',
         ];
     }
+
+    /** Método y referencia del pago confirmado de un pedido (para reenviar o comprobar su comprobante). */
+    public function dePedido(): array
+    {
+        Guard::servicio(['pedidos-service']);
+        $d = Http::body();
+        $pedidoId = is_string($d['pedido_id'] ?? null) ? $d['pedido_id'] : throw new ApiError(422, 'Pedido no válido');
+        $q = Db::escritura()->prepare("SELECT metodo, payment_intent_id FROM pagos WHERE id_pedido = ? AND estado = 'confirmado' ORDER BY fecha_pago DESC LIMIT 1");
+        $q->execute([$pedidoId]);
+        $pago = $q->fetch() ?: throw new ApiError(404, 'Este pedido no tiene un pago confirmado');
+        return [200, ['metodo' => $pago['metodo'], 'referencia' => $pago['payment_intent_id']]];
+    }
 }

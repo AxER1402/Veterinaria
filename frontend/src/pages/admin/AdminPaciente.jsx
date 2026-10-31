@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Printer, Stethoscope, Syringe } from 'lucide-react'
+import { ArrowLeft, Printer, Receipt, Stethoscope, Syringe } from 'lucide-react'
+import ConfirmDialog from '../../components/ConfirmDialog'
+import { useClinica } from '../../context/useClinica'
+import CobroForm from './CobroForm'
 import Loading from '../../components/Loading'
 import PetIcon from '../../components/PetIcon'
 import VaccineTable, { Carne } from '../../components/VaccineTable'
 import { api } from '../../api'
-import { CITA_STATUS, ESPECIES, edad, formatCita, ymd } from '../account/citas'
+import { ESPECIES, edad, estadoCita, formatCita, ymd } from '../account/citas'
 import { fechaCorta } from '../account/vacunas'
 import { AlertasClinicas, ConsultaForm, ConsultaItem, VacunaExternaForm } from './ClinicalRecord'
 import AgendarCita from './AgendarCita'
@@ -65,7 +68,7 @@ export default function AdminPaciente() {
             <div className="ficha__nombre">
               <span className="ficha__foto"><PetIcon especie={m.especie} size={40} /></span>
               <h1>{m.nombre}</h1>
-              {!m.activa && <span className="status status--warn">Inactiva</span>}
+              {m.fallecida_el ? <span className="status status--bad">Falleció el {fechaCorta(m.fallecida_el)}</span> : !m.activa && <span className="status status--warn">Inactiva</span>}
               <p>{[especie, m.raza].filter(Boolean).join(' · ') || 'Sin datos'}</p>
             </div>
             <dl className="ficha__cifras">
@@ -77,6 +80,8 @@ export default function AdminPaciente() {
             {m.notas && <p className="ficha__notas">{m.notas}</p>}
             {m.activa && <button className="btn btn--primary btn--sm btn--block" onClick={() => setModal('consulta')}><Stethoscope size={16} aria-hidden="true" /> Nueva consulta</button>}
             <button className="btn btn--ghost btn--xs btn--block" onClick={() => setModal('vacuna')}><Syringe size={14} aria-hidden="true" /> Registrar vacuna externa</button>
+            {m.activa && <button className="btn btn--ghost btn--xs btn--block" onClick={() => setModal('cobro')}><Receipt size={14} aria-hidden="true" /> Cobrar</button>}
+            {m.activa && <button className="link-btn link-btn--danger ficha__fallecio" onClick={() => setModal('fallecio')}>Registrar fallecimiento</button>}
           </div>
           <div className="admin-card">
             <h2>Dueño</h2>
@@ -124,7 +129,7 @@ export default function AdminPaciente() {
               {data.citas.map((c) => (
                 <li key={c.id} className="fila fila--historial">
                   <span className="fila__principal"><strong className="primera-mayuscula">{formatCita(c.inicio)}</strong><small>{c.servicio.nombre}</small></span>
-                  <span className={`status status--${CITA_STATUS[c.estado].tone}`}>{CITA_STATUS[c.estado].label}</span>
+                  <span className={`status status--${estadoCita(c).tone}`}>{estadoCita(c).label}</span>
                 </li>
               ))}
             </ul>
@@ -150,6 +155,20 @@ export default function AdminPaciente() {
       {modal === 'control' && (
         <AgendarCita inicial={{ clienteId: data.dueno.id, mascotaId: m.id, servicio: 'veterinaria', fecha: control }} onClose={() => setModal(null)}
           onDone={(c) => { setModal(null); setAviso(`Control agendado: ${formatCita(c.inicio)}.`); cargar() }} />
+      )}
+      {modal === 'cobro' && (
+        <CobroForm mascota={{ id: m.id, nombre: m.nombre, dueno: { nombre: nombreDueno } }} onClose={() => setModal(null)}
+          onDone={(c) => { setModal(null); setAviso(`${c.recibo} guardado. Lo ves en Caja.`) }} />
+      )}
+      {modal === 'fallecio' && (
+        <ConfirmDialog title={`Registrar el fallecimiento de ${m.nombre}`} onClose={() => setModal(null)} peligro confirmLabel="Registrar"
+          text="Su ficha se conserva, pero ya no se le podrá agendar y dejarán de salir avisos de vacunas y controles. La fecha será la de hoy."
+          onConfirm={async () => {
+            await api(`/api/citas/admin/mascotas/${m.id}/fallecimiento`, { method: 'POST', body: {} })
+            setModal(null)
+            setAviso('Fallecimiento registrado.')
+            cargar()
+          }} />
       )}
       {modal === 'vacuna' && (
         <VacunaExternaForm mascota={m} onClose={() => setModal(null)} onSaved={(h) => { setModal(null); actualizar(h) }} />
@@ -211,6 +230,8 @@ function AlertasEditor({ mascota, onSaved }) {
 // Hoja para imprimir o guardar como PDF (el diálogo de impresión del navegador lo permite).
 // Va en un portal directo en <body>: al imprimir se oculta todo lo demás.
 function HojaImpresion({ tipo, consulta, mascota, dueno, vacunas, onDone }) {
+  const { sedes, servicios } = useClinica()
+  const sedeClinica = sedes.find((s) => s.codigo === servicios.find((x) => x.slug === 'veterinaria')?.sede) || sedes[0]
   useEffect(() => {
     document.body.classList.add('printing')
     const fin = () => onDone()
@@ -227,7 +248,7 @@ function HojaImpresion({ tipo, consulta, mascota, dueno, vacunas, onDone }) {
     <div className="print-sheet">
       <header>
         <strong>Huellitas · Clínica veterinaria</strong>
-        <span>6a. avenida 9-35, zona 10</span>
+        <span>{sedeClinica?.direccion}</span>
       </header>
       <h1>{tipo === 'carne' ? 'Carné de vacunación' : 'Receta e indicaciones'}</h1>
       <p><b>Paciente:</b> {mascota.nombre} · {[mascota.raza, edad(mascota.fecha_nacimiento)].filter(Boolean).join(' · ')}<br /><b>Dueño:</b> {dueno}</p>
@@ -241,7 +262,7 @@ function HojaImpresion({ tipo, consulta, mascota, dueno, vacunas, onDone }) {
         </>
       ) : (
         <>
-          <p><b>Fecha:</b> {formatCita(consulta.fecha)}<br /><b>Atendió:</b> {consulta.registrado_por}</p>
+          <p><b>Fecha:</b> {formatCita(consulta.fecha)}<br /><b>Atendió:</b> {consulta.registrado_por}{consulta.registrado_colegiado && ` · Colegiado ${consulta.registrado_colegiado}`}</p>
           <h2>Medicamentos</h2>
           {consulta.medicamentos.length === 0 ? <p>Sin medicamentos recetados.</p> : (
             <ol>{consulta.medicamentos.map((d, i) => <li key={i}><b>{d.nombre}</b> {[d.dosis, d.frecuencia, d.duracion].filter(Boolean).join(' · ')}</li>)}</ol>

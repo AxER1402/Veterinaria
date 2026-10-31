@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom'
 import LegalPage from '../components/LegalPage'
-import { business } from '../data/content'
+import { useClinica } from '../context/useClinica'
 
 // Las cifras salen de las reglas del sistema: CitasController (horario, 60 días, 1 h, 2 h, 3 faltas),
 // Totales.php (envío Q35, gratis desde Q400) y PEDIDO_VENCE_HORAS (2 h). Si cambian allá, cambiar aquí.
 export default function Terminos() {
+  const { horario, telefono, tel } = useClinica()
   return (
     <LegalPage title="Términos y condiciones" text="Las reglas para reservar citas y comprar en la tienda de Huellitas." actualizado="30 de octubre de 2026">
       <h2>Aceptación</h2>
@@ -22,13 +23,13 @@ export default function Terminos() {
 
       <h2>Citas</h2>
       <ul>
-        <li>Atendemos de lunes a sábado, de 8:00 a 20:00. Puedes reservar hasta con 60 días de anticipación y al menos 1 hora antes del turno.</li>
+        <li>Atendemos: {horario}. Puedes reservar hasta con 60 días de anticipación y al menos 1 hora antes del turno.</li>
         <li>Cada mascota puede tener hasta 3 citas pendientes, y cada cuenta hasta 10.</li>
         <li>Puedes cambiar o cancelar una cita desde <Link to="/cuenta/citas">Mis citas</Link> hasta 2 horas antes. Después, llámanos.</li>
         <li>Si faltas a 3 citas en 3 meses sin avisar, las siguientes tendrás que agendarlas por teléfono.</li>
         <li>Los servicios se pagan en la sede, al momento de la atención.</li>
         <li>Para guardería y hospedaje, trae el carné de vacunación de tu mascota al día. El hospedaje se reserva por un máximo de 30 noches.</li>
-        <li>Si es una urgencia, no reserves en línea: llámanos al <a href={`tel:${business.tel}`}>{business.phone}</a>.</li>
+        <li>Si es una urgencia, no reserves en línea: llámanos al <a href={tel}>{telefono}</a>.</li>
       </ul>
 
       <h2>Compras en la tienda</h2>

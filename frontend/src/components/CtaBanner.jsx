@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom'
 import { Phone } from 'lucide-react'
-import { business, images } from '../data/content'
+import { images } from '../data/content'
+import { useClinica } from '../context/useClinica'
 
 export default function CtaBanner() {
+  const { telefono, tel } = useClinica()
   return (
     <section className="cta">
       <div className="container cta__inner">
@@ -14,8 +16,8 @@ export default function CtaBanner() {
             <Link to="/reservar" className="btn btn--primary">
               Reservar ahora
             </Link>
-            <a href={`tel:${business.tel}`} className="btn btn--ghost-light">
-              <Phone size={18} /> {business.phone}
+            <a href={tel} className="btn btn--ghost-light">
+              <Phone size={18} /> {telefono}
             </a>
           </div>
         </div>

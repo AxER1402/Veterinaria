@@ -2,9 +2,11 @@ import { useId, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Phone, Plus } from 'lucide-react'
 import SectionTitle from './SectionTitle'
-import { business, faqs } from '../data/content'
+import { faqs } from '../data/content'
+import { useClinica } from '../context/useClinica'
 
 export default function Faq({ limit }) {
+  const { telefono, tel } = useClinica()
   const [open, setOpen] = useState(0)
   const id = useId()
   const items = limit ? faqs.slice(0, limit) : faqs
@@ -15,7 +17,7 @@ export default function Faq({ limit }) {
         <div className="faq__lado">
           <SectionTitle eyebrow="FAQ" title="Preguntas frecuentes" text="¿Tienes otra duda? Escríbenos o llámanos, estaremos felices de ayudarte." light />
           <div className="faq__contacto">
-            <a href={`tel:${business.tel}`} className="btn btn--primary btn--sm"><Phone size={16} aria-hidden="true" /> {business.phone}</a>
+            <a href={tel} className="btn btn--primary btn--sm"><Phone size={16} aria-hidden="true" /> {telefono}</a>
             <Link to="/contacto" className="btn btn--ghost-light btn--sm">Escríbenos</Link>
           </div>
         </div>

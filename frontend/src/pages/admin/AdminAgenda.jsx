@@ -6,22 +6,19 @@ import PetIcon from '../../components/PetIcon'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { api } from '../../api'
 import { useAuth } from '../../context/useAuth'
+import { useClinica } from '../../context/useClinica'
+import { horasDeSedes, sedeCorta } from '../../data/horarios'
 import { AlertasClinicas, ConsultaForm, NotaForm } from './ClinicalRecord'
 import AgendarCita from './AgendarCita'
 import Equipo from './Equipo'
 import { Reprogramar } from '../account/Appointments'
-import { CITA_STATUS, addDays, formatCita, formatDay, formatReserva, ymd } from '../account/citas'
+import { CITA_STATUS, addDays, estadoCita, formatCita, formatDay, formatReserva, ymd } from '../account/citas'
+import ReciboCobro from '../../components/ReciboCobro'
+import CobroForm from './CobroForm'
 import DateInput from '../../components/DateInput'
 import Select from '../../components/Select'
 import Subvistas from './Subvistas'
 import MenuAcciones from '../../components/MenuAcciones'
-
-const SEDES = [
-  { value: '', label: 'Todas' },
-  { value: 'centro', label: 'Centro' },
-  { value: 'norte', label: 'Norte' },
-  { value: 'sur', label: 'Sur' },
-]
 
 // Solo para mostrar las opciones; la regla que vale es la del servidor (citas-service).
 const NEXT = {
@@ -37,11 +34,8 @@ const ACCION = { confirmada: 'Confirmar', atendida: 'Marcar atendida', no_asisti
 const MOTIVOS_CANCELAR = ['El cliente pidió cancelar', 'Veterinario no disponible', 'Cierre de la sede', 'Cita duplicada']
 const MOTIVOS_REVERTIR = ['Se marcó por error', 'El cliente sí llegó', 'El cliente volvió a llamar']
 
-// Turnos de 8:00 a 20:00 cada 30 min (20:00 solo como hora final de un bloqueo).
-const HORAS = Array.from({ length: 25 }, (_, i) => `${String(8 + Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`)
 const REFRESCO_MS = 60_000
 
-const sedeCorta = (codigo) => SEDES.find((s) => s.value === codigo)?.label || codigo
 const rango = (b) => (b.hora_inicio ? `${b.hora_inicio}–${b.hora_fin}` : 'Todo el día')
 const lugar = (c) => c.profesional || (c.servicio.slug === 'veterinaria' ? `Consultorio ${c.cupo}` : c.servicio.slug === 'peluqueria' ? `Mesa ${c.cupo}` : `Lugar ${c.cupo}`)
 
@@ -50,8 +44,11 @@ const APARTADOS = [{ id: 'citas', label: 'Citas' }, { id: 'bloqueos', label: 'Bl
 export default function AdminAgenda() {
   const [apartado, setApartado] = useState('citas')
   const { user } = useAuth()
+  const { sedes } = useClinica()
   const veterinario = ['admin', 'veterinario'].includes(user.rol)
   const [params, setParams] = useSearchParams()
+  const [recibo, setRecibo] = useState(null)
+  const cerrarRecibo = useCallback(() => setRecibo(null), [])
   const hoy = ymd(new Date())
   const fecha = /^\d{4}-\d{2}-\d{2}$/.test(params.get('fecha') || '') ? params.get('fecha') : hoy
   const sede = params.get('sede') || ''
@@ -96,6 +93,12 @@ export default function AdminAgenda() {
   const manana = ymd(addDays(new Date(), 1))
   const cerrar = () => setDialogo(null)
   const listo = (mensaje) => { setDialogo(null); setAviso(mensaje); cargar(); cargarBloqueos() }
+
+  // El recibo se pide al abrirlo; lo demás abre su diálogo.
+  const accionCita = (a) => {
+    if (a.tipo !== 'recibo') return setDialogo(a)
+    api(`/api/citas/admin/cobros/${a.cita.cobro.id}`).then((d) => setRecibo(d.cobro)).catch((e) => setError(e.message))
+  }
 
   const buscarCitas = async (e) => {
     e.preventDefault()
@@ -155,11 +158,13 @@ export default function AdminAgenda() {
             <input type="search" value={buscar} onChange={(e) => { setBuscar(e.target.value); if (!e.target.value) setResultados(null) }}
               placeholder="Buscar mascota, cliente o teléfono" aria-label="Buscar citas" />
           </form>
-          <div className="segmentos" role="group" aria-label="Sede">
-            {SEDES.map((s) => (
-              <button key={s.value} className={sede === s.value ? 'is-activo' : ''} aria-pressed={sede === s.value} onClick={() => setFiltro({ sede: s.value })}>{s.label}</button>
-            ))}
-          </div>
+          {sedes.length > 1 && (
+            <div className="segmentos" role="group" aria-label="Sede">
+              {[{ codigo: '' }, ...sedes].map((s) => (
+                <button key={s.codigo} className={sede === s.codigo ? 'is-activo' : ''} aria-pressed={sede === s.codigo} onClick={() => setFiltro({ sede: s.codigo })}>{s.codigo ? sedeCorta(s.codigo) : 'Todas'}</button>
+              ))}
+            </div>
+          )}
           <div className="segmentos" role="group" aria-label="Vista">
             <button className={vista === 'hora' ? 'is-activo' : ''} aria-pressed={vista === 'hora'} onClick={() => setVista('hora')}>Por hora</button>
             <button className={vista === 'columnas' ? 'is-activo' : ''} aria-pressed={vista === 'columnas'} onClick={() => setVista('columnas')}>Por persona</button>
@@ -181,7 +186,7 @@ export default function AdminAgenda() {
               <button className="link-btn" onClick={() => { setResultados(null); setBuscar('') }}>Volver al día</button>
             </p>
             <ul className="lista">
-              {resultados.map((c) => <CitaCard key={c.id} cita={c} conFecha veterinario={veterinario} hoy={hoy} onAccion={setDialogo}
+              {resultados.map((c) => <CitaCard key={c.id} cita={c} conFecha veterinario={veterinario} hoy={hoy} onAccion={accionCita}
                 onIr={() => { setResultados(null); setFiltro({ fecha: c.inicio.slice(0, 10) }) }} />)}
             </ul>
           </>
@@ -205,7 +210,7 @@ export default function AdminAgenda() {
               <div className="admin-card"><AgendaColumnas citas={visibles} fecha={fecha} onAccion={setDialogo} /></div>
             ) : (
               <ul className="lista">
-                {visibles.map((c) => <CitaCard key={c.id} cita={c} veterinario={veterinario} hoy={hoy} fecha={fecha} onAccion={setDialogo} />)}
+                {visibles.map((c) => <CitaCard key={c.id} cita={c} veterinario={veterinario} hoy={hoy} fecha={fecha} onAccion={accionCita} />)}
               </ul>
             )}
           </>
@@ -281,6 +286,16 @@ export default function AdminAgenda() {
         <Reprogramar cita={dialogo.cita} onClose={cerrar} onDone={(c) => listo(`Cita de ${c.mascota.nombre} movida a ${formatReserva(c)}.`)} />
       )}
       {dialogo?.tipo === 'ficha' && <ConsultaForm cita={dialogo.cita} onClose={cerrar} onSaved={() => listo('Consulta registrada en el historial.')} />}
+      {dialogo?.tipo === 'cobrar' && <CobroForm cita={dialogo.cita} onClose={cerrar} onDone={(c) => { listo(`${c.recibo} guardado.`); if (c.estado === 'pagado') setRecibo(c) }} />}
+      {dialogo?.tipo === 'falta' && (
+        <ConfirmDialog title={`Confirmar falta · ${dialogo.cita.mascota.nombre}`} onClose={cerrar} confirmLabel="Sí, no llegó"
+          text={`La cita se cerró sola porque nadie la registró. Si confirmas que ${dialogo.cita.cliente.nombre} no llegó, contará como falta.`}
+          onConfirm={async () => {
+            await api(`/api/citas/admin/${dialogo.cita.id}/confirmar-falta`, { method: 'POST' })
+            listo('Falta confirmada.')
+          }} />
+      )}
+      {recibo && <ReciboCobro cobro={recibo} onDone={cerrarRecibo} />}
       {dialogo?.tipo === 'nota' && <NotaForm cita={dialogo.cita} onClose={cerrar} onSaved={() => listo('Nota guardada en la ficha del paciente.')} />}
     </>
   )
@@ -289,7 +304,7 @@ export default function AdminAgenda() {
 function CitaCard({ cita: c, veterinario, hoy, fecha, conFecha = false, onAccion, onIr }) {
   const dia = c.inicio.slice(0, 10)
   // En una consulta, «atendida» se marca al guardar la ficha clínica.
-  const opciones = NEXT[c.estado].filter((n) => (!['atendida', 'no_asistio'].includes(n) || dia <= hoy) && !(n === 'atendida' && c.clinica && c.estado !== 'no_asistio'))
+  const opciones = NEXT[c.estado].filter((n) => (!['atendida', 'no_asistio'].includes(n) || dia <= hoy) && !(n === 'atendida' && c.clinica && !c.tiene_historial))
   const puedeFicha = veterinario && c.clinica && !c.tiene_historial && ['pendiente', 'confirmada', 'atendida', 'no_asistio'].includes(c.estado) && dia <= hoy
   const activa = ['pendiente', 'confirmada'].includes(c.estado)
   const estado = (nuevo) => onAccion({ tipo: 'estado', cita: c, nuevo })
@@ -299,6 +314,9 @@ function CitaCard({ cita: c, veterinario, hoy, fecha, conFecha = false, onAccion
   const hora = conFecha ? formatCita(c.inicio) : c.fin ? formatReserva(c) : c.servicio.modalidad === 'dia' ? 'Todo el día' : c.inicio.slice(11, 16)
   const menu = [
     ...(activa ? [{ label: 'Reprogramar', onClick: () => onAccion({ tipo: 'reprogramar', cita: c }) }] : []),
+    ...(!c.cobro && !['cancelada', 'no_asistio'].includes(c.estado) ? [{ label: 'Cobrar', onClick: () => onAccion({ tipo: 'cobrar', cita: c }) }] : []),
+    ...(c.cobro ? [{ label: `Ver recibo ${c.cobro.recibo}`, onClick: () => onAccion({ tipo: 'recibo', cita: c }) }] : []),
+    ...(c.por_revisar ? [{ label: 'Confirmar falta', onClick: () => onAccion({ tipo: 'falta', cita: c }) }] : []),
     ...(!c.clinica && c.estado !== 'cancelada' ? [{ label: 'Agregar nota', onClick: () => onAccion({ tipo: 'nota', cita: c }) }] : []),
     ...(veterinario ? [{ label: 'Ver ficha de la mascota', to: `/admin/pacientes/${c.mascota.id}` }] : []),
     { label: 'Ver cliente', to: `/admin/clientes/${c.cliente.id}` },
@@ -316,7 +334,10 @@ function CitaCard({ cita: c, veterinario, hoy, fecha, conFecha = false, onAccion
         <AlertasClinicas mascota={c.mascota} compact />
         {c.codigo_verificacion && <small className="mono">{c.codigo_verificacion}</small>}
       </span>
-      <span className={`status status--${CITA_STATUS[c.estado].tone}`}>{CITA_STATUS[c.estado].label}</span>
+      <span className="cita-fila__estado">
+        <span className={`status status--${estadoCita(c).tone}`}>{estadoCita(c).label}</span>
+        {c.cobro && <span className={`status status--${c.cobro.estado === 'pagado' ? 'ok' : 'warn'}`}>{c.cobro.estado === 'pagado' ? 'Pagada' : 'Por cobrar'}</span>}
+      </span>
       <span className="cita-fila__acciones">
         {puedeFicha && <button className="btn btn--dark btn--xs" onClick={() => onAccion({ tipo: 'ficha', cita: c })}><Stethoscope size={14} /> Registrar consulta</button>}
         {principal && <button className="btn btn--dark btn--xs" onClick={() => estado(principal)}>{ACCION[principal]}</button>}
@@ -329,7 +350,9 @@ function CitaCard({ cita: c, veterinario, hoy, fecha, conFecha = false, onAccion
 // Feriados o mantenimiento: el día entero o un rango de turnos de una sede. Si hay citas en ese
 // horario, el servidor responde 409 con cuántas y se ofrece cancelarlas en el mismo paso.
 function BlockForm({ fecha, sede, onSaved, onConflicto }) {
-  const [values, setValues] = useState({ sede: sede || 'centro', fecha, todo: true, hora_inicio: '08:00', hora_fin: '12:00', motivo: '' })
+  const { sedes } = useClinica()
+  const HORAS = horasDeSedes(sedes)
+  const [values, setValues] = useState({ sede: sede || sedes[0]?.codigo || '', fecha, todo: true, hora_inicio: '08:00', hora_fin: '12:00', motivo: '' })
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
   const set = (f) => (e) => setValues((v) => ({ ...v, [f]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
@@ -359,7 +382,7 @@ function BlockForm({ fecha, sede, onSaved, onConflicto }) {
       <div className="agenda__form-row">
         <label>Sede
           <Select value={values.sede} onChange={set('sede')}>
-            {SEDES.filter((s) => s.value).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {sedes.map((s) => <option key={s.codigo} value={s.codigo}>{sedeCorta(s.codigo)}</option>)}
           </Select>
         </label>
         <label>Fecha
