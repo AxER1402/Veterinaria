@@ -21,7 +21,8 @@ WHERE NOT EXISTS (SELECT 1 FROM profesionales p WHERE p.servicio = n.servicio AN
 ORDER BY n.orden;
 
 -- Citas de esos servicios que todavía tienen un lugar numérico (1, 2, 3…): el lugar k pasa a la
--- k-ésima persona del servicio. Así ninguna cita queda sin asignar y no se pisan dos en el mismo turno.
+-- k-ésima persona del servicio, sin que se pisen dos en el mismo turno. Si no hay persona k (lugar mayor
+-- que el equipo, como las citas que inserta tests/seguridad.sh), la cita queda sin nombre y sigue ocupando su turno.
 UPDATE citas c
 JOIN (SELECT id, servicio, ROW_NUMBER() OVER (PARTITION BY servicio ORDER BY id) AS n
       FROM profesionales WHERE servicio IN ('peluqueria', 'paseos', 'entrenamiento')) p

@@ -22,6 +22,8 @@ export default function SlotPicker({ servicio, modalidad, value, onChange, numer
   const turnos = disp?.clave === `${servicio}|${fecha}|${profesional}` ? disp.datos : null
   const libresEstadia = estadia?.clave === `${servicio}|${fecha}|${salida}` ? estadia.datos : null
   const n = (paso) => (numerado ? `${paso}. ` : '')
+  // Una persona atiende un turno a la vez: con una sola, todas las horas tienen un lugar y no es un aviso útil.
+  const avisarUltimo = !profesional && Array.isArray(turnos) && turnos.some((t) => t.libres > 1)
 
   useEffect(() => {
     if (!servicio) return
@@ -111,7 +113,7 @@ export default function SlotPicker({ servicio, modalidad, value, onChange, numer
                 <button key={t.hora} type="button" className={`slot ${hora === t.hora ? 'active' : ''}`} aria-pressed={hora === t.hora}
                   onClick={() => onChange({ ...value, hora: t.hora })}>
                   {t.hora}
-                  {t.libres === 1 && <small>último cupo</small>}
+                  {avisarUltimo && t.libres === 1 && <small>último cupo</small>}
                 </button>
               ))}
             </div>

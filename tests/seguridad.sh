@@ -2,10 +2,18 @@
 # Pruebas de seguridad end-to-end contra el stack levantado con `docker compose up -d`.
 #   tests/seguridad.sh            # usa https://localhost:8443
 #   BASE=https://otra-url tests/seguridad.sh
-# Requiere: curl, jq, docker compose (para los casos que miran BD/contenedores).
+# Requiere Linux: bash 4+, date y base64 de GNU, tzdata, curl con TLS 1.3, jq, git y docker compose (para
+# los casos que miran BD/contenedores). En macOS: tests/seguridad-en-contenedor.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
 source .env
+
+# Fuera de Linux los fallos serían falsos (en macOS, 79 de 342): mejor no correr.
+if (( BASH_VERSINFO[0] < 4 )) || [[ ! -r /proc/sys/kernel/random/uuid ]] || ! date -d now >/dev/null 2>&1 \
+    || ! base64 -w0 </dev/null >/dev/null 2>&1 || [[ "$(TZ=America/Guatemala date +%z)" != -0600 ]]; then
+    echo "Esta suite necesita Linux con bash 4+, herramientas GNU y tzdata. Usa tests/seguridad-en-contenedor.sh" >&2
+    exit 2
+fi
 
 BASE=${BASE:-https://localhost:${HTTPS_PORT:-8443}}
 HTTP=${HTTP:-http://localhost:${HTTP_PORT:-8088}}

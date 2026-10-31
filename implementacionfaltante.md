@@ -564,7 +564,7 @@ Al terminar se borraron los dos archivos de Cloudinary (`destroy`) y sus filas d
   - paseos: Kevin Rodas, Andrés Batz y Fernanda Coy;
   - entrenamiento: Óscar Monterroso.
 - **Misma capacidad que antes:** con profesionales, el lugar de cada turno es una persona y la capacidad es cuántos trabajan a esa hora. Por eso se cargó la misma cantidad que los lugares fijos de `servicios.cupos` (2, 3 y 1). La primera persona de cada servicio trabaja de lunes a sábado, de 8:00 a 20:00; las demás tienen horarios parciales, así que en algunas franjas (por ejemplo, el sábado por la mañana en paseos) hay un lugar menos que antes.
-- **Ninguna cita queda sin asignar:** el seed pasa el lugar *k* de las citas que ya existían a la *k*-ésima persona del servicio. En la demo, 12 citas (8 de peluquería, 2 de paseos y 2 de entrenamiento) quedaron a nombre de Karla, Kevin y Óscar.
+- **Citas ya existentes:** el seed pasa el lugar *k* a la *k*-ésima persona del servicio. En la demo, 12 citas (8 de peluquería, 2 de paseos y 2 de entrenamiento) quedaron a nombre de Karla, Kevin y Óscar. Si no hay persona *k*, como en las citas que inserta `tests/seguridad.sh` con lugares altos, la cita queda sin nombre y sigue ocupando su turno.
 - **Se puede repetir:** no duplica profesionales ni vuelve a mover citas. Se comprobó corriéndolo dos veces; las citas (42), su historial (101) y las mascotas (13) siguen igual. Respaldo previo: `backups/20261029-233937`.
 - **Comprobado:**
   - `/api/citas/servicios` lista al equipo de cada servicio;
@@ -572,3 +572,13 @@ Al terminar se borraron los dos archivos de Cloudinary (`destroy`) y sus filas d
   - en el panel, la cita de peluquería del día aparece con «Karla Juárez» y «Equipo y horarios» muestra a las 8 personas.
 - `usuarios.md` tiene la tabla del equipo; `falta.md`, la nota de que estos nombres son de ejemplo.
 - Las pruebas del CI no cargan la demo, así que no les afecta.
+
+## 2026-10-30 · Revisión en una Mac: réplica, suite y «último cupo»
+
+- **`ops/reparar-replica.sh` dejaba una falla oculta.** La copia incluye la base `mysql`, y con ella el usuario `healthcheck` del maestro: otra contraseña y sin `REPLICA MONITOR`. MariaDB sigue con los permisos en memoria, así que todo se ve bien hasta el siguiente reinicio; entonces la réplica queda `unhealthy` aunque replique bien, y `ops/seed-demo.sh`, `ops/migrar-v2.sh` y `docker compose up --wait` fallan. Ahora el script copia el `.cnf` del maestro, da el permiso y comprueba el healthcheck al terminar.
+  - **Comprobado** con volúmenes nuevos: sin reparar, la réplica aguanta el reinicio; con la versión anterior queda `unhealthy` (error 1045) y el seed sale con 1; con la corregida sigue `healthy` tras reiniciar, el seed pasa y los datos llegan a la réplica.
+  - Un entorno que ya tenga la falla se arregla igual que hace el script, o corriéndolo otra vez.
+- **`tests/seguridad.sh` no funciona fuera de Linux.** En macOS daba 79 fallos falsos (bash 3.2, `date` y `base64` de BSD, `curl` sin TLS 1.3, sin `/proc`). Ahora se detiene con un mensaje claro, y `tests/seguridad-en-contenedor.sh` la corre en un contenedor Linux: 342 de 342.
+- **«Último cupo» salía en todas las horas** al elegir a una persona o en servicios con un solo profesional, porque ahí `libres` siempre es 1. Ahora `SlotPicker` solo lo muestra si no se eligió persona y alguna hora del día tiene más de un lugar. Comprobado en Chromium: peluquería con Mónica, 0 de 16; entrenamiento, 0 de 24; peluquería sin elegir, 8 de 24 (antes de las 10:00 solo trabaja Karla).
+- **Términos:** decía que las vacunas son obligatorias, pero la reserva no las valida. Ahora pide traer el carné al día, como la FAQ. La decisión queda en `falta.md`.
+- **Confirmado en esta Mac:** el arreglo de `db/iniciar-mariadb.sh` con volúmenes nuevos y `ops/demo-pago-sin-claves.sh` (sin firma 400, firma falsa 400, firmado 200, pedido `pagado`).

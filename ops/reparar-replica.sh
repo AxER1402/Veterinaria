@@ -27,11 +27,19 @@ echo "  $(du -h "$tmp/copia.sql" | cut -f1), GTID $gtid"
 echo "→ Cargando la copia en la réplica…"
 esclavo -e "STOP SLAVE; RESET SLAVE;"
 esclavo < "$tmp/copia.sql"
+# La copia trae los usuarios del maestro, y con ellos su healthcheck: otra contraseña y sin REPLICA MONITOR.
+# Sin esto la réplica replica bien pero queda «unhealthy», y `docker compose up --wait` falla.
+docker compose exec -T mariadb-master cat /var/lib/mysql/.my-healthcheck.cnf \
+    | docker compose exec -T mariadb-slave sh -c 'cat > /var/lib/mysql/.my-healthcheck.cnf'
+esclavo -e "FLUSH PRIVILEGES; GRANT REPLICA MONITOR ON *.* TO 'healthcheck'@'localhost', 'healthcheck'@'127.0.0.1', 'healthcheck'@'::1';"
 esclavo -e "SET GLOBAL gtid_slave_pos = '$gtid'; CHANGE MASTER TO MASTER_USE_GTID = slave_pos; START SLAVE;"
 
 for _ in $(seq 1 15); do
     if esclavo -e "SHOW SLAVE STATUS\G" | grep -q "Slave_SQL_Running: Yes" && esclavo -e "SHOW SLAVE STATUS\G" | grep -q "Slave_IO_Running: Yes"; then
         echo "✔ Réplica sincronizada:"; esclavo -e "SHOW SLAVE STATUS\G" | grep -E "Slave_(IO|SQL)_Running:|Seconds_Behind"
+        docker compose exec -T mariadb-slave healthcheck.sh --connect --replication_io --replication_sql --replication \
+            || { echo "✘ La réplica replica, pero su healthcheck falla." >&2; exit 1; }
+        echo "✔ Healthcheck de la réplica correcto"
         exit 0
     fi
     sleep 2

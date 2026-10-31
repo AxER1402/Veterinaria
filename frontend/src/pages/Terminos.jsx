@@ -6,7 +6,7 @@ import { business } from '../data/content'
 // Totales.php (envío Q35, gratis desde Q400) y PEDIDO_VENCE_HORAS (2 h). Si cambian allá, cambiar aquí.
 export default function Terminos() {
   return (
-    <LegalPage title="Términos y condiciones" text="Las reglas para reservar citas y comprar en la tienda de Huellitas." actualizado="29 de octubre de 2026">
+    <LegalPage title="Términos y condiciones" text="Las reglas para reservar citas y comprar en la tienda de Huellitas." actualizado="30 de octubre de 2026">
       <h2>Aceptación</h2>
       <p>
         Al crear una cuenta, reservar una cita o hacer un pedido en este sitio aceptas estos términos y nuestro{' '}
@@ -27,7 +27,7 @@ export default function Terminos() {
         <li>Puedes cambiar o cancelar una cita desde <Link to="/cuenta/citas">Mis citas</Link> hasta 2 horas antes. Después, llámanos.</li>
         <li>Si faltas a 3 citas en 3 meses sin avisar, las siguientes tendrás que agendarlas por teléfono.</li>
         <li>Los servicios se pagan en la sede, al momento de la atención.</li>
-        <li>Para guardería y hospedaje tu mascota debe tener las vacunas al día. El hospedaje se reserva por un máximo de 30 noches.</li>
+        <li>Para guardería y hospedaje, trae el carné de vacunación de tu mascota al día. El hospedaje se reserva por un máximo de 30 noches.</li>
         <li>Si es una urgencia, no reserves en línea: llámanos al <a href={`tel:${business.tel}`}>{business.phone}</a>.</li>
       </ul>
 

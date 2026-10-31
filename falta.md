@@ -22,13 +22,14 @@ Pendiente
   - Privacidad (`/privacidad`) y Términos (`/terminos`) ya existen (2026-10-29) y describen lo que hace el sistema, pero son un texto base: falta que el negocio confirme la política de cambios y devoluciones y los motivos para ocultar reseñas, y que lo revise alguien con criterio legal. Las cifras (horario, 60 días, 2 h, Q35/Q400, 3 faltas) salen del código: si cambian allá, cambiarlas también en `Terminos.jsx`.
   - FLASH50 no tiene fecha de vencimiento en la base, así que no se muestra cuenta regresiva. Si se quiere, hay que poner la fecha en `pedidos_db.cupones.vence`.
   - Los testimonios y las reseñas son de demostración: ficticios pero coherentes con los clientes de la demo.
-- En el servidor hay que correr `ops/reparar-replica.sh` para resolver el error 1236 (se probó en local).
-- macOS con Docker Desktop (corregido el 2026-10-29): los scripts de inicio de la base fallaban porque el bind mount los mostraba como ejecutables, y las bases quedaban vacías aunque el contenedor estuviera «healthy». Ahora `db/iniciar-mariadb.sh` los copia con permisos 644 antes de arrancar. Se probó en Linux, simulando el bit de ejecución; falta confirmarlo en una Mac real. `.gitattributes` fuerza LF en `.sh` y `.sql` (para Windows).
+- En el servidor hay que correr `ops/reparar-replica.sh` para resolver el error 1236 (se probó en local). Usar la versión del 2026-10-30 o posterior: la anterior deja la réplica `unhealthy` en el siguiente reinicio (ver `implementacionfaltante.md`).
+- Vacunas en guardería y hospedaje: la reserva no las valida. Términos pide traer el carné al día (como la FAQ); falta que el negocio decida si basta con revisarlo en la sede o si el sistema debe exigirlo.
+- macOS con Docker Desktop (corregido el 2026-10-29): los scripts de inicio de la base fallaban porque el bind mount los mostraba como ejecutables, y las bases quedaban vacías aunque el contenedor estuviera «healthy». Ahora `db/iniciar-mariadb.sh` los copia con permisos 644 antes de arrancar. Confirmado el 2026-10-30 en una Mac real con volúmenes nuevos. `.gitattributes` fuerza LF en `.sh` y `.sql` (para Windows).
 
 Lo que no se probó
 - Revisión en el navegador (2026-10-29, Chromium sin interfaz): 37 pantallas por rol (cliente, admin, veterinario, recepción, tienda y cliente con contraseña temporal), en escritorio (1366 px) y celular (390 px), sin errores de JS, sin peticiones fallidas y sin desborde horizontal. Se corrigieron el encabezado en celulares, las tablas sin desplazamiento, la sección fuera del rol y una petición prohibida de la tienda (ver `implementacionfaltante.md`). Falta probarlo en un teléfono real, y en Safari/iOS.
 - El reembolso por la pasarela no se probó con un pago real: falta tener claves.
-- `tests/seguridad.sh` se corrió el 2026-10-29 en local: 342 pasaron, 0 fallaron (detalle en `implementacionfaltante.md`). La prueba CP-36 necesita internet (clima).
+- `tests/seguridad.sh` se corrió el 2026-10-29 en local: 342 pasaron, 0 fallaron (detalle en `implementacionfaltante.md`). La prueba CP-36 necesita internet (clima). En macOS se corre con `tests/seguridad-en-contenedor.sh`: 342 de 342 el 2026-10-30.
 - Los correos nuevos (cita reprogramada, cambios de estado de pedidos) reutilizan la plantilla de citas de EmailJS. No se probaron con claves reales.
 
 Otros pendientes

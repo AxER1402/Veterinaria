@@ -115,7 +115,8 @@ Todos los usuarios (app, BD y Redis) están en [`usuarios.md`](usuarios.md).
 ## Pruebas de seguridad
 
 ```bash
-tests/seguridad.sh
+tests/seguridad.sh                 # en Linux
+tests/seguridad-en-contenedor.sh   # en macOS: la misma suite, en un contenedor Linux
 ```
 
 Corre los casos CP-01 a CP-51 (342 comprobaciones) contra el stack levantado: TLS 1.3, cabeceras, JWT manipulado, bloqueo de cuenta, logout, WAF, Zero Trust entre servicios, bitácora append-only, puertos de BD/Redis no expuestos, contenedores sin root, replicación, precios manipulados, acceso a pedidos ajenos (A01), stock, eventos de auditoría, webhook de Stripe (firma, replay, monto o moneda manipulados), ausencia de datos de tarjeta, rutas de pago internas y secretos fuera del repo, exportación auditada, evidencia de SEC-2, vencimiento de pedidos sin pagar, verificación en dos pasos, IP del cliente no falsificable, clima del panel y el módulo de citas (mascotas y citas ajenas, doble reserva simultánea, agenda y estados, correo con código HMAC, bloqueos de turnos, historial clínico, carné de vacunas, recordatorios y límite de citas por cliente), el alta de productos desde el panel, el tipo de cambio de PayPal, los roles del personal (mínimo privilegio y cambios auditados), reembolsos, reseñas, reprogramación de citas, horarios del equipo y correcciones del historial.
