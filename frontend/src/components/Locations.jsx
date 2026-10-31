@@ -1,28 +1,40 @@
-import { MapPin, ArrowUpRight } from 'lucide-react'
-import Reveal from './Reveal'
+import { useState } from 'react'
+import { MapPin, ArrowUpRight, Clock, Phone } from 'lucide-react'
 import SectionTitle from './SectionTitle'
-import { locations } from '../data/content'
+import { business, locations } from '../data/content'
 import MapEmbed from './MapEmbed'
 
+// Una lista de sedes y un solo mapa: se carga menos y el mapa se ve grande.
 export default function Locations() {
+  const [activa, setActiva] = useState(0)
+  const sede = locations[activa]
+
   return (
     <section className="section section--tint">
       <div className="container">
         <SectionTitle eyebrow="Sedes" title="Encuéntranos" center />
-        <div className="locations">
-          {locations.map((l, i) => (
-            <Reveal key={l.title} className="location" delay={i * 100}>
-              <span className="location__icon">
-                <MapPin size={26} />
-              </span>
-              <h3>{l.title}</h3>
-              <p>{l.address}</p>
-              <MapEmbed query={`${l.address}, Ciudad de Guatemala`} title={`Mapa de ${l.title}`} height={180} />
-              <a href={l.map} target="_blank" rel="noreferrer">
-                Ver en el mapa <ArrowUpRight size={16} />
-              </a>
-            </Reveal>
-          ))}
+        <div className="sedes">
+          <div className="sedes__lista">
+            {locations.map((l, i) => (
+              <button key={l.title} type="button" className={`sede ${i === activa ? 'is-activa' : ''}`} aria-pressed={i === activa} onClick={() => setActiva(i)}>
+                <span className="sede__icono"><MapPin size={20} aria-hidden="true" /></span>
+                <span>
+                  <strong>{l.title}</strong>
+                  <small>{l.address}</small>
+                </span>
+              </button>
+            ))}
+            <div className="sedes__datos">
+              <a href={`tel:${business.tel}`}><Phone size={18} aria-hidden="true" /> {business.phone}</a>
+              <span><Clock size={18} aria-hidden="true" /> {business.hours}</span>
+            </div>
+          </div>
+          <div className="sedes__mapa">
+            <MapEmbed key={sede.title} query={`${sede.address}, Ciudad de Guatemala`} title={`Mapa de ${sede.title}`} height={460} />
+            <a href={sede.map} target="_blank" rel="noreferrer" className="btn btn--dark btn--sm sedes__llegar">
+              Cómo llegar <ArrowUpRight size={16} aria-hidden="true" />
+            </a>
+          </div>
         </div>
       </div>
     </section>

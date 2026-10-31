@@ -1,10 +1,17 @@
 import { useState } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import PageHeader from '../../components/PageHeader'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { CalendarHeart, Eye, EyeOff, Lock, Mail, Package, ShieldCheck, Syringe, User } from 'lucide-react'
 import Field from '../../components/Field'
 import GoogleButton from '../../components/GoogleButton'
 import Loading from '../../components/Loading'
 import { useAuth } from '../../context/useAuth'
+import { images } from '../../data/content'
+
+const VENTAJAS = [
+  { icon: CalendarHeart, texto: 'Reserva y cambia tus citas' },
+  { icon: Syringe, texto: 'Consulta el carné de tus mascotas' },
+  { icon: Package, texto: 'Sigue tus pedidos de la tienda' },
+]
 
 export default function Account() {
   const { user, checking } = useAuth()
@@ -16,10 +23,25 @@ export default function Account() {
   if (user) return <Navigate to={from} replace />
 
   return (
-    <>
-      <PageHeader compact title="Mi cuenta" text="Ingresa para reservar citas, ver el carné de tus mascotas y seguir tus pedidos." />
-      <section className="section">
-        <div className="container account">
+    <section className="auth">
+      <div className="auth__tarjeta">
+        <aside className="auth__panel">
+          <span className="shop-hero__face" aria-hidden="true">▼・ᴥ・▼</span>
+          <p className="auth__lema">Todo sobre tu mascota, <span className="highlight">en un solo lugar</span></p>
+          <ul className="auth__ventajas">
+            {VENTAJAS.map(({ icon: Icon, texto }) => (
+              <li key={texto}><Icon size={20} aria-hidden="true" /> {texto}</li>
+            ))}
+          </ul>
+          <div className="auth__foto" aria-hidden="true">
+            <div className="shop-hero__circle" />
+            <img src={images.hero} alt="" />
+          </div>
+        </aside>
+
+        <div className="auth__contenido">
+          <h1>{tab === 'ingresar' ? 'Qué bueno verte' : 'Crea tu cuenta'}</h1>
+          <p className="auth__sub">{tab === 'ingresar' ? 'Ingresa para ver tus citas, mascotas y pedidos.' : 'Es gratis y solo toma un minuto.'}</p>
           <div className="account__tabs" role="tablist">
             <button role="tab" aria-selected={tab === 'ingresar'} className={tab === 'ingresar' ? 'active' : ''} onClick={() => setTab('ingresar')}>
               Ingresar
@@ -31,8 +53,30 @@ export default function Account() {
           <GoogleButton />
           {tab === 'ingresar' ? <LoginForm from={from} /> : <RegisterForm onDone={() => setTab('ingresar')} />}
         </div>
-      </section>
-    </>
+      </div>
+    </section>
+  )
+}
+
+// Campo con ícono a la izquierda; las contraseñas llevan además un botón para mostrarla.
+function Entrada({ icon: Icon, children }) {
+  return (
+    <span className="entrada">
+      <Icon size={18} className="entrada__icono" aria-hidden="true" />
+      {children}
+    </span>
+  )
+}
+
+function EntradaPassword({ value, onChange, autoComplete, required }) {
+  const [ver, setVer] = useState(false)
+  return (
+    <Entrada icon={Lock}>
+      <input type={ver ? 'text' : 'password'} value={value} onChange={onChange} autoComplete={autoComplete} required={required} maxLength={72} />
+      <button type="button" className="entrada__ver" onClick={() => setVer((v) => !v)} aria-label={ver ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-pressed={ver}>
+        {ver ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
+    </Entrada>
   )
 }
 
@@ -75,8 +119,10 @@ function LoginForm({ from }) {
       <form className="account__form" onSubmit={submit}>
         <p>Tu cuenta tiene verificación en dos pasos. Escribe el código de 6 dígitos de tu app de autenticación.</p>
         <Field label="Código de verificación">
-          <input value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric"
-            autoComplete="one-time-code" pattern="\d{6}" required autoFocus />
+          <Entrada icon={ShieldCheck}>
+            <input value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric"
+              autoComplete="one-time-code" pattern="\d{6}" required autoFocus />
+          </Entrada>
         </Field>
         {error && <p className="form-alert" role="alert">{error}</p>}
         <button className="btn btn--primary btn--block" disabled={sending || codigo.length !== 6}>{sending ? 'Verificando…' : 'Verificar'}</button>
@@ -88,10 +134,12 @@ function LoginForm({ from }) {
   return (
     <form className="account__form" onSubmit={submit}>
       <Field label="Correo">
-        <input type="email" value={values.email} onChange={set('email')} autoComplete="email" required maxLength={120} />
+        <Entrada icon={Mail}>
+          <input type="email" value={values.email} onChange={set('email')} autoComplete="email" placeholder="tu@correo.com" required maxLength={120} />
+        </Entrada>
       </Field>
       <Field label="Contraseña">
-        <input type="password" value={values.password} onChange={set('password')} autoComplete="current-password" required maxLength={72} />
+        <EntradaPassword value={values.password} onChange={set('password')} autoComplete="current-password" required />
       </Field>
       {error && <p className="form-alert" role="alert">{error}</p>}
       <button className="btn btn--primary btn--block" disabled={sending}>{sending ? 'Ingresando…' : 'Ingresar'}</button>
@@ -144,19 +192,24 @@ function RegisterForm({ onDone }) {
   return (
     <form className="account__form" onSubmit={submit} noValidate>
       <Field label="Nombre completo" error={errors.nombre}>
-        <input value={values.nombre} onChange={set('nombre')} autoComplete="name" maxLength={100} />
+        <Entrada icon={User}>
+          <input value={values.nombre} onChange={set('nombre')} autoComplete="name" maxLength={100} />
+        </Entrada>
       </Field>
       <Field label="Correo" error={errors.email}>
-        <input type="email" value={values.email} onChange={set('email')} autoComplete="email" maxLength={120} />
+        <Entrada icon={Mail}>
+          <input type="email" value={values.email} onChange={set('email')} autoComplete="email" placeholder="tu@correo.com" maxLength={120} />
+        </Entrada>
       </Field>
       <Field label="Contraseña" error={errors.password}>
-        <input type="password" value={values.password} onChange={set('password')} autoComplete="new-password" maxLength={72} />
+        <EntradaPassword value={values.password} onChange={set('password')} autoComplete="new-password" />
       </Field>
       <Field label="Repite la contraseña" error={errors.confirm}>
-        <input type="password" value={values.confirm} onChange={set('confirm')} autoComplete="new-password" maxLength={72} />
+        <EntradaPassword value={values.confirm} onChange={set('confirm')} autoComplete="new-password" />
       </Field>
       {error && <p className="form-alert" role="alert">{error}</p>}
       <button className="btn btn--primary btn--block" disabled={sending}>{sending ? 'Creando cuenta…' : 'Crear cuenta'}</button>
+      <p className="account__hint">Mínimo 8 caracteres, con letras y números. Al crear tu cuenta aceptas los <Link to="/terminos">Términos</Link> y el <Link to="/privacidad">Aviso de privacidad</Link>.</p>
     </form>
   )
 }

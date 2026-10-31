@@ -11,9 +11,10 @@ export default function ProductCard({ product }) {
   const low = minPrice(product)
   const high = maxPrice(product)
   const wished = isWished(product.id)
+  const enOferta = product.badge === 'Oferta' || product.variants.some((v) => v.oldPrice)
 
   return (
-    <article className="product-card">
+    <article className={`product-card ${enOferta ? 'product-card--oferta' : ''}`}>
       <div className="product-card__media">
         <Link to={url} tabIndex={-1} aria-hidden="true">
           <img src={product.image} alt="" loading="lazy" />

@@ -6,13 +6,24 @@ import { business, navLinks } from '../data/content'
 import { useShop } from '../context/useShop'
 import { useAuth } from '../context/useAuth'
 
+const COMPACTO_DESDE = 80
+const SCROLL_MINIMO = 6
+
 export default function Header() {
   const [open, setOpen] = useState(false)
-  const [scrolled, setScrolled] = useState(false)
+  const [compacto, setCompacto] = useState(false)
   const { totals, wishlist, openDrawer } = useShop()
   const { user, isStaff } = useAuth()
+  // Se hace más delgado al bajar y vuelve a su tamaño al subir. Un margen evita que cambie con cada temblor del scroll.
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20)
+    let anterior = window.scrollY
+    const onScroll = () => {
+      const y = Math.max(0, window.scrollY)
+      if (y <= COMPACTO_DESDE) setCompacto(false)
+      else if (Math.abs(y - anterior) < SCROLL_MINIMO) return
+      else setCompacto(y > anterior)
+      anterior = y
+    }
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
@@ -23,7 +34,7 @@ export default function Header() {
   }, [open])
 
   return (
-    <header className={`header ${scrolled ? 'header--scrolled' : ''}`}>
+    <header className={`header ${compacto && !open ? 'header--compacto' : ''}`}>
       <div className="container header__inner">
         <Link to="/" aria-label="Inicio">
           <Logo />

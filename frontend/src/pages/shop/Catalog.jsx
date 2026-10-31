@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Search, SlidersHorizontal, X, PackageSearch } from 'lucide-react'
-import PageHeader from '../../components/PageHeader'
+import PageHero from '../../components/PageHero'
+import { images } from '../../data/content'
 import ProductCard from '../../components/shop/ProductCard'
 import { pets, categories, brands, minPrice, isOnSale } from '../../data/shop'
 import { useShop } from '../../context/useShop'
@@ -52,8 +53,16 @@ export default function Catalog() {
 
   return (
     <>
-      <PageHeader title={petLabel ? `Tienda · ${petLabel}` : 'Tienda'} text="Productos elegidos por nuestros veterinarios para cada tipo de mascota." />
-      <section className="section">
+      <PageHero
+        compacto
+        cara="▼・ᴥ・▼"
+        title={petLabel ? <>Productos para <span className="highlight">{petLabel.toLowerCase()}</span></> : <>Todo para <span className="highlight">tu mascota</span></>}
+        text="Elegidos por nuestros veterinarios para cada tipo de mascota."
+        image={images.cta}
+        alt="Bulldog francés con sudadera amarilla"
+        tag={catalogLoading ? null : <><strong>{results.length}</strong> {results.length === 1 ? 'producto' : 'productos'}</>}
+      />
+      <section className="section section--catalogo">
         <div className="container catalog">
           <aside className={`filters ${filtersOpen ? 'filters--open' : ''}`}>
             <div className="filters__header">

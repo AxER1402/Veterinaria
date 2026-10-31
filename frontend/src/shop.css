@@ -139,11 +139,12 @@
   flex-direction: column;
   height: 100%;
   background: var(--white);
-  border: 1px solid var(--line);
+  border: 2px solid var(--navy);
   border-radius: var(--radius);
   overflow: hidden;
   transition: box-shadow 0.3s, transform 0.3s var(--ease);
 }
+.product-card--oferta { border-color: var(--yellow); }
 .product-card:hover { box-shadow: var(--shadow); transform: translateY(-4px); }
 .product-card__media { position: relative; aspect-ratio: 1; background: var(--soft); overflow: hidden; }
 .product-card__media img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s var(--ease); }
@@ -1314,5 +1315,196 @@ p.hero__reviews { margin: 18px 0 0; }
   .page-hero .shop-hero__tag { width: 108px; height: 108px; font-size: 0.78rem; padding: 10px; }
   .page-hero .shop-hero__tag strong { font-size: 1.6rem; }
   .page-hero .shop-hero__tag .shop-hero__tag-corto { font-size: 0.92rem; }
+}
+
+/* ---------- Ingresar y crear cuenta (Account.jsx) ---------- */
+.auth { background: var(--soft); padding: clamp(20px, 5vw, 64px) clamp(16px, 4vw, 40px); }
+.auth__tarjeta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); max-width: 1040px; margin-inline: auto; background: var(--white); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.auth__panel { position: relative; display: flex; flex-direction: column; padding: clamp(28px, 4vw, 48px); padding-bottom: 0; background: var(--yellow); color: var(--navy); overflow: hidden; }
+.auth__lema { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.6rem, 2.8vw, 2.2rem); line-height: 1.2; color: var(--navy); margin: 0 0 22px; }
+.auth__lema .highlight { --hl: var(--white); }
+.auth__ventajas { list-style: none; margin: 0 0 24px; padding: 0; display: grid; gap: 12px; }
+.auth__ventajas li { display: flex; align-items: center; gap: 10px; font-weight: 400; }
+.auth__ventajas svg { flex: none; }
+.auth__foto { position: relative; margin-top: auto; display: grid; place-items: end center; }
+.auth__foto img { position: relative; width: min(78%, 300px); aspect-ratio: 1; object-fit: cover; object-position: top; border-radius: 50% 50% 0 0; }
+.auth__foto .shop-hero__circle { width: min(100%, 390px); bottom: -35%; }
+.auth__contenido { padding: clamp(24px, 4.5vw, 56px); min-width: 0; }
+.auth__contenido h1 { font-size: clamp(1.8rem, 3.4vw, 2.5rem); margin: 0 0 6px; }
+.auth__sub { margin: 0 0 24px; color: var(--gray); }
+.auth .account__tabs { margin-bottom: 20px; }
+.auth .field input, .reserva .field input, .reserva .field textarea, .reserva .field .ctl { background: var(--white); border: 1px solid var(--line); padding: 13px 14px; }
+.auth .field input:focus, .reserva .field input:focus, .reserva .field textarea:focus { border-color: var(--yellow-dark); box-shadow: 0 0 0 3px rgba(255, 209, 0, 0.3); }
+.auth .field--error input, .reserva .field--error input { border-color: #e57373; }
+.entrada { position: relative; display: block; }
+.entrada__icono { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--gray); pointer-events: none; }
+.auth .entrada input { padding-left: 42px; }
+.auth .entrada:has(.entrada__ver) input { padding-right: 46px; }
+.entrada__ver { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 8px; background: none; color: var(--gray); cursor: pointer; }
+.entrada__ver:hover { background: var(--soft); color: var(--navy); }
+.entrada__ver:focus-visible { outline: 2px solid var(--yellow-dark); }
+.auth .account__hint a { color: var(--navy); text-decoration: underline; }
+@media (max-width: 860px) {
+  .auth { padding: 0; background: var(--white); }
+  .auth__tarjeta { grid-template-columns: minmax(0, 1fr); border-radius: 0; box-shadow: none; }
+  .auth__panel { display: none; }
+  .auth__contenido { padding: 28px 20px 36px; }
+  .account .auth__contenido, .auth__contenido { max-width: 480px; width: 100%; margin-inline: auto; }
+}
+
+/* ---------- Encabezado bajo (catálogo y reserva) ---------- */
+.page-hero--compacto .shop-hero__inner { min-height: 250px; }
+.page-hero--compacto .shop-hero__content { padding: 28px 0; }
+.page-hero--compacto h1 { font-size: clamp(1.9rem, 3.4vw, 2.8rem); margin-bottom: 8px; }
+.page-hero--compacto .shop-hero__content p { margin-bottom: 0; font-size: 1.05rem; max-width: 520px; }
+.page-hero--compacto .shop-hero__face { margin-bottom: 6px; font-size: 1.3rem; }
+.page-hero--compacto .shop-hero__media { justify-self: end; width: min(100%, 300px); }
+.page-hero--compacto .shop-hero__media img { width: 72%; }
+.page-hero--compacto .shop-hero__tag { top: 6%; right: 0; width: 92px; height: 92px; font-size: 0.75rem; padding: 8px; }
+.page-hero--compacto .shop-hero__tag strong { font-size: 1.5rem; }
+@media (max-width: 960px) {
+  .page-hero--compacto .shop-hero__inner { grid-template-columns: minmax(0, 1fr) 150px; gap: 12px; text-align: left; }
+  .page-hero--compacto .shop-hero__content { padding: 22px 0; }
+  .page-hero--compacto .shop-hero__media { width: 100%; max-width: none; margin: 0; }
+  .page-hero--compacto .shop-hero__media img { width: 100%; }
+  .page-hero--compacto .shop-hero__circle { width: 120%; }
+  .page-hero--compacto .shop-hero__tag { display: none; }
+}
+@media (max-width: 520px) {
+  .page-hero--compacto .shop-hero__inner { grid-template-columns: minmax(0, 1fr) 96px; }
+  .page-hero--compacto .shop-hero__content p { font-size: 0.95rem; }
+}
+
+/* ---------- Catálogo ---------- */
+.section--catalogo { padding: clamp(20px, 3vw, 40px) 0 clamp(48px, 6vw, 80px); }
+.catalog { grid-template-columns: 240px minmax(0, 1fr); gap: clamp(20px, 2.5vw, 40px); }
+.products-grid.products-grid--3 { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+@media (max-width: 960px) { .catalog { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  .products-grid.products-grid--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .toolbar .search { flex: 1 1 100%; }
+  .toolbar .filters-toggle, .toolbar .ctl { flex: 1 1 0; justify-content: center; min-height: 44px; }
+}
+
+/* ---------- Reservar ---------- */
+.reserva-seccion { background: var(--soft); padding: clamp(16px, 3vw, 40px) 0 clamp(48px, 6vw, 80px); }
+.reserva { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(340px, 1fr); gap: clamp(16px, 2vw, 28px); align-items: start; }
+.reserva__pasos, .reserva__lado { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
+.reserva__lado { position: sticky; top: calc(var(--header-h) + 8px); }
+.reserva__tarjeta { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; min-width: 0; background: var(--white); border-radius: 16px; padding: clamp(18px, 2vw, 28px); }
+fieldset.reserva__tarjeta { border: 0; margin: 0; }
+.reserva__tarjeta legend, .reserva__titulo { float: left; width: 100%; padding: 0; margin: 0 0 12px; font-family: var(--font-display); font-weight: 600; font-size: 1.15rem; color: var(--navy); }
+.reserva__titulo { float: none; }
+.reserva__tarjeta legend::first-letter { text-transform: uppercase; }
+.reserva .booking__group { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+.reserva .booking__group > * { clear: both; }
+.reserva__servicios { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-bottom: 4px; }
+.reserva__servicio { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; align-items: center; text-align: left; font: inherit; color: var(--navy); background: var(--white); border: 2px solid var(--line); border-radius: 12px; padding: 12px 14px; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+.reserva__servicio svg { grid-row: span 2; }
+.reserva__servicio strong { font-weight: 500; font-size: 0.95rem; line-height: 1.25; }
+.reserva__servicio small { color: var(--gray); font-size: 0.8rem; }
+.reserva__servicio:hover { border-color: var(--navy); }
+.reserva__servicio:focus-visible { outline: 3px solid var(--yellow-dark); outline-offset: 2px; }
+.reserva__servicio.is-activo { background: #fff8d6; border-color: var(--yellow-dark); }
+.reserva .booking__group > .field { margin-top: 14px; }
+.reserva .day-picker { flex-wrap: wrap; overflow: visible; padding-bottom: 0; }
+.reserva__tarjeta > .booking__group + .booking__group, .reserva__tarjeta > .booking__group + .booking__sede { margin-top: 2px; }
+.reserva__resumen { border-top: 4px solid var(--yellow); gap: 12px; }
+.reserva__resumen h2 { font-size: 1.25rem; margin: 0; }
+.reserva__resumen dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; margin: 0; font-size: 0.93rem; }
+.reserva__resumen dt { color: var(--gray); }
+.reserva__resumen dd { margin: 0; color: var(--navy); font-weight: 400; text-align: right; }
+.reserva__fecha::first-letter { text-transform: uppercase; }
+.reserva__falta { color: var(--gray); font-weight: 300; font-style: italic; }
+.reserva__precio { display: flex; align-items: baseline; justify-content: space-between; margin: 0; padding-top: 12px; border-top: 1px solid var(--line); color: var(--gray); }
+.reserva__precio strong { font-family: var(--font-display); font-size: 1.5rem; color: var(--navy); }
+.reserva__promo { margin: 0; padding: 10px 12px; border-radius: 10px; background: #fff8d6; font-size: 0.9rem; color: var(--navy); }
+.reserva__lado .form-grid { grid-template-columns: minmax(0, 1fr); margin-bottom: 16px; }
+.reserva__lado form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.reserva__lado form > .booking__group legend { font-size: 1.05rem; }
+.reserva__lado .booking__login { border-top: 0; padding-top: 0; }
+.reserva__lado .booking__login p { margin: 0; }
+.reserva__lado .booking__urgent { margin: 0; align-items: flex-start; flex-wrap: nowrap; }
+.reserva__lado .booking__urgent svg { flex: none; margin-top: 3px; }
+.reserva__lado .booking__urgent a { font-weight: 600; white-space: nowrap; }
+.reserva__exito { max-width: 620px; margin-inline: auto; padding: clamp(24px, 4vw, 48px); }
+@media (max-width: 1000px) {
+  .reserva { grid-template-columns: minmax(0, 1fr); }
+  .reserva__lado { position: static; }
+}
+@media (max-width: 640px) {
+  .reserva .day-picker { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; }
+  .reserva__servicios { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reserva__servicio { grid-template-columns: minmax(0, 1fr); row-gap: 3px; padding: 11px 12px; }
+  .reserva__servicio svg { grid-row: auto; margin-bottom: 3px; }
+  .slot-grid { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
+}
+
+/* ---------- Servicios en la portada ---------- */
+.servicios { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(14px, 1.6vw, 24px); }
+.servicios > * { min-width: 0; }
+.servicio { display: flex; flex-direction: column; height: 100%; background: var(--white); border-radius: 16px; overflow: hidden; color: inherit; transition: transform 0.3s var(--ease), box-shadow 0.3s; }
+.servicio:hover { transform: translateY(-4px); box-shadow: var(--shadow); }
+.servicio:focus-visible { outline: 3px solid var(--yellow-dark); outline-offset: 2px; }
+.servicio__foto { display: block; aspect-ratio: 16 / 9; overflow: hidden; background: var(--soft); }
+.servicio__foto img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s var(--ease); }
+.servicio:hover .servicio__foto img { transform: scale(1.05); }
+.servicio__cuerpo { display: flex; flex-direction: column; flex: 1; gap: 10px; padding: clamp(16px, 1.6vw, 24px); }
+.servicio__titulo { display: flex; align-items: center; gap: 12px; }
+.servicio__titulo h3 { margin: 0; font-size: 1.2rem; }
+.servicio__icono { display: grid; place-items: center; flex: none; width: 42px; height: 42px; border-radius: 10px; background: var(--yellow); color: var(--navy); }
+.servicio__cuerpo p { margin: 0; flex: 1; font-size: 0.95rem; }
+.servicio__mas { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: var(--navy); }
+@media (max-width: 960px) { .servicios { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .servicios { grid-template-columns: minmax(0, 1fr); }
+  .servicio { flex-direction: row; }
+  .servicio__foto { flex: 0 0 34%; aspect-ratio: auto; }
+  .servicio__cuerpo { padding: 14px; gap: 6px; }
+  .servicio__icono { display: none; }
+  .servicio__titulo h3 { font-size: 1.05rem; }
+  .servicio__cuerpo p { font-size: 0.88rem; }
+}
+
+/* ---------- Encuéntranos ---------- */
+.sedes { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(0, 2fr); gap: clamp(14px, 2vw, 24px); align-items: stretch; }
+.sedes__lista { display: grid; align-content: start; gap: 10px; min-width: 0; }
+.sede { display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: left; font: inherit; color: var(--navy); background: var(--white); border: 2px solid transparent; border-radius: 12px; padding: 14px 16px; cursor: pointer; transition: border-color 0.2s; }
+.sede:hover { border-color: var(--line); }
+.sede:focus-visible { outline: 3px solid var(--yellow-dark); outline-offset: 2px; }
+.sede.is-activa { border-color: var(--yellow-dark); }
+.sede strong { display: block; font-weight: 500; line-height: 1.3; }
+.sede small { display: block; margin-top: 3px; color: var(--gray); font-size: 0.88rem; }
+.sede__icono { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 10px; background: var(--sky); }
+.sede.is-activa .sede__icono { background: var(--yellow); }
+.sedes__datos { display: grid; gap: 8px; padding: 10px 4px 0; font-size: 0.93rem; color: var(--navy); }
+.sedes__datos a, .sedes__datos span { display: flex; align-items: center; gap: 10px; }
+.sedes__datos a { font-weight: 500; }
+.sedes__mapa { position: relative; min-width: 0; min-height: 300px; border-radius: 16px; overflow: hidden; background: var(--white); }
+.sedes__mapa .map-embed { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; border-radius: 0; }
+.sedes__llegar { position: absolute; right: 12px; bottom: 12px; }
+@media (min-width: 961px) { .sedes__mapa { min-height: 420px; } }
+@media (max-width: 960px) { .sedes { grid-template-columns: minmax(0, 1fr); } .sedes__mapa { height: 320px; } }
+
+/* ---------- Preguntas frecuentes ---------- */
+.faq { grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr); gap: clamp(16px, 3vw, 40px); }
+.faq__lado { position: sticky; top: calc(var(--header-h) + 16px); background: var(--navy); color: var(--white); border-radius: 16px; padding: clamp(22px, 2.6vw, 36px); }
+.faq__lado .section-title { margin-bottom: 20px; }
+.faq__lado .section-title h2 { font-size: clamp(1.7rem, 2.8vw, 2.4rem); }
+.faq__lado .section-title p { color: rgba(255, 255, 255, 0.78); font-size: 1rem; margin-bottom: 0; }
+.faq__contacto { display: flex; flex-wrap: wrap; gap: 10px; }
+.faq__list { gap: 10px; min-width: 0; }
+.faq__item { background: var(--white); border: 1px solid var(--line); border-radius: 12px; transition: border-color 0.2s, box-shadow 0.2s; }
+.faq__item:hover { border-color: var(--navy); }
+.faq__item.open { background: var(--white); border-color: var(--yellow-dark); box-shadow: 0 8px 24px -18px rgba(0, 40, 66, 0.5); }
+.faq__pregunta { margin: 0; font: inherit; }
+.faq__item button { padding: 16px 18px; font-size: 1.05rem; color: var(--navy); }
+.faq__item button:focus-visible { outline: 3px solid var(--yellow-dark); outline-offset: -3px; border-radius: 12px; }
+.faq__icon { width: 30px; height: 30px; padding: 5px; border-radius: 50%; background: var(--soft); }
+.faq__item.open .faq__icon { background: var(--yellow); }
+.faq__answer p { padding: 0 18px 18px; margin: 0; }
+@media (max-width: 960px) {
+  .faq { grid-template-columns: minmax(0, 1fr); }
+  .faq__lado { position: static; }
 }
 

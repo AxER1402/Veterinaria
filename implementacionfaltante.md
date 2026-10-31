@@ -615,3 +615,21 @@ Al terminar se borraron los dos archivos de Cloudinary (`destroy`) y sus filas d
 - **Datos del círculo:** salen de `content.js` (cantidad de servicios, sedes, respuestas y el horario), así que no hay que actualizarlos a mano.
 - **Textos nuevos por confirmar con el negocio:** los títulos de las cuatro páginas, por ejemplo «Una familia que cuida a tu familia». Las fotos siguen siendo de stock.
 
+## 2026-10-31 · Encabezado a todo el ancho, tarjetas de la tienda y página de cuenta
+
+- **Encabezado:** logo y acciones van a los extremos (`1fr auto 1fr`) y los enlaces quedan centrados. Entre 961 y unos 1060 px no cabe un centrado exacto: los enlaces quedan unos 30 a 50 px a la izquierda, sin encimarse.
+- **Animación al hacer scroll:** después de 80 px, el menú pasa de 72 a 56 px al bajar y vuelve a 72 al subir, con un margen de 6 px para no reaccionar a movimientos mínimos. El elemento `.header` conserva sus 72 px en la página; solo cambia su contenido, así la página no se mueve ni tiembla. Con el menú de celular abierto y con «reducir movimiento» se respeta el tamaño o se quita la animación.
+- **Tarjetas de producto:** borde de 2 px azul marino; amarillo si está en oferta (etiqueta «Oferta» o `precio_anterior` en alguna presentación).
+- **`/cuenta`:** dos paneles en escritorio (lema, ventajas y foto; formulario) y solo el formulario en pantallas de hasta 860 px. Campos con ícono y botón para ver la contraseña. El registro enlaza Términos y Privacidad, y el título cambia con la pestaña. La lógica de sesión, MFA y registro no cambió.
+- **Falta:** recuperar contraseña no existe; solo se puede cambiar con la actual.
+
+## 2026-10-31 · Reservar, tienda, servicios, sedes y preguntas
+
+- **Ancho:** todo usa el `.container` del sitio (1240 px como máximo), igual que `/tienda`. Solo el encabezado va casi hasta los bordes.
+- **Reservar (`BookingForm.jsx`):** encabezado bajo y pasos en tarjetas. El servicio se elige con botones que muestran el precio, no con un selector. Un panel «Tu reserva» se actualiza con cada elección, y queda fijo en escritorio junto con la confirmación. La petición a la API y las validaciones no cambiaron. Se conservan la promoción de guardería y el aviso de urgencias.
+- **Catálogo:** `PageHero` compacto, con título según la mascota y el número de resultados; 4 productos por fila en escritorio y 2 en celular.
+- **Servicios en la portada:** tarjetas con foto; en celular van en fila para ocupar menos.
+- **Encuéntranos (`Locations.jsx`):** lista de sedes y un solo mapa, que se carga al elegir la sede, en lugar de tres.
+- **Preguntas (`Faq.jsx`):** bloque de contacto y lista con los mismos bordes de los controles. Cada respuesta se enlaza con su pregunta para lectores de pantalla.
+- **Comprobado** en una copia aislada: dos reservas reales (escritorio y celular), hospedaje con noches, volver de ingresar con la reserva intacta y cambio de sede en el mapa. Sin desborde de 320 a 1920 px con el ancho final.
+

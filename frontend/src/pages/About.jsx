@@ -17,7 +17,7 @@ export default function About() {
         alt="Persona acariciando a un gato atigrado"
         tag={<><strong>{locations.length}</strong> sedes en la ciudad</>}
       />
-      <HappyPets />
+      <HappyPets conEnlace={false} />
       <section className="stats">
         <div className="container stats__grid">
           {stats.map((s, i) => (

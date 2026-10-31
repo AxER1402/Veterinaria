@@ -43,6 +43,7 @@ export const images = {
   nosotros: unsplash('photo-1628009368231-7bb7cfcb0def', 900, 900),
   preguntas: unsplash('photo-1560807707-8cc77767d783', 900, 900),
   contacto: unsplash('photo-1561037404-61cd46aa615b', 900, 900),
+  reservar: unsplash('photo-1552053831-71594a27632d', 700, 700),
 }
 
 export const services = [
@@ -84,6 +85,7 @@ export const services = [
     description:
       'Baños con productos hipoalergénicos, cortes de raza, limpieza de oídos, corte de uñas y tratamientos de pelaje.',
     image: unsplash('photo-1560807707-8cc77767d783', 700, 520),
+    imagePos: 'center bottom', // el cachorro está abajo de la foto
     price: 'Desde Q200',
   },
   {

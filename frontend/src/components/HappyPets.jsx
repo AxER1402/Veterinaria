@@ -6,7 +6,8 @@ import { images } from '../data/content'
 
 const points = ['Médicos veterinarios certificados', 'Instalaciones limpias y seguras', 'Reportes y fotos diarias']
 
-export default function HappyPets() {
+// En la propia página Nosotros, `conEnlace` va apagado: el botón llevaría a la misma página.
+export default function HappyPets({ conEnlace = true }) {
   return (
     <section className="section">
       <div className="container split">
@@ -32,9 +33,11 @@ export default function HappyPets() {
               </li>
             ))}
           </ul>
-          <Link to="/nosotros" className="btn btn--dark">
-            Conoce más
-          </Link>
+          {conEnlace && (
+            <Link to="/nosotros" className="btn btn--dark">
+              Conoce más
+            </Link>
+          )}
         </Reveal>
       </div>
     </section>

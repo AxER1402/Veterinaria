@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
-import { CheckCircle2, MapPin, Plus, Phone } from 'lucide-react'
-import SectionTitle from './SectionTitle'
+import { CheckCircle2, Plus, Phone } from 'lucide-react'
+import { PawIcon } from './Brand'
 import Field from './Field'
 import PetForm from './PetForm'
 import SlotPicker from './SlotPicker'
 import { cuerpoReserva, eleccionLista } from './reserva'
 import { api } from '../api'
 import { useAuth } from '../context/useAuth'
+import { services } from '../data/content'
 import { formatPrice } from '../data/shop'
 import PetIcon from './PetIcon'
-import { TELEFONO_CLINICA, formatReserva } from '../pages/account/citas'
+import { TELEFONO_CLINICA, formatDay, formatReserva, noches } from '../pages/account/citas'
 import Select from './Select'
 
 // Lo elegido antes de ir a ingresar: al volver, la reserva sigue donde estaba.
@@ -60,91 +61,136 @@ export default function BookingForm() {
   const elegido = servicios?.find((s) => s.slug === servicio)
   const lista = elegido && eleccionLista(elegido.modalidad, eleccion)
 
+  const elegirServicio = (slug) => {
+    if (slug === servicio) return
+    setServicio(slug)
+    setProfesional('')
+    setEleccion({ fecha: '', hora: '', salida: '' })
+  }
+
   return (
-    <section className="section booking" id="reservar">
-      <div className="container booking__inner">
-        <div className="booking__intro">
-          <SectionTitle
-            eyebrow="Reserva"
-            title="¡Conozcámonos!"
-            text="Elige el servicio, el día y un horario libre. La cita se paga en la sede y te la confirmamos por correo."
-          />
-          <p className="booking__urgent">
-            <Phone size={18} /> ¿Es una urgencia? No esperes una cita: llámanos al <a href={`tel:${TELEFONO_CLINICA.replace(/[^+\d]/g, '')}`}>{TELEFONO_CLINICA}</a>.
-          </p>
-          {servicio === 'guarderia' && (
-            <div className="promo">
-              <strong>¿Primera vez?</strong>
-              <p>Tu primer día de guardería es <span>gratis</span> 🐶</p>
-            </div>
-          )}
-        </div>
-
-        <div className="booking__card">
-          {cita ? (
+    <section className="reserva-seccion" id="reservar">
+      <div className="container">
+        {cita ? (
+          <div className="reserva__tarjeta reserva__exito">
             <Success {...cita} onReset={() => { setCita(null); setEleccion({ fecha: '', hora: '', salida: '' }) }} />
-          ) : loadError ? (
-            <p className="form-alert" role="alert">No se pudieron cargar los servicios: {loadError}</p>
-          ) : !servicios ? (
-            <p className="booking__muted">Cargando servicios…</p>
-          ) : (
-            <div className="booking__steps">
-              <div className="form-grid form-grid--tight">
-                <Field label="1. Servicio" full>
-                  <Select value={servicio} onChange={(e) => { setServicio(e.target.value); setProfesional(''); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
-                    {servicios.map((s) => (
-                      <option key={s.slug} value={s.slug}>{s.nombre}</option>
-                    ))}
-                  </Select>
-                </Field>
-              </div>
-              {elegido && (
-                <p className="booking__sede"><MapPin size={18} /> <span>Desde <strong>{formatPrice(elegido.precio_desde)}</strong>. Se atiende en <strong>{elegido.sede.nombre}</strong></span></p>
-              )}
-
-              {elegido?.profesionales?.length > 0 && (
-                <div className="form-grid form-grid--tight">
-                  <Field label="¿Con quién? (opcional)" full>
+          </div>
+        ) : loadError ? (
+          <p className="form-alert" role="alert">No se pudieron cargar los servicios: {loadError}</p>
+        ) : !servicios ? (
+          <p className="booking__muted">Cargando servicios…</p>
+        ) : (
+          <div className="reserva">
+            <div className="reserva__pasos">
+              <fieldset className="reserva__tarjeta booking__group">
+                <legend>1. Servicio</legend>
+                <div className="reserva__servicios" role="radiogroup" aria-label="Servicio">
+                  {servicios.map((s) => {
+                    const Icon = services.find((x) => x.slug === s.slug)?.icon ?? PawIcon
+                    return (
+                      <button key={s.slug} type="button" role="radio" aria-checked={s.slug === servicio}
+                        className={`reserva__servicio ${s.slug === servicio ? 'is-activo' : ''}`} onClick={() => elegirServicio(s.slug)}>
+                        <Icon size={24} strokeWidth={1.8} aria-hidden="true" />
+                        <strong>{s.nombre}</strong>
+                        <small>Desde {formatPrice(s.precio_desde)}</small>
+                      </button>
+                    )
+                  })}
+                </div>
+                {elegido?.profesionales?.length > 0 && (
+                  <Field label="¿Con quién? (opcional)">
                     <Select value={profesional} onChange={(e) => { setProfesional(e.target.value); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
                       <option value="">Con quien tenga lugar</option>
                       {elegido.profesionales.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                     </Select>
                   </Field>
+                )}
+              </fieldset>
+
+              {elegido && (
+                <div className="reserva__tarjeta">
+                  <SlotPicker servicio={servicio} modalidad={elegido.modalidad} value={eleccion} onChange={setEleccion} profesional={profesional} />
                 </div>
               )}
-              {elegido && <SlotPicker servicio={servicio} modalidad={elegido.modalidad} value={eleccion} onChange={setEleccion} profesional={profesional} />}
-
-              {checking ? null : !user ? (
-                <LoginPrompt disabled={!lista} onGo={() => saveDraft({ servicio, profesional, ...eleccion })} from={pathname} />
-              ) : (
-                <Confirm
-                  key={user.id || user.email}
-                  user={user}
-                  lista={lista}
-                  consulta={servicio === 'veterinaria'}
-                  mascotaInicial={params.get('mascota')}
-                  reserva={{ servicio, ...cuerpoReserva(elegido?.modalidad, eleccion), ...(profesional ? { profesional_id: Number(profesional) } : {}) }}
-                  onDone={(r) => { saveDraft(null); setCita(r) }}
-                  onTaken={() => setEleccion((e) => ({ ...e, hora: '' }))}
-                />
-              )}
             </div>
-          )}
-        </div>
+
+            <aside className="reserva__lado">
+              {elegido && <Resumen servicio={elegido} eleccion={eleccion} profesional={profesional} />}
+              <div className="reserva__tarjeta">
+                {checking ? null : !user ? (
+                  <LoginPrompt disabled={!lista} onGo={() => saveDraft({ servicio, profesional, ...eleccion })} from={pathname} />
+                ) : (
+                  <Confirm
+                    key={user.id || user.email}
+                    user={user}
+                    lista={lista}
+                    consulta={servicio === 'veterinaria'}
+                    mascotaInicial={params.get('mascota')}
+                    reserva={{ servicio, ...cuerpoReserva(elegido?.modalidad, eleccion), ...(profesional ? { profesional_id: Number(profesional) } : {}) }}
+                    onDone={(r) => { saveDraft(null); setCita(r) }}
+                    onTaken={() => setEleccion((e) => ({ ...e, hora: '' }))}
+                  />
+                )}
+              </div>
+              <p className="booking__urgent">
+                <Phone size={18} /> <span>¿Es una urgencia? No esperes una cita: llámanos al <a href={`tel:${TELEFONO_CLINICA.replace(/[^+\d]/g, '')}`}>{TELEFONO_CLINICA}</a>.</span>
+              </p>
+            </aside>
+          </div>
+        )}
       </div>
     </section>
+  )
+}
+
+// Lo elegido hasta ahora: en escritorio queda a la vista mientras se recorren los pasos.
+function Resumen({ servicio, eleccion, profesional }) {
+  const { modalidad } = servicio
+  const { fecha, hora, salida } = eleccion
+  const persona = servicio.profesionales?.find((p) => String(p.id) === String(profesional))
+  const falta = <span className="reserva__falta">Por elegir</span>
+  return (
+    <div className="reserva__tarjeta reserva__resumen">
+      <h2>Tu reserva</h2>
+      <dl>
+        <dt>Servicio</dt>
+        <dd>{servicio.nombre}</dd>
+        {persona && (
+          <>
+            <dt>Con</dt>
+            <dd>{persona.nombre}</dd>
+          </>
+        )}
+        <dt>{modalidad === 'estadia' ? 'Entrada' : 'Día'}</dt>
+        <dd className="reserva__fecha">{fecha ? formatDay(fecha) : falta}</dd>
+        {modalidad === 'turno' && (
+          <>
+            <dt>Hora</dt>
+            <dd>{hora || falta}</dd>
+          </>
+        )}
+        {modalidad === 'estadia' && (
+          <>
+            <dt>Salida</dt>
+            <dd className="reserva__fecha">{salida ? `${formatDay(salida)} · ${noches(fecha, salida)} ${noches(fecha, salida) === 1 ? 'noche' : 'noches'}` : falta}</dd>
+          </>
+        )}
+        <dt>Sede</dt>
+        <dd>{servicio.sede.nombre}</dd>
+      </dl>
+      <p className="reserva__precio"><span>Desde</span> <strong>{formatPrice(servicio.precio_desde)}</strong></p>
+      {servicio.slug === 'guarderia' && <p className="reserva__promo">¿Primera vez? Tu primer día de guardería es <strong>gratis</strong>.</p>}
+    </div>
   )
 }
 
 function LoginPrompt({ disabled, onGo, from }) {
   return (
     <div className="booking__login">
-      <p>
-        <strong>4. Tu mascota y tus datos.</strong> Para confirmar la cita entra a tu cuenta o crea una: así puedes ver,
-        cambiar y cancelar tus citas cuando quieras.
-      </p>
+      <h2 className="reserva__titulo">4. Confirma tu cita</h2>
+      <p>Entra a tu cuenta o crea una. Así podrás ver, cambiar y cancelar tus citas cuando quieras.</p>
       <Link to="/cuenta" state={{ from }} onClick={onGo} className={`btn btn--primary btn--block ${disabled ? 'btn--muted' : ''}`}>
-        Ingresar o crear cuenta para confirmar
+        Ingresar o crear cuenta
       </Link>
       {disabled && <p className="booking__muted">Primero elige el día{' '}y el horario.</p>}
     </div>
