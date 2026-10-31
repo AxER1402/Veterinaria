@@ -26,7 +26,8 @@ function cargarScript() {
 export default function GoogleButton() {
   const { loginGoogle } = useAuth()
   const contenedor = useRef(null)
-  const [visible, setVisible] = useState(false)
+  // Empieza visible para reservar su lugar: Google tarda casi un segundo y el formulario no debe saltar.
+  const [visible, setVisible] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -34,7 +35,7 @@ export default function GoogleButton() {
     ;(async () => {
       try {
         const { client_id: clientId } = await api('/api/auth/google/config', { auth: false })
-        if (!clientId) return
+        if (!clientId) return setVisible(false)
         await cargarScript()
         if (!vigente) return
         window.google.accounts.id.initialize({
@@ -51,9 +52,9 @@ export default function GoogleButton() {
           locale: 'es',
           width: Math.min(contenedor.current.offsetWidth, ANCHO_MAX),
         })
-        setVisible(true)
       } catch {
         // Sin botón: el formulario de abajo no depende de Google.
+        if (vigente) setVisible(false)
       }
     })()
     return () => {
@@ -61,11 +62,16 @@ export default function GoogleButton() {
     }
   }, [loginGoogle])
 
+  if (!visible) return null
+
   return (
     <div className="account__google">
-      <div ref={contenedor} className="account__google-boton" />
+      <div className="account__google-lugar">
+        <span className="account__google-provisional" aria-hidden="true">Continuar con Google</span>
+        <div ref={contenedor} className="account__google-boton" />
+      </div>
       {error && <p className="form-alert" role="alert">{error}</p>}
-      {visible && <p className="account__separador"><span>o con tu correo</span></p>}
+      <p className="account__separador"><span>o con tu correo</span></p>
     </div>
   )
 }

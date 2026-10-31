@@ -675,10 +675,12 @@
 .account__tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--soft); border-radius: 999px; padding: 5px; margin-bottom: 28px; }
 .account__tabs button { font: inherit; font-weight: 500; border: 0; background: transparent; color: var(--navy); padding: 10px; border-radius: 999px; cursor: pointer; }
 .account__tabs button.active { background: var(--white); box-shadow: var(--shadow); }
-.account__google { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
-.account__google:has(.account__separador) { margin-bottom: 18px; }
+.account__google { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-bottom: 18px; }
+/* El provisional ocupa el lugar del botón de Google hasta que este lo cubre. */
+.account__google-lugar { position: relative; height: 40px; }
+.account__google-provisional { position: absolute; inset: 0; width: min(100%, 400px); margin: auto; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 4px; background: var(--white); color: var(--gray); font-size: 0.875rem; }
 /* Si Google rechaza el origen, dibuja su botón sin estilos: el tope evita un logo gigante. */
-.account__google-boton { display: flex; justify-content: center; color-scheme: light; max-height: 44px; overflow: hidden; }
+.account__google-boton { position: relative; display: flex; justify-content: center; color-scheme: light; max-height: 44px; overflow: hidden; }
 .account__separador { display: flex; align-items: center; gap: 12px; margin: 0; color: var(--gray); font-size: 0.85rem; }
 .account__separador::before, .account__separador::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 .account__form { display: grid; gap: 18px; }
