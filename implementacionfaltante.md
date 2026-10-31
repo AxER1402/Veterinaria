@@ -633,3 +633,36 @@ Al terminar se borraron los dos archivos de Cloudinary (`destroy`) y sus filas d
 - **Preguntas (`Faq.jsx`):** bloque de contacto y lista con los mismos bordes de los controles. Cada respuesta se enlaza con su pregunta para lectores de pantalla.
 - **Comprobado** en una copia aislada: dos reservas reales (escritorio y celular), hospedaje con noches, volver de ingresar con la reserva intacta y cambio de sede en el mapa. Sin desborde de 320 a 1920 px con el ancho final.
 
+## 2026-10-31 · Mi cuenta, perfil y panel de la clínica
+
+- **Mi cuenta (`CuentaMarco.jsx`):** banda amarilla con saludo e iniciales, y menú de secciones con iconos (lateral en escritorio, deslizable en celular). Lo usan citas, mascotas, pedidos, detalle de pedido, perfil y seguridad. Reemplaza a `AccountBar.jsx`.
+- **Perfil (`/cuenta/perfil`):** edita nombre y teléfono con el `PATCH /api/auth/perfil` que ya existía. El correo no se edita: no hay endpoint, y cambiarlo necesitaría comprobar el correo nuevo.
+- **Panel:** banda azul marino con las secciones, una frase bajo ellas que explica para qué sirve cada una, y en «Hoy» cada bloque con ícono, descripción y enlace. Etiquetas más claras («No asistieron», «Acciones registradas», «Estado de la bitácora»). El servidor sigue decidiendo el acceso por rol.
+- **Errores corregidos:** el aviso de Mis citas se partía en columnas; en Equipo, el nombre y el servicio quedaban en líneas separadas; el campo oculto de fecha obligatoria ensanchaba Agenda a 1739 px; la tabla de pedidos, un botón de Seguridad y una casilla de Pacientes se salían en pantallas de 320 a 360 px.
+- **Comprobado** en una copia aislada: edición del perfil con recarga, las 4 cuentas de personal con sus secciones, y sin desborde de 320 a 1366 px.
+
+## 2026-10-31 · El panel como aplicación aparte y Favoritos
+
+- **Panel (`AdminLayout.jsx`):** ya no vive dentro del sitio público: tiene menú lateral agrupado (Clínica, Tienda, Seguridad), sin el menú ni el pie públicos, y `LayoutPanel` en `App.jsx`. En celular, barra superior y menú deslizable.
+- **Una cosa a la vez (`Subvistas.jsx`):** Agenda (Citas, Bloqueos, Equipo y horarios), Pedidos (Pedidos, Ventas), Catálogo (Productos, Reseñas) y Clientes (Clientes y, solo el admin, Personal y roles).
+- **«Hoy»** solo muestra lo que pide atención. La gráfica de ventas, los pedidos por estado y el clima pasaron a `Ventas.jsx` (Chart.js solo se descarga al abrirla); el estado de la bitácora, a Bitácora.
+- **Favoritos:** encabezado de la tienda; sin favoritos, sugiere 4 productos destacados.
+- **Pendiente, pedido por el negocio:** administrar sedes, horarios y precios de servicios desde el panel. Hoy las sedes y el horario están en `CitasController.php`, y los precios, en la tabla `servicios`.
+
+
+## 2026-10-31 · Rediseño completo del panel y de Mi cuenta
+
+- **Panel, sin tarjetas dentro de tarjetas:** listas de filas blancas sobre fondo suave (`.lista`, `.fila`) y una barra de filtros común (`.barra`). Cada fila muestra una acción principal; el resto va en el menú «⋯» (`MenuAcciones.jsx`).
+- **Agenda:** día grande con flechas, tira de la semana con sus conteos, sede y vista en botones segmentados. **Pacientes:** tarjetas con dueño, última consulta y próxima cita. **Pedidos:** filtros por estado y, en la ficha, una línea de progreso. **Catálogo:** una fila por producto, con precios y stock desplegables. **Bitácora:** nombres legibles; los datos técnicos, al abrir cada registro. **Fichas de paciente y cliente:** perfil a un lado y pestañas al otro.
+- **Mi cuenta (`CuentaMarco.jsx`):** sin menú lateral. Saludo sobre banda amarilla y una tarjeta por sección con su dato real (próximas citas, mascotas, pedidos). Las citas son boletos con la fecha grande, y las mascotas, tarjetas con su próximo evento.
+- **Errores corregidos:** en el menú «⋯» el foco se pedía con el panel aún oculto, por lo que Esc y las flechas no funcionaban; «Panel» desbordaba el encabezado entre 1101 y 1110 px; un botón de Seguridad desbordaba a 320 px; Clientes afirmaba «Sin teléfono» aunque el cliente lo hubiera dado al reservar (ahora el espacio queda vacío).
+- **Rol Tienda:** `/api/citas` y `/api/citas/mascotas` le responden 403, así que entraba a Mi cuenta con un error. Ahora solo ve Pedidos, Perfil y Seguridad, y Citas y Mascotas redirigen a Pedidos.
+- **Limitación conocida:** la búsqueda de Clientes solo encuentra el teléfono guardado en la cuenta, no el que se dejó en una cita.
+- **Comprobado** en una copia aislada recién creada: confirmar, marcar atendida, agregar nota, cambiar el estado de un pedido, editar un precio con recarga, estrella y visibilidad de productos, verificar la bitácora, las 4 cuentas de personal y un cliente, y sin desborde de 320 a 1920 px. El servidor no cambió, así que no se repitió `tests/seguridad.sh`.
+
+## 2026-10-31 · Carrito, Finalizar compra y ancho del panel
+
+- **Carrito:** encabezado de la tienda en vez de «Inicio / Carrito». Cada producto es una tarjeta con borde azul, o amarillo si está en oferta, igual que en la tienda. Barra de avance hacia el envío gratis; si está vacío, sugiere 4 productos destacados.
+- **Finalizar compra:** tres pasos numerados en tarjetas blancas (contacto, entrega y pago) y el mismo resumen del carrito. También cambiaron el aviso de iniciar sesión y la confirmación del pedido. Al corregir un campo, su error desaparece; antes seguía visible hasta volver a enviar. La lógica de la compra no cambió.
+- **Panel:** el contenido pasa de 1240 a 1440 px como máximo y se centra en pantallas grandes (`.panel__contenido`).
+- **Comprobado** en una copia aislada: agregar, cambiar cantidad con recarga, cupón válido y falso, barra de envío, validación, retiro con mapa, crear el pedido y carrito vacío al terminar; sin desborde de 320 a 1920 px. Con las pasarelas sin claves en esa copia, no se probó un pago real.

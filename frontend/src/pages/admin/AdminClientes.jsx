@@ -1,16 +1,30 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Download, Search } from 'lucide-react'
+import { ChevronRight, Download, Search } from 'lucide-react'
+import Avatar from '../../components/Avatar'
 import Loading from '../../components/Loading'
 import { api, getToken } from '../../api'
 import { useAuth } from '../../context/useAuth'
-import { formatDate } from '../account/orderStatus'
 import { ROLES } from './roles'
 import Select from '../../components/Select'
+import Subvistas from './Subvistas'
 
 const normalizar = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
 export default function AdminClientes() {
+  const { user } = useAuth()
+  const [vista, setVista] = useState('clientes')
+  // El personal y sus roles solo los ve el admin.
+  if (user.rol !== 'admin') return <ListaClientes />
+  return (
+    <>
+      <Subvistas vistas={[{ id: 'clientes', label: 'Clientes' }, { id: 'personal', label: 'Personal y roles' }]} activa={vista} onChange={setVista} />
+      {vista === 'clientes' ? <ListaClientes /> : <Personal yo={user.id} />}
+    </>
+  )
+}
+
+function ListaClientes() {
   const { user } = useAuth()
   // Cancelaciones y faltas son datos de la agenda: solo los ve el personal de la clínica (la tienda no tiene acceso a citas).
   const clinica = ['admin', 'veterinario', 'recepcion'].includes(user.rol)
@@ -51,56 +65,45 @@ export default function AdminClientes() {
 
   return (
     <>
-      <div className="admin-card">
-        <div className="admin-card__head">
-          <h2>Clientes {clientes && <small>· {lista.length}</small>}</h2>
-          {user.rol === 'admin' && (
-            <button className="btn btn--primary btn--sm" onClick={exportar} disabled={exportando}>
-              <Download size={16} /> {exportando ? 'Exportando…' : 'Exportar CSV'}
-            </button>
-          )}
-        </div>
-        <div className="admin-filters">
-          <label className="search admin-search">
-            <Search size={18} />
-            <input type="search" value={q} placeholder="Nombre, correo o teléfono" aria-label="Buscar cliente"
-              onChange={(e) => setParams(e.target.value ? { q: e.target.value } : {}, { replace: true })} />
-          </label>
-        </div>
-        {user.rol === 'admin' && <p className="summary__hint">La exportación incluye solo id, nombre, correo, estado y fecha de alta, y queda registrada como EXPORTACION_CLIENTES.</p>}
-        {error && <p className="form-alert">{error}</p>}
-        {!clientes ? !error && <Loading /> : (
-          <div className="table-scroll">
-            <table className="admin-table">
-              <thead><tr><th>Cliente</th><th>Teléfono</th>{clinica && <><th className="num">Atendidas</th><th className="num">Canceladas</th><th className="num">Faltas</th></>}<th>Alta</th><th>Estado</th></tr></thead>
-              <tbody>
-                {lista.map((c) => {
-                  const n = contadores[c.id] || {}
-                  return (
-                    <tr key={c.id}>
-                      <td><Link to={`/admin/clientes/${c.id}`}><strong>{c.nombre}</strong></Link><small>{c.email}</small></td>
-                      <td>{c.telefono ? <a href={`tel:${c.telefono}`}>{c.telefono}</a> : '—'}</td>
-                      {clinica && (
-                        <>
-                          <td className="num">{n.atendidas ?? '—'}</td>
-                          <td className="num">{n.canceladas ?? '—'}</td>
-                          <td className="num">{n.faltas ? <span className={`status status--${n.faltas >= 3 ? 'bad' : 'warn'}`}>{n.faltas}</span> : n.faltas ?? '—'}</td>
-                        </>
-                      )}
-                      <td>{formatDate(c.creado)}</td>
-                      <td>
-                        {c.bloqueado ? <span className="status status--bad">Bloqueado 15 min</span>
-                          : c.activo ? <span className="status status--ok">Activo</span> : <span className="status status--warn">Inactivo</span>}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+      <div className="barra">
+        <label className="search admin-search">
+          <Search size={18} />
+          <input type="search" value={q} placeholder="Nombre, correo o teléfono" aria-label="Buscar cliente"
+            onChange={(e) => setParams(e.target.value ? { q: e.target.value } : {}, { replace: true })} />
+        </label>
+        {clientes && <span className="barra__total">{lista.length} {lista.length === 1 ? 'cliente' : 'clientes'}</span>}
+        {user.rol === 'admin' && (
+          <button className="btn btn--ghost btn--xs barra__fin" onClick={exportar} disabled={exportando}
+            title="Incluye id, nombre, correo, estado y fecha de alta. Queda registrada en la bitácora.">
+            <Download size={16} /> {exportando ? 'Exportando…' : 'Exportar CSV'}
+          </button>
         )}
       </div>
-      {user.rol === 'admin' && <Personal yo={user.id} />}
+      {error && <p className="form-alert">{error}</p>}
+      {!clientes ? !error && <Loading /> : lista.length === 0 ? (
+        <div className="vacio"><Search size={32} aria-hidden="true" /><p>{q ? `Ningún cliente coincide con «${q}».` : 'Todavía no hay clientes.'}</p></div>
+      ) : (
+        <ul className="lista">
+          {lista.map((c) => {
+            const n = contadores[c.id] || {}
+            return (
+              <li key={c.id}>
+                <Link to={`/admin/clientes/${c.id}`} className="fila fila--cliente">
+                  <Avatar nombre={c.nombre} />
+                  <span className="fila__principal"><strong>{c.nombre}</strong><small>{c.email}</small></span>
+                  <span className="fila__dato">{c.telefono}</span>
+                  <span className="fila__dato fila__dato--suave">{clinica && `${n.atendidas ?? 0} ${n.atendidas === 1 ? 'atendida' : 'atendidas'}`}</span>
+                  <span className="fila__estado">
+                    {n.faltas > 0 && <span className={`status status--${n.faltas >= 3 ? 'bad' : 'warn'}`}>{n.faltas} {n.faltas === 1 ? 'falta' : 'faltas'}</span>}
+                    {c.bloqueado ? <span className="status status--bad">Bloqueado 15 min</span> : !c.activo && <span className="status status--warn">Inactivo</span>}
+                  </span>
+                  <ChevronRight size={18} className="fila__flecha" aria-hidden="true" />
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </>
   )
 }
@@ -128,35 +131,33 @@ function Personal({ yo }) {
   }
 
   return (
-    <div className="admin-card">
-      <h2>Personal y roles</h2>
-      <p className="summary__hint">
-        Veterinario: agenda, pacientes e historial. Recepción: agenda y clientes. Tienda: pedidos y catálogo. Administración: todo,
-        incluida la bitácora. Para dar acceso a alguien, abre su ficha de cliente y cambia su rol. Cada cambio queda como ROL_CAMBIADO.
-      </p>
+    <>
+      <ul className="roles">
+        <li><strong>Veterinario</strong> Agenda, pacientes e historial</li>
+        <li><strong>Recepción</strong> Agenda y clientes</li>
+        <li><strong>Tienda</strong> Pedidos y catálogo</li>
+        <li><strong>Administración</strong> Todo, incluida la bitácora</li>
+      </ul>
       {error && <p className="form-alert" role="alert">{error}</p>}
       {aviso && <p className="form-ok" role="status">{aviso}</p>}
       {!personal ? !error && <Loading /> : (
-        <div className="table-scroll">
-          <table className="admin-table">
-          <thead><tr><th>Nombre</th><th>Rol</th><th>Dos pasos</th></tr></thead>
-          <tbody>
-            {personal.map((u) => (
-              <tr key={u.id}>
-                <td><strong>{u.nombre}</strong><small>{u.email}</small></td>
-                <td>
-                  {u.id === yo ? ROLES[u.rol] : (
-                    <RolSelect valor={u.rol} onChange={(rol) => cambiar(u, rol)} nombre={u.nombre} />
-                  )}
-                </td>
-                <td>{u.mfa ? <span className="status status--ok">Activa</span> : <span className="status status--warn">No</span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
+        <ul className="lista">
+          {personal.map((u) => (
+            <li key={u.id} className="fila fila--personal">
+              <Avatar nombre={u.nombre} />
+              <span className="fila__principal"><strong>{u.nombre}</strong><small>{u.email}</small></span>
+              <span className="fila__estado">
+                <span className={`status status--${u.mfa ? 'ok' : 'warn'}`}>{u.mfa ? 'Dos pasos activa' : 'Sin dos pasos'}</span>
+              </span>
+              <span className="fila__rol">
+                {u.id === yo ? ROLES[u.rol] : <RolSelect valor={u.rol} onChange={(rol) => cambiar(u, rol)} nombre={u.nombre} />}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
-    </div>
+      <p className="summary__hint">Para dar acceso a alguien, abre su ficha de cliente y cambia su rol. Cada cambio queda en la bitácora y rige en su próximo inicio de sesión.</p>
+    </>
   )
 }
 

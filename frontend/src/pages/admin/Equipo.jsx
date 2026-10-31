@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
+import Avatar from '../../components/Avatar'
 import Loading from '../../components/Loading'
 import { api } from '../../api'
 import Select from '../../components/Select'
@@ -30,32 +31,41 @@ export default function Equipo({ editable }) {
     }
   }
 
+  const grupos = datos ? [...new Set(datos.profesionales.map((p) => p.servicio.nombre))].sort() : []
+
   return (
-    <div className="admin-card">
-      <div className="admin-card__head">
-        <h2>Equipo y horarios <small>· cada profesional atiende un turno a la vez</small></h2>
-        {editable && editando !== 'nuevo' && <button className="btn btn--primary btn--xs" onClick={() => setEditando('nuevo')}><Plus size={14} /> Agregar</button>}
+    <>
+      <div className="barra">
+        <p className="barra__nota">Cada profesional atiende un turno a la vez.</p>
+        {editable && editando !== 'nuevo' && <button className="btn btn--primary btn--xs barra__fin" onClick={() => setEditando('nuevo')}><Plus size={16} /> Agregar</button>}
       </div>
       {error && <p className="form-alert" role="alert">{error}</p>}
-      {editando === 'nuevo' && datos && <ProfesionalForm inicial={VACIO} servicios={datos.servicios} onCancel={() => setEditando(null)} onSave={(b) => guardar(null, b)} />}
+      {editando === 'nuevo' && datos && <div className="admin-card"><ProfesionalForm inicial={VACIO} servicios={datos.servicios} onCancel={() => setEditando(null)} onSave={(b) => guardar(null, b)} /></div>}
       {!datos ? !error && <Loading /> : datos.profesionales.length === 0 ? (
-        <p className="summary__hint">Sin equipo cargado: cada servicio usa su cantidad fija de lugares.</p>
-      ) : (
-        <ul className="equipo">
-          {datos.profesionales.map((p) => (editando === p.id ? (
-            <li key={p.id}><ProfesionalForm inicial={p} servicios={datos.servicios} onCancel={() => setEditando(null)} onSave={(b) => guardar(p.id, b)} /></li>
-          ) : (
-            <li key={p.id} className={p.activo ? '' : 'is-muted'}>
-              <span>
-                <strong>{p.nombre}</strong> · {p.servicio.nombre}{!p.activo && ' · inactivo'}
-                <small>{p.dias.map((d) => DIAS[d - 1]).join(', ')} · {p.hora_inicio}–{p.hora_fin} · {p.proximas} {p.proximas === 1 ? 'cita próxima' : 'citas próximas'}</small>
-              </span>
-              {editable && <button className="link-btn" onClick={() => setEditando(p.id)}>Editar</button>}
-            </li>
-          )))}
-        </ul>
-      )}
-    </div>
+        <div className="vacio"><p>Sin equipo cargado: cada servicio usa su cantidad fija de lugares.</p></div>
+      ) : grupos.map((g) => (
+        <section key={g} className="equipo-grupo">
+          <h3>{g}</h3>
+          <ul className="equipo-lista">
+            {datos.profesionales.filter((p) => p.servicio.nombre === g).map((p) => (editando === p.id ? (
+              <li key={p.id} className="equipo-persona equipo-persona--form"><ProfesionalForm inicial={p} servicios={datos.servicios} onCancel={() => setEditando(null)} onSave={(b) => guardar(p.id, b)} /></li>
+            ) : (
+              <li key={p.id} className={`equipo-persona ${p.activo ? '' : 'is-apagada'}`}>
+                <Avatar nombre={p.nombre} />
+                <span className="fila__principal">
+                  <strong>{p.nombre}{!p.activo && ' · inactivo'}</strong>
+                  <small>{p.hora_inicio}–{p.hora_fin} · {p.proximas} {p.proximas === 1 ? 'cita próxima' : 'citas próximas'}</small>
+                  <span className="equipo-dias" aria-label={`Días: ${p.dias.map((d) => DIAS[d - 1]).join(', ')}`}>
+                    {DIAS.map((d, i) => <i key={d} className={p.dias.includes(i + 1) ? 'on' : ''} aria-hidden="true">{d[0]}</i>)}
+                  </span>
+                </span>
+                {editable && <button className="btn btn--ghost btn--xs" onClick={() => setEditando(p.id)}>Editar</button>}
+              </li>
+            )))}
+          </ul>
+        </section>
+      ))}
+    </>
   )
 }
 

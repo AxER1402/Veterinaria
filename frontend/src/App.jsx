@@ -26,6 +26,7 @@ import Account from './pages/account/Account'
 import Orders from './pages/account/Orders'
 import OrderDetail from './pages/account/OrderDetail'
 import Security from './pages/account/Security'
+import Perfil from './pages/account/Perfil'
 import Appointments from './pages/account/Appointments'
 import Pets from './pages/account/Pets'
 import Loading from './components/Loading'
@@ -47,7 +48,18 @@ const AdminClientes = lazy(() => import('./pages/admin/AdminClientes'))
 const AdminCliente = lazy(() => import('./pages/admin/AdminCliente'))
 
 // En el flujo de compra el banner de reservas distrae, así que se oculta.
-const NO_CTA = ['/carrito', '/checkout', '/cuenta', '/admin']
+const NO_CTA = ['/carrito', '/checkout', '/cuenta']
+
+function LayoutPanel() {
+  const { user } = useAuth()
+  return (
+    <>
+      {user?.cambiar_password && <CambiarPassword obligatorio />}
+      <ScrollManager />
+      <Outlet />
+    </>
+  )
+}
 
 function Layout() {
   const { pathname } = useLocation()
@@ -74,6 +86,21 @@ export default function App() {
       <ShopProvider>
         <BrowserRouter>
           <Routes>
+            {/* El panel es una aplicación aparte: sin el menú ni el pie del sitio público. */}
+            <Route element={<LayoutPanel />}>
+    <Route path="admin" element={<Suspense fallback={<Loading />}><AdminLayout /></Suspense>}>
+                <Route index element={<AdminResumen />} />
+                <Route path="agenda" element={<AdminAgenda />} />
+                <Route path="pacientes" element={<AdminPacientes />} />
+                <Route path="pacientes/:id" element={<AdminPaciente />} />
+                <Route path="pedidos" element={<AdminPedidos />} />
+                <Route path="pedidos/:id" element={<AdminPedido />} />
+                <Route path="catalogo" element={<AdminCatalogo />} />
+                <Route path="bitacora" element={<AdminBitacora />} />
+                <Route path="clientes" element={<AdminClientes />} />
+                <Route path="clientes/:id" element={<AdminCliente />} />
+              </Route>
+            </Route>
             <Route element={<Layout />}>
               <Route index element={<Home />} />
               <Route path="servicios" element={<Services />} />
@@ -92,21 +119,10 @@ export default function App() {
               <Route path="cuenta" element={<Account />} />
               <Route path="cuenta/pedidos" element={<Orders />} />
               <Route path="cuenta/pedidos/:id" element={<OrderDetail />} />
+              <Route path="cuenta/perfil" element={<Perfil />} />
               <Route path="cuenta/seguridad" element={<Security />} />
               <Route path="cuenta/citas" element={<Appointments />} />
               <Route path="cuenta/mascotas" element={<Pets />} />
-              <Route path="admin" element={<Suspense fallback={<Loading />}><AdminLayout /></Suspense>}>
-                <Route index element={<AdminResumen />} />
-                <Route path="agenda" element={<AdminAgenda />} />
-                <Route path="pacientes" element={<AdminPacientes />} />
-                <Route path="pacientes/:id" element={<AdminPaciente />} />
-                <Route path="pedidos" element={<AdminPedidos />} />
-                <Route path="pedidos/:id" element={<AdminPedido />} />
-                <Route path="catalogo" element={<AdminCatalogo />} />
-                <Route path="bitacora" element={<AdminBitacora />} />
-                <Route path="clientes" element={<AdminClientes />} />
-                <Route path="clientes/:id" element={<AdminCliente />} />
-              </Route>
               <Route path="*" element={<NotFound />} />
             </Route>
           </Routes>

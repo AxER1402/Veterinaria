@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { Package } from 'lucide-react'
-import PageHeader from '../../components/PageHeader'
 import Loading from '../../components/Loading'
-import AccountBar from '../../components/AccountBar'
+import CuentaMarco from '../../components/CuentaMarco'
 import { useAuth } from '../../context/useAuth'
 import { api } from '../../api'
 import { formatPrice } from '../../data/shop'
@@ -24,10 +23,7 @@ export default function Orders() {
 
   return (
     <>
-      <PageHeader compact title="Mis pedidos" text={`Hola, ${user.nombre.split(' ')[0]}. Aquí ves el estado de tus compras.`} />
-      <section className="section">
-        <div className="container">
-          <AccountBar />
+      <CuentaMarco titulo="Mis pedidos" texto="Aquí ves el estado de tus compras en la tienda.">
           {error && <p className="form-alert">{error}</p>}
           {!orders && !error && <Loading />}
           {orders && orders.length === 0 && (
@@ -54,8 +50,7 @@ export default function Orders() {
               ))}
             </ul>
           )}
-        </div>
-      </section>
+      </CuentaMarco>
     </>
   )
 }

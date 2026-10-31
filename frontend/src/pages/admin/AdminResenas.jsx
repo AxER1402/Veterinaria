@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Star } from 'lucide-react'
 import Loading from '../../components/Loading'
 import Rating from '../../components/shop/Rating'
 import { api } from '../../api'
@@ -24,28 +25,33 @@ export default function AdminResenas() {
     }
   }
 
+  const porRevisar = resenas?.filter((r) => r.estado === 'en_revision').length ?? 0
+
   return (
-    <div className="admin-card">
-      <h2>Reseñas <small>· solo de clientes que compraron el producto{resenas && ` · ${resenas.filter((r) => r.estado === 'en_revision').length} por revisar`}</small></h2>
+    <>
+      {resenas && <p className="barra__total barra__total--lista">{porRevisar > 0 ? `${porRevisar} por revisar` : 'Ninguna por revisar'} · solo opinan clientes que compraron el producto</p>}
       {error && <p className="form-alert" role="alert">{error}</p>}
-      {!resenas ? !error && <Loading /> : resenas.length === 0 ? <p className="summary__hint">Todavía no hay reseñas.</p> : (
-        <ul className="resumen__list">
+      {!resenas ? !error && <Loading /> : resenas.length === 0 ? (
+        <div className="vacio"><Star size={32} aria-hidden="true" /><p>Todavía no hay reseñas.</p></div>
+      ) : (
+        <ul className="lista">
           {resenas.map((r) => (
-            <li key={r.id} className={r.estado === 'oculta' ? 'is-muted' : ''}>
-              <span>
-                <Rating value={r.calificacion} /> <strong>{r.autor}</strong> sobre <Link to={`/tienda/producto/${r.slug}`}>{r.producto}</Link>
-                {r.comentario && <><br />{r.comentario}</>}
-              </span>
-              <small>
-                {r.estado === 'en_revision' && <span className="status status--warn">Por revisar</span>}{' '}
-                {fechaCorta(r.fecha)} ·{' '}
-                {r.estado !== 'publicada' && <button className="link-btn" onClick={() => moderar(r, true)}>Publicar</button>}{' '}
+            <li key={r.id} className={`resena-fila ${r.estado === 'oculta' ? 'is-apagada' : ''}`}>
+              <div className="resena-fila__texto">
+                <p className="resena-fila__cabeza"><Rating value={r.calificacion} /> <strong>{r.autor}</strong> sobre <Link to={`/tienda/producto/${r.slug}`}>{r.producto}</Link></p>
+                {r.comentario && <p>{r.comentario}</p>}
+                <small>{fechaCorta(r.fecha)}</small>
+              </div>
+              <div className="resena-fila__acciones">
+                {r.estado === 'en_revision' && <span className="status status--warn">Por revisar</span>}
+                {r.estado === 'oculta' && <span className="status status--warn">Oculta</span>}
+                {r.estado !== 'publicada' && <button className="btn btn--dark btn--xs" onClick={() => moderar(r, true)}>Publicar</button>}
                 {r.estado !== 'oculta' && <button className="link-btn link-btn--danger" onClick={() => moderar(r, false)}>Ocultar</button>}
-              </small>
+              </div>
             </li>
           ))}
         </ul>
       )}
-    </div>
+    </>
   )
 }

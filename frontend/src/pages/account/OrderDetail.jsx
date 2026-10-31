@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
-import PageHeader from '../../components/PageHeader'
+import CuentaMarco from '../../components/CuentaMarco'
 import Loading from '../../components/Loading'
 import NotFound from '../NotFound'
 import { useAuth } from '../../context/useAuth'
@@ -41,9 +41,8 @@ export default function OrderDetail() {
   }
   return (
     <>
-      <PageHeader compact title={`Pedido #${shortId(order.id)}`} text={formatDate(order.fecha)} />
-      <section className="section">
-        <div className="container cart-layout">
+      <CuentaMarco titulo={`Pedido #${shortId(order.id)}`} texto={formatDate(order.fecha)}>
+        <div className="cart-layout cuenta__tarjeta">
           <div>
             <p><span className={`status status--${status.tone}`}>{status.label}</span></p>
             {order.estado === 'pendiente_pago' && <PaymentPanel order={order} onPaid={setOrder} />}
@@ -109,7 +108,7 @@ export default function OrderDetail() {
             </dl>
           </aside>
         </div>
-      </section>
+      </CuentaMarco>
     </>
   )
 }

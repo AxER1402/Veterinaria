@@ -1,61 +1,78 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Trash2, ShoppingBag, Tag, X } from 'lucide-react'
-import PageHeader from '../../components/PageHeader'
+import { ArrowLeft, ArrowRight, Trash2, ShoppingBag, Tag, X } from 'lucide-react'
+import PageHero from '../../components/PageHero'
+import ProductCard from '../../components/shop/ProductCard'
 import QuantityInput from '../../components/shop/QuantityInput'
+import { images } from '../../data/content'
 import { useShop } from '../../context/useShop'
-import { formatPrice } from '../../data/shop'
+import { FREE_SHIPPING_FROM, formatPrice } from '../../data/shop'
 import { api } from '../../api'
 import Loading from '../../components/Loading'
 
+const SUGERENCIAS = 4
+
 export default function Cart() {
-  const { lines, totals, setQty, removeFromCart, catalogLoading } = useShop()
+  const { lines, totals, products, setQty, removeFromCart, catalogLoading } = useShop()
+  const sugerencias = products.filter((p) => p.featured).slice(0, SUGERENCIAS)
 
   return (
     <>
-      <PageHeader compact title="Carrito" />
-      <section className="section">
+      <PageHero
+        compacto
+        cara="<:3 )~~"
+        title={<>Tu <span className="highlight">carrito</span></>}
+        text={lines.length ? 'Revisa tu pedido antes de finalizar la compra.' : 'Todavía no has agregado nada.'}
+        image={images.cta}
+        alt="Un bulldog francés con sudadera amarilla"
+        tag={totals.count > 0 ? <><strong>{totals.count}</strong> {totals.count === 1 ? 'producto' : 'productos'}</> : null}
+      />
+      <section className="section section--catalogo carrito">
         <div className="container">
           {catalogLoading ? (
             <Loading />
           ) : lines.length === 0 ? (
-            <div className="empty-state">
-              <ShoppingBag size={56} />
-              <h3>Tu carrito está vacío</h3>
-              <p>Descubre lo que tenemos para tu mascota.</p>
-              <Link to="/tienda/productos" className="btn btn--primary">
-                Ir a la tienda
-              </Link>
-            </div>
+            <>
+              <div className="favoritos__vacio carrito__vacio">
+                <ShoppingBag size={36} aria-hidden="true" />
+                <div>
+                  <h2>Tu carrito está vacío</h2>
+                  <p>Descubre lo que tenemos para tu mascota.</p>
+                </div>
+                <Link to="/tienda/productos" className="btn btn--primary">Ir a la tienda <ArrowRight size={18} /></Link>
+              </div>
+              {sugerencias.length > 0 && (
+                <>
+                  <h2 className="favoritos__titulo">Te pueden gustar</h2>
+                  <div className="products-grid">
+                    {sugerencias.map((p) => <ProductCard key={p.id} product={p} />)}
+                  </div>
+                </>
+              )}
+            </>
           ) : (
             <div className="cart-layout">
-              <div className="cart-table">
-                <div className="cart-table__head">
-                  <span>Producto</span>
-                  <span>Precio</span>
-                  <span>Cantidad</span>
-                  <span>Total</span>
+              <div>
+                <div className="carrito__cabeza">
+                  <h2>{totals.count} {totals.count === 1 ? 'producto' : 'productos'}</h2>
+                  <Link to="/tienda/productos" className="carrito__seguir"><ArrowLeft size={16} aria-hidden="true" /> Seguir comprando</Link>
                 </div>
-                {lines.map((l) => (
-                  <div className="cart-row" key={l.key}>
-                    <div className="cart-row__product">
-                      <img src={l.product.image} alt="" />
-                      <div>
+                <ul className="carrito__lista">
+                  {lines.map((l) => (
+                    <li className={`carrito__linea ${l.variant.oldPrice ? 'carrito__linea--oferta' : ''}`} key={l.key}>
+                      <Link to={`/tienda/producto/${l.product.slug}`} className="carrito__foto" tabIndex={-1} aria-hidden="true"><img src={l.product.image} alt="" /></Link>
+                      <div className="carrito__info">
                         <Link to={`/tienda/producto/${l.product.slug}`}>{l.product.name}</Link>
-                        <small>{l.variant.label}</small>
+                        <small>{l.variant.label} · {formatPrice(l.variant.price)} c/u {l.variant.oldPrice && <del>{formatPrice(l.variant.oldPrice)}</del>}</small>
                       </div>
-                    </div>
-                    <span className="cart-row__price" data-label="Precio">{formatPrice(l.variant.price)}</span>
-                    <QuantityInput value={l.qty} onChange={(q) => setQty(l.key, q)} />
-                    <strong className="cart-row__total">{formatPrice(l.total)}</strong>
-                    <button className="remove" onClick={() => removeFromCart(l.key)} aria-label={`Eliminar ${l.product.name}`}>
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                ))}
-                <Link to="/tienda/productos" className="link-arrow">
-                  ← Seguir comprando
-                </Link>
+                      <QuantityInput small value={l.qty} onChange={(q) => setQty(l.key, q)} />
+                      <strong className="carrito__total">{formatPrice(l.total)}</strong>
+                      <button className="remove" onClick={() => removeFromCart(l.key)} aria-label={`Eliminar ${l.product.name}`}>
+                        <Trash2 size={18} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </div>
 
               <OrderSummary totals={totals}>
@@ -159,7 +176,10 @@ export function OrderSummary({ totals, lines, children }) {
         </div>
       </dl>
       {totals.missingForFreeShipping > 0 && (
-        <p className="summary__hint">Agrega {formatPrice(totals.missingForFreeShipping)} más para envío gratis.</p>
+        <div className="envio-barra">
+          <p className="summary__hint">Agrega {formatPrice(totals.missingForFreeShipping)} más para envío gratis.</p>
+          <span aria-hidden="true"><i style={{ width: `${100 - (totals.missingForFreeShipping / FREE_SHIPPING_FROM) * 100}%` }} /></span>
+        </div>
       )}
       {children}
     </aside>

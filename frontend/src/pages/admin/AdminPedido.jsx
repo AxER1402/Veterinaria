@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Check } from 'lucide-react'
 import Loading from '../../components/Loading'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { api } from '../../api'
@@ -17,6 +17,8 @@ const NEXT = {
   entregado: [],
   cancelado: [],
 }
+const PASOS_DOMICILIO = ['pendiente_pago', 'pagado', 'preparando', 'enviado', 'entregado']
+const PASOS_RETIRO = ['pendiente_pago', 'pagado', 'preparando', 'listo_retiro', 'entregado']
 const COBRADOS = ['pagado', 'preparando', 'listo_retiro', 'enviado']
 const MOTIVOS_CANCELAR = ['Sin stock', 'El cliente lo pidió', 'Dirección fuera de cobertura', 'Pago no reconocido']
 
@@ -65,75 +67,91 @@ export default function AdminPedido() {
     }
   }
 
+  const principales = opciones.filter((n) => n !== 'cancelado')
+  const pasos = p.metodo_entrega === 'retiro' ? PASOS_RETIRO : PASOS_DOMICILIO
+  const actual = pasos.indexOf(p.estado)
+
   return (
     <>
-      <Link to="/admin/pedidos" className="link-btn patient__back"><ArrowLeft size={16} /> Pedidos</Link>
-      <div className="admin-grid">
+      <Link to="/admin/pedidos" className="volver"><ArrowLeft size={16} aria-hidden="true" /> Pedidos</Link>
+      <header className="ficha-cabeza">
+        <div>
+          <h1>Pedido #{shortId(p.id)}</h1>
+          <p>{p.contacto.nombre} · {formatDate(p.fecha)}</p>
+        </div>
+        <span className={`status status--${STATUS[p.estado].tone}`}>{STATUS[p.estado].label}</span>
+        <div className="ficha-cabeza__acciones">
+          {principales.map((n) => <button key={n} className="btn btn--primary btn--sm" onClick={() => setDialogo(n)}>Pasar a «{STATUS[n].label}»</button>)}
+          {opciones.includes('cancelado') && <button className="link-btn link-btn--danger" onClick={() => setDialogo('cancelado')}>Cancelar pedido</button>}
+        </div>
+      </header>
+
+      {p.estado !== 'cancelado' ? (
+        <ol className="pasos" aria-label="Progreso del pedido">
+          {pasos.map((e, i) => (
+            <li key={e} className={i < actual ? 'is-hecho' : i === actual ? 'is-actual' : ''} aria-current={i === actual ? 'step' : undefined}>
+              <span>{i < actual ? <Check size={14} aria-hidden="true" /> : i + 1}</span>{STATUS[e].label}
+            </li>
+          ))}
+        </ol>
+      ) : <p className="panel__aviso panel__aviso--mal"><span>Este pedido se canceló.</span></p>}
+
+      {p.reembolso?.estado === 'pendiente' && (
+        <form className="pedido__reembolso" onSubmit={reembolsar}>
+          <p><strong>Reembolso pendiente.</strong> El pedido se cobró y se canceló: devuelve {formatPrice(p.total)}.</p>
+          <button type="button" className="btn btn--dark btn--xs" onClick={reembolsarPasarela} disabled={enPasarela}>
+            {enPasarela ? 'Reembolsando…' : 'Reembolsar en la pasarela'}
+          </button>
+          <span className="summary__hint">o, si lo hiciste a mano, anota la referencia:</span>
+          <input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Referencia del reembolso" minLength={3} maxLength={100} required />
+          <button className="btn btn--dark btn--xs">Registrar reembolso</button>
+        </form>
+      )}
+      {p.reembolso?.estado === 'hecho' && <p className="form-ok">Reembolso hecho · referencia {p.reembolso.referencia}</p>}
+      {error && <p className="form-alert" role="alert">{error}</p>}
+
+      <div className="ficha-cuerpo">
         <div className="admin-card">
-          <div className="admin-card__head">
-            <h2>Pedido #{shortId(p.id)} <small>· {formatDate(p.fecha)}</small></h2>
-            <span className={`status status--${STATUS[p.estado].tone}`}>{STATUS[p.estado].label}</span>
-          </div>
-          {opciones.length > 0 && (
-            <div className="pedido__acciones">
-              {opciones.map((n) => (
-                <button key={n} className={`btn btn--xs ${n === 'cancelado' ? 'btn--ghost btn--danger-text' : 'btn--dark'}`} onClick={() => setDialogo(n)}>
-                  {n === 'cancelado' ? 'Cancelar pedido' : `Pasar a «${STATUS[n].label}»`}
-                </button>
-              ))}
-            </div>
-          )}
-          {p.reembolso?.estado === 'pendiente' && (
-            <form className="pedido__reembolso" onSubmit={reembolsar}>
-              <p><strong>Reembolso pendiente.</strong> El pedido se cobró y se canceló: devuelve {formatPrice(p.total)}.</p>
-              <button type="button" className="btn btn--dark btn--xs" onClick={reembolsarPasarela} disabled={enPasarela}>
-                {enPasarela ? 'Reembolsando…' : 'Reembolsar en la pasarela'}
-              </button>
-              <span className="summary__hint">o, si lo hiciste a mano, anota la referencia:</span>
-              <input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Referencia del reembolso" minLength={3} maxLength={100} required />
-              <button className="btn btn--dark btn--xs">Registrar reembolso</button>
-            </form>
-          )}
-          {p.reembolso?.estado === 'hecho' && <p className="form-ok">Reembolso hecho · referencia {p.reembolso.referencia}</p>}
-          {error && <p className="form-alert" role="alert">{error}</p>}
-          <table className="admin-table">
-            <thead><tr><th>Producto</th><th className="num">Cant.</th><th className="num">Precio</th><th className="num">Subtotal</th></tr></thead>
-            <tbody>
-              {p.items.map((i) => (
-                <tr key={i.variante_id}>
-                  <td><strong>{i.nombre}</strong><small>{i.etiqueta}</small></td>
-                  <td className="num">{i.cantidad}</td>
-                  <td className="num">{formatPrice(i.precio_unitario)}</td>
-                  <td className="num">{formatPrice(i.subtotal)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <h2>Productos</h2>
+          <ul className="pedido__items">
+            {p.items.map((i) => (
+              <li key={i.variante_id}>
+                <span className="fila__principal"><strong>{i.nombre}</strong><small>{i.etiqueta} · {formatPrice(i.precio_unitario)} c/u</small></span>
+                <span className="pedido__cant">×{i.cantidad}</span>
+                <strong>{formatPrice(i.subtotal)}</strong>
+              </li>
+            ))}
+          </ul>
           <dl className="pedido__totales">
             <div><dt>Subtotal</dt><dd>{formatPrice(p.subtotal)}</dd></div>
             {p.descuento > 0 && <div><dt>Descuento {p.cupon && `(${p.cupon})`}</dt><dd>−{formatPrice(p.descuento)}</dd></div>}
             <div><dt>Envío</dt><dd>{p.envio ? formatPrice(p.envio) : 'Gratis'}</dd></div>
-            <div><dt><strong>Total</strong></dt><dd><strong>{formatPrice(p.total)}</strong></dd></div>
+            <div className="pedido__total"><dt>Total</dt><dd>{formatPrice(p.total)}</dd></div>
           </dl>
         </div>
-        <div className="admin-card">
-          <h2>Cliente y entrega</h2>
-          <p className="patient__meta"><strong>{p.contacto.nombre}</strong></p>
-          <p className="patient__meta"><a href={`tel:${p.contacto.telefono}`}>{p.contacto.telefono}</a> · <a href={`mailto:${p.contacto.email}`}>{p.contacto.email}</a></p>
-          <p className="patient__meta">
-            {p.metodo_entrega === 'retiro' ? <>Retiro en <strong>{p.sede}</strong></>
-              : <>Envío a <strong>{p.direccion.direccion}, {p.direccion.ciudad}</strong>{p.direccion.notas && ` (${p.direccion.notas})`}</>}
-          </p>
-          <h3 className="clinical__title">Historial</h3>
-          <ol className="timeline">
-            {p.historial.map((h, n) => (
-              <li key={n}>
-                <strong>{STATUS[h.estado_nuevo]?.label ?? h.estado_nuevo}</strong>
-                <small>{formatDate(h.fecha)}{h.comentario ? ` · ${h.comentario}` : ''}</small>
-              </li>
-            ))}
-          </ol>
-          <p className="mono order-id">ID: {p.id}</p>
+        <div className="ficha-lado">
+          <div className="admin-card">
+            <h2>Cliente y entrega</h2>
+            <dl className="ficha-datos">
+              <div><dt>Nombre</dt><dd>{p.contacto.nombre}</dd></div>
+              <div><dt>Teléfono</dt><dd><a href={`tel:${p.contacto.telefono}`}>{p.contacto.telefono}</a></dd></div>
+              <div><dt>Correo</dt><dd><a href={`mailto:${p.contacto.email}`}>{p.contacto.email}</a></dd></div>
+              <div><dt>{p.metodo_entrega === 'retiro' ? 'Retiro en' : 'Envío a'}</dt>
+                <dd>{p.metodo_entrega === 'retiro' ? p.sede : <>{p.direccion.direccion}, {p.direccion.ciudad}{p.direccion.notas && ` (${p.direccion.notas})`}</>}</dd></div>
+            </dl>
+          </div>
+          <div className="admin-card">
+            <h2>Historial</h2>
+            <ol className="timeline">
+              {p.historial.map((h, n) => (
+                <li key={n}>
+                  <strong>{STATUS[h.estado_nuevo]?.label ?? h.estado_nuevo}</strong>
+                  <small>{formatDate(h.fecha)}{h.comentario ? ` · ${h.comentario}` : ''}</small>
+                </li>
+              ))}
+            </ol>
+            <p className="mono order-id">ID: {p.id}</p>
+          </div>
         </div>
       </div>
       {dialogo && (

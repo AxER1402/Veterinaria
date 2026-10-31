@@ -836,11 +836,15 @@ strong { font-weight: 600; color: var(--navy); }
 @media (max-width: 1480px) {
 }
 
+/* Con la palabra «Panel» el menú no cabe por debajo de este ancho: queda solo el icono. */
+@media (max-width: 1200px) {
+  .header__panel span { display: none; }
+}
+
 @media (max-width: 1100px) {
   .nav__link { padding: 8px 8px; }
   .nav__link.active::after { left: 8px; right: 8px; }
   .header .header__inner { gap: 16px; }
-  .header__panel span { display: none; }
   .footer__grid { grid-template-columns: repeat(3, 1fr); }
   .footer__brand { grid-column: 1 / -1; }
 }

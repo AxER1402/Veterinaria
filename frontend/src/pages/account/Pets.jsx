@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { Carne } from '../../components/VaccineTable'
 import { Link, Navigate } from 'react-router-dom'
 import { CalendarPlus, PawPrint, Plus, Syringe, CalendarClock } from 'lucide-react'
-import PageHeader from '../../components/PageHeader'
-import AccountBar from '../../components/AccountBar'
+import CuentaMarco from '../../components/CuentaMarco'
+import MenuAcciones from '../../components/MenuAcciones'
 import Loading from '../../components/Loading'
 import PetForm from '../../components/PetForm'
 import { useAuth } from '../../context/useAuth'
@@ -19,12 +19,13 @@ export default function Pets() {
   const [editing, setEditing] = useState(null) // id, 'nueva' o null
 
   useEffect(() => {
-    if (!user) return
+    if (!user || user.rol === 'tienda') return
     api('/api/citas/mascotas').then((d) => setMascotas(d.mascotas)).catch((e) => setError(e.message))
   }, [user])
 
   if (checking) return <Loading />
   if (!user) return <Navigate to="/cuenta" state={{ from: '/cuenta/mascotas' }} replace />
+  if (user.rol === 'tienda') return <Navigate to="/cuenta/pedidos" replace />
 
   const saved = (m) => {
     setMascotas((l) => (l.some((x) => x.id === m.id) ? l.map((x) => (x.id === m.id ? m : x)) : [...l, m]))
@@ -33,10 +34,7 @@ export default function Pets() {
 
   return (
     <>
-      <PageHeader compact title="Mis mascotas" text="Sus datos nos ayudan a atenderlas mejor. Solo tú y el equipo de Huellitas los ven." />
-      <section className="section">
-        <div className="container">
-          <AccountBar />
+      <CuentaMarco titulo="Mis mascotas" texto="Sus datos nos ayudan a atenderlas mejor. Solo tú y el equipo de Huellitas los ven.">
           {error && <p className="form-alert">{error}</p>}
           {!mascotas && !error && <Loading />}
           {mascotas && (
@@ -48,10 +46,10 @@ export default function Pets() {
                   <button className="btn btn--primary" onClick={() => setEditing('nueva')}>Agregar mascota</button>
                 </div>
               )}
-              <ul className="pets">
+              <ul className="mascotas">
                 {mascotas.map((m) =>
                   editing === m.id ? (
-                    <li key={m.id} className="pet pet--editing">
+                    <li key={m.id} className="mascota mascota--ancha">
                       <PetForm mascota={m} onSaved={saved} onCancel={() => setEditing(null)} />
                     </li>
                   ) : (
@@ -60,7 +58,7 @@ export default function Pets() {
                   ),
                 )}
                 {editing === 'nueva' && (
-                  <li className="pet pet--editing">
+                  <li className="mascota mascota--ancha">
                     <h3>Nueva mascota</h3>
                     <PetForm onSaved={saved} onCancel={() => setEditing(null)} />
                   </li>
@@ -73,8 +71,7 @@ export default function Pets() {
               )}
             </>
           )}
-        </div>
-      </section>
+      </CuentaMarco>
     </>
   )
 }
@@ -84,8 +81,6 @@ function PetCard({ mascota: m, onEdit, onRemoved }) {
   const [error, setError] = useState('')
   const [carne, setCarne] = useState(null) // null cerrado, 'cargando' o la lista de vacunas
   const detalle = [
-    ESPECIES.find((e) => e.value === m.especie)?.label,
-    m.raza,
     m.sexo === 'macho' ? 'Macho' : m.sexo === 'hembra' ? 'Hembra' : null,
     edad(m.fecha_nacimiento),
     m.peso_kg ? `${m.peso_kg} kg` : null,
@@ -111,35 +106,46 @@ function PetCard({ mascota: m, onEdit, onRemoved }) {
   }
 
   return (
-    <li className="pet">
-      <span className="cita__icon"><PetIcon especie={m.especie} size={28} /></span>
-      <span className="cita__main">
-        <strong>{m.nombre}</strong>
-        <small>{detalle.join(' · ')}</small>
-        {m.alergias && <small className="alert-badge">Alergias: {m.alergias}</small>}
-        {m.enfermedades_cronicas && <small className="alert-badge alert-badge--soft">Crónico: {m.enfermedades_cronicas}</small>}
-        {m.notas && <small className="pet__notes">{m.notas}</small>}
-        {m.microchip && <small>Microchip: <span className="mono">{m.microchip}</span></small>}
-        {m.proxima_cita && <small className="pet__next"><CalendarClock size={14} /> {m.proxima_cita.servicio}: {formatCita(m.proxima_cita.inicio)}</small>}
-        {m.proxima_vacuna && <small className="pet__next"><Syringe size={14} /> {m.proxima_vacuna.nombre}: {fechaCorta(m.proxima_vacuna.fecha)}</small>}
-        {error && <small className="field-error">{error}</small>}
-      </span>
-      <span className="cita__side">
-        {confirming ? (
-          <span className="cita__confirm">
-            ¿Quitar a {m.nombre}?
-            <button className="btn btn--dark btn--sm" onClick={quitar}>Sí, quitar</button>
-            <button className="link-btn" onClick={() => setConfirming(false)}>No</button>
-          </span>
-        ) : (
-          <span className="pet__actions">
-            <Link to={`/reservar?mascota=${m.id}`} className="btn btn--primary btn--xs"><CalendarPlus size={14} /> Reservar para {m.nombre}</Link>
-            <button className="btn btn--ghost btn--xs" onClick={verCarne} aria-expanded={Boolean(carne)}>{carne ? 'Ocultar carné' : 'Carné'}</button>
-            <button className="btn btn--ghost btn--xs" onClick={onEdit}>Editar</button>
-            <button className="link-btn link-btn--danger" onClick={() => setConfirming(true)}>Quitar</button>
-          </span>
-        )}
-      </span>
+    <li className="mascota">
+      <div className="mascota__cabeza">
+        <span className="mascota__foto"><PetIcon especie={m.especie} size={32} /></span>
+        <div className="mascota__nombre">
+          <h2>{m.nombre}</h2>
+          <p>{[ESPECIES.find((e) => e.value === m.especie)?.label, m.raza].filter(Boolean).join(' · ')}</p>
+        </div>
+        <MenuAcciones etiqueta={`Más opciones de ${m.nombre}`} items={[
+          { label: 'Editar datos', onClick: onEdit },
+          { label: `Quitar a ${m.nombre}`, onClick: () => setConfirming(true), peligro: true },
+        ]} />
+      </div>
+      {detalle.length > 0 && <ul className="mascota__datos">{detalle.map((d) => <li key={d}>{d}</li>)}</ul>}
+      {(m.alergias || m.enfermedades_cronicas) && (
+        <p className="mascota__alertas">
+          {m.alergias && <span className="alert-badge">Alergias: {m.alergias}</span>}
+          {m.enfermedades_cronicas && <span className="alert-badge alert-badge--soft">Crónico: {m.enfermedades_cronicas}</span>}
+        </p>
+      )}
+      {m.notas && <p className="pet__notes">{m.notas}</p>}
+      {(m.proxima_cita || m.proxima_vacuna) && (
+        <ul className="mascota__proximo">
+          {m.proxima_cita && <li><CalendarClock size={16} aria-hidden="true" /> <span><strong>{m.proxima_cita.servicio}</strong> {formatCita(m.proxima_cita.inicio)}</span></li>}
+          {m.proxima_vacuna && <li><Syringe size={16} aria-hidden="true" /> <span><strong>{m.proxima_vacuna.nombre}</strong> {fechaCorta(m.proxima_vacuna.fecha)}</span></li>}
+        </ul>
+      )}
+      {m.microchip && <p className="mascota__chip">Microchip: <span className="mono">{m.microchip}</span></p>}
+      {error && <p className="field-error">{error}</p>}
+      {confirming ? (
+        <p className="cita__confirm mascota__confirmar">
+          ¿Quitar a {m.nombre}?
+          <button className="btn btn--dark btn--sm" onClick={quitar}>Sí, quitar</button>
+          <button className="link-btn" onClick={() => setConfirming(false)}>No</button>
+        </p>
+      ) : (
+        <div className="mascota__acciones">
+          <Link to={`/reservar?mascota=${m.id}`} className="btn btn--primary btn--xs"><CalendarPlus size={14} aria-hidden="true" /> Reservar</Link>
+          <button className="btn btn--ghost btn--xs" onClick={verCarne} aria-expanded={Boolean(carne)}>{carne ? 'Ocultar carné' : 'Ver carné'}</button>
+        </div>
+      )}
       {carne && (
         <div className="pet__carne">
           {carne === 'cargando' ? <Loading /> : <Carne vacunas={carne} />}

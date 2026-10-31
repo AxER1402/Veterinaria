@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { CheckCircle2, CreditCard, Store, Truck, Lock, LogIn, Wallet } from 'lucide-react'
-import PageHeader from '../../components/PageHeader'
+import PageHero from '../../components/PageHero'
+import { images } from '../../data/content'
 import { OrderSummary } from './Cart'
 import { useShop } from '../../context/useShop'
 import { useAuth } from '../../context/useAuth'
@@ -57,7 +58,11 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
 
   const items = lines.map((l) => ({ variante_id: l.variant.id, cantidad: l.qty }))
   const itemsKey = JSON.stringify(items)
-  const set = (field) => (e) => setValues((v) => ({ ...v, [field]: e.target.value }))
+  // Al corregir un campo su error deja de mostrarse; el envío vuelve a validarlo todo.
+  const set = (field) => (e) => {
+    setValues((v) => ({ ...v, [field]: e.target.value }))
+    setErrors((er) => ({ ...er, [field]: undefined }))
+  }
 
   useEffect(() => {
     api('/api/pedidos/sedes', { auth: false }).then((d) => setSedes(d.sedes)).catch(() => setSedes([]))
@@ -118,11 +123,12 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
 
   return (
     <>
-      <PageHeader compact title="Finalizar compra" />
-      <section className="section">
+      <EncabezadoCompra />
+      <section className="section section--catalogo carrito">
         <div className="container cart-layout">
           <form id="checkout-form" className="checkout-form" onSubmit={submit} noValidate>
-            <h3>1. Datos de contacto</h3>
+            <section className="compra__paso">
+            <h2 className="compra__titulo"><span aria-hidden="true">1</span> Datos de contacto</h2>
             <div className="form-grid">
               <Field label="Nombre completo" error={errors.nombre} full>
                 <input value={values.nombre} onChange={set('nombre')} autoComplete="name" maxLength={100} />
@@ -134,8 +140,10 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
                 <input type="tel" value={values.telefono} onChange={set('telefono')} autoComplete="tel" maxLength={20} />
               </Field>
             </div>
+            </section>
 
-            <h3>2. Entrega</h3>
+            <section className="compra__paso">
+            <h2 className="compra__titulo"><span aria-hidden="true">2</span> Entrega</h2>
             <div className="option-cards">
               <OptionCard name="metodo_entrega" value="domicilio" current={values.metodo_entrega} onChange={set('metodo_entrega')} icon={Truck}
                 title="Envío a domicilio" text="Gratis desde Q400" />
@@ -171,8 +179,10 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
                 </Field>
               </div>
             )}
+            </section>
 
-            <h3>3. Pago</h3>
+            <section className="compra__paso">
+            <h2 className="compra__titulo"><span aria-hidden="true">3</span> Pago</h2>
             {metodos === null ? <p className="summary__hint">Revisando los medios de pago…</p> : metodos.length === 0 ? (
               <p className="form-alert form-alert--soft">
                 El pago en línea no está disponible en este momento. Puedes confirmar el pedido y pagarlo después desde «Mis pedidos»;
@@ -193,6 +203,7 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
             <p className="demo-note">
               <Lock size={14} /> El pago lo procesa directamente {metodo === 'paypal' ? 'PayPal' : metodo === 'stripe' ? 'Stripe' : 'la pasarela'}: Huellitas no recibe ni guarda los datos de tu tarjeta o cuenta.
             </p>
+            </section>
             {problem && <p className="form-alert" role="alert">{problem}</p>}
           </form>
 
@@ -212,18 +223,35 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
   )
 }
 
+function EncabezadoCompra() {
+  return (
+    <PageHero
+      compacto
+      cara="(･(oo)･)"
+      title={<>Finalizar <span className="highlight">compra</span></>}
+      text="Confirma tus datos y elige cómo recibir tu pedido."
+      image={images.cta}
+      alt="Un bulldog francés con sudadera amarilla"
+    />
+  )
+}
+
 function LoginRequired({ from }) {
   return (
     <>
-      <PageHeader compact title="Finalizar compra" />
-      <section className="section">
-        <div className="container empty-state">
-          <LogIn size={56} />
-          <h3>Inicia sesión para terminar tu compra</h3>
-          <p>Tu carrito se conserva. Así podrás ver el estado de tu pedido en «Mis pedidos».</p>
-          <Link to="/cuenta" state={{ from }} className="btn btn--primary">
-            Iniciar sesión o crear cuenta
-          </Link>
+      <EncabezadoCompra />
+      <section className="section section--catalogo carrito">
+        <div className="container">
+          <div className="favoritos__vacio carrito__vacio">
+            <LogIn size={36} aria-hidden="true" />
+            <div>
+              <h2>Inicia sesión para terminar tu compra</h2>
+              <p>Tu carrito se conserva. Así podrás ver el estado de tu pedido en «Mis pedidos».</p>
+            </div>
+            <Link to="/cuenta" state={{ from }} className="btn btn--primary">
+              Iniciar sesión o crear cuenta
+            </Link>
+          </div>
         </div>
       </section>
     </>
@@ -234,9 +262,10 @@ function OrderConfirmed({ order: initial, metodo }) {
   const [order, setOrder] = useState(initial)
   const paid = order.estado !== 'pendiente_pago'
   return (
-    <section className="section">
-      <div className="container order-confirmed">
-        <CheckCircle2 size={72} />
+    <section className="section section--catalogo carrito">
+      <div className="container">
+      <div className="order-confirmed">
+        <CheckCircle2 size={64} />
         <h1>{paid ? '¡Pago confirmado' : '¡Pedido recibido'}, {order.contacto.nombre.split(' ')[0]}!</h1>
         <p>
           Tu pedido <strong className="mono">{order.id.slice(0, 8).toUpperCase()}</strong> por <strong>{formatPrice(order.total)}</strong>{' '}
@@ -248,6 +277,7 @@ function OrderConfirmed({ order: initial, metodo }) {
           <Link to={`/cuenta/pedidos/${order.id}`} className="btn btn--primary">Ver mi pedido</Link>
           <Link to="/tienda" className="btn btn--dark">Seguir comprando</Link>
         </div>
+      </div>
       </div>
     </section>
   )

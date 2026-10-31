@@ -10,6 +10,7 @@ import { CITA_STATUS, ESPECIES, edad, formatCita, ymd } from '../account/citas'
 import { fechaCorta } from '../account/vacunas'
 import { AlertasClinicas, ConsultaForm, ConsultaItem, VacunaExternaForm } from './ClinicalRecord'
 import AgendarCita from './AgendarCita'
+import Subvistas from './Subvistas'
 
 // Ficha del paciente. El servidor registra cada apertura como HISTORIAL_CONSULTADO.
 export default function AdminPaciente() {
@@ -19,6 +20,7 @@ export default function AdminPaciente() {
   const [error, setError] = useState('')
   const [modal, setModal] = useState(null) // 'consulta' | 'vacuna' | 'control' | null
   const [aviso, setAviso] = useState('')
+  const [vista, setVista] = useState('consultas')
   const [imprimir, setImprimir] = useState(null) // { tipo: 'receta', consulta } | { tipo: 'carne' }
 
   const cerrarImpresion = useCallback(() => setImprimir(null), [])
@@ -43,82 +45,98 @@ export default function AdminPaciente() {
   const hoy = ymd(new Date())
   const control = data.consultas.find((c) => c.proximo_control && c.proximo_control >= hoy)?.proximo_control
   const proxima = data.citas.filter((c) => ['pendiente', 'confirmada'].includes(c.estado) && c.inicio.slice(0, 10) >= hoy).at(-1)
-  const detalle = [
-    ESPECIES.find((e) => e.value === m.especie)?.label, m.raza, m.sexo === 'macho' ? 'Macho' : m.sexo === 'hembra' ? 'Hembra' : null,
-    edad(m.fecha_nacimiento), m.peso_kg ? `${m.peso_kg} kg` : null,
-  ].filter(Boolean)
+
+  const especie = ESPECIES.find((e) => e.value === m.especie)?.label
+  const sexo = m.sexo === 'macho' ? 'Macho' : m.sexo === 'hembra' ? 'Hembra' : null
+  const correo = dueno?.email || data.dueno.email
+  const vistas = [
+    { id: 'consultas', label: `Consultas (${data.consultas.length})` },
+    { id: 'carne', label: 'Carné' },
+    { id: 'citas', label: `Citas (${data.citas.length})` },
+    { id: 'notas', label: `Notas (${data.notas.length})` },
+  ]
 
   return (
     <>
-      <Link to="/admin/pacientes" className="link-btn patient__back"><ArrowLeft size={16} /> Pacientes</Link>
-      <div className="admin-card patient">
-        <div className="admin-card__head">
-          <h2 className="patient__name"><PetIcon especie={m.especie} size={26} /> {m.nombre} {!m.activa && <small>· inactiva</small>}</h2>
-          <div className="patient__actions">
-            {m.activa && <button className="btn btn--dark btn--sm" onClick={() => setModal('consulta')}><Stethoscope size={16} /> Nueva consulta</button>}
-            <button className="btn btn--primary btn--sm" onClick={() => setModal('vacuna')}><Syringe size={16} /> Vacuna externa</button>
+      <Link to="/admin/pacientes" className="volver"><ArrowLeft size={16} aria-hidden="true" /> Pacientes</Link>
+      <div className="ficha">
+        <aside className="ficha__perfil">
+          <div className="admin-card">
+            <div className="ficha__nombre">
+              <span className="ficha__foto"><PetIcon especie={m.especie} size={40} /></span>
+              <h1>{m.nombre}</h1>
+              {!m.activa && <span className="status status--warn">Inactiva</span>}
+              <p>{[especie, m.raza].filter(Boolean).join(' · ') || 'Sin datos'}</p>
+            </div>
+            <dl className="ficha__cifras">
+              <div><dt>Sexo</dt><dd>{sexo || '—'}</dd></div>
+              <div><dt>Edad</dt><dd>{edad(m.fecha_nacimiento) || '—'}</dd></div>
+              <div><dt>Peso</dt><dd>{m.peso_kg ? `${m.peso_kg} kg` : '—'}</dd></div>
+            </dl>
+            <AlertasEditor mascota={m} onSaved={(mascota) => setData((d) => ({ ...d, mascota }))} />
+            {m.notas && <p className="ficha__notas">{m.notas}</p>}
+            {m.activa && <button className="btn btn--primary btn--sm btn--block" onClick={() => setModal('consulta')}><Stethoscope size={16} aria-hidden="true" /> Nueva consulta</button>}
+            <button className="btn btn--ghost btn--xs btn--block" onClick={() => setModal('vacuna')}><Syringe size={14} aria-hidden="true" /> Registrar vacuna externa</button>
           </div>
-        </div>
-        <p className="patient__meta">{detalle.join(' · ') || 'Sin datos'}</p>
-        <p className="patient__meta">
-          Dueño: <strong>{nombreDueno}</strong>
-          {data.dueno.telefono && <> · <a href={`tel:${data.dueno.telefono}`}>{data.dueno.telefono}</a></>}
-          {(dueno?.email || data.dueno.email) && <> · {dueno?.email || data.dueno.email}</>}
-        </p>
-        {m.notas && <p className="patient__meta">Notas: {m.notas}</p>}
-        <AlertasEditor mascota={m} onSaved={(mascota) => setData((d) => ({ ...d, mascota }))} />
-        {(control || proxima) && (
-          <p className="patient__next">
-            {proxima && <>Próxima cita: <strong>{formatCita(proxima.inicio)}</strong> ({proxima.servicio.nombre}). </>}
-            {control && <>Control sugerido: <strong>{fechaCorta(control)}</strong>{!proxima && ' · todavía sin cita agendada'}.</>}
-            {control && !proxima && m.activa && <button className="btn btn--dark btn--xs" onClick={() => setModal('control')}>Agendar control</button>}
-          </p>
-        )}
-        {aviso && <p className="form-ok" role="status">{aviso}</p>}
-      </div>
+          <div className="admin-card">
+            <h2>Dueño</h2>
+            <dl className="ficha-datos">
+              <div><dt>Nombre</dt><dd><Link to={`/admin/clientes/${data.dueno.id}`}>{nombreDueno}</Link></dd></div>
+              {data.dueno.telefono && <div><dt>Teléfono</dt><dd><a href={`tel:${data.dueno.telefono}`}>{data.dueno.telefono}</a></dd></div>}
+              {correo && <div><dt>Correo</dt><dd>{correo}</dd></div>}
+            </dl>
+          </div>
+        </aside>
 
-      <div className="admin-card">
-        <div className="admin-card__head">
-          <h2>Carné</h2>
-          <button className="link-btn" onClick={() => setImprimir({ tipo: 'carne' })}><Printer size={16} /> Imprimir carné</button>
-        </div>
-        <Carne vacunas={data.vacunas} lote />
-      </div>
-
-      <div className="admin-card">
-        <h2>Consultas <small>· {data.consultas.length}</small></h2>
-        {data.consultas.length === 0 ? <p className="summary__hint">Sin consultas registradas.</p> : (
-          <ol className="clinical__list clinical__list--page">
-            {data.consultas.map((c) => (
-              <ConsultaItem key={c.id} consulta={c} onUpdated={actualizar} onPrint={(consulta) => setImprimir({ tipo: 'receta', consulta })} />
-            ))}
-          </ol>
-        )}
-      </div>
-
-      <div className="admin-grid admin-grid--even">
-        <div className="admin-card">
-          <h2>Notas de otros servicios</h2>
-          {data.notas.length === 0 ? <p className="summary__hint">Sin notas de peluquería, guardería u otros servicios.</p> : (
-            <ul className="clinical__list">
-              {data.notas.map((n) => (
-                <li key={n.id}><strong>{n.servicio} · {formatCita(n.fecha)}</strong><p>{n.texto}</p><small>{n.registrado_por}</small></li>
-              ))}
-            </ul>
+        <div className="ficha__detalle">
+          {aviso && <p className="form-ok" role="status">{aviso}</p>}
+          {(control || proxima) && (
+            <p className="ficha__proxima">
+              <span>
+                {proxima && <>Próxima cita: <strong>{formatCita(proxima.inicio)}</strong> ({proxima.servicio.nombre}). </>}
+                {control && <>Control sugerido: <strong>{fechaCorta(control)}</strong>{!proxima && ', todavía sin cita'}.</>}
+              </span>
+              {control && !proxima && m.activa && <button className="btn btn--dark btn--xs" onClick={() => setModal('control')}>Agendar control</button>}
+            </p>
           )}
-        </div>
-        <div className="admin-card">
-          <h2>Citas</h2>
-          {data.citas.length === 0 ? <p className="summary__hint">Sin citas.</p> : (
-            <ul className="patient__citas">
+          <Subvistas vistas={vistas} activa={vista} onChange={setVista} />
+
+          {vista === 'consultas' && (data.consultas.length === 0 ? <div className="vacio"><Stethoscope size={32} aria-hidden="true" /><p>Sin consultas registradas.</p></div> : (
+            <ol className="clinical__list clinical__list--page consultas">
+              {data.consultas.map((c) => (
+                <ConsultaItem key={c.id} consulta={c} onUpdated={actualizar} onPrint={(consulta) => setImprimir({ tipo: 'receta', consulta })} />
+              ))}
+            </ol>
+          ))}
+
+          {vista === 'carne' && (
+            <div className="admin-card">
+              <div className="admin-card__head">
+                <h2>Carné de vacunación</h2>
+                <button className="btn btn--ghost btn--xs" onClick={() => setImprimir({ tipo: 'carne' })}><Printer size={14} aria-hidden="true" /> Imprimir</button>
+              </div>
+              <Carne vacunas={data.vacunas} lote />
+            </div>
+          )}
+
+          {vista === 'citas' && (data.citas.length === 0 ? <div className="vacio"><p>Sin citas.</p></div> : (
+            <ul className="lista">
               {data.citas.map((c) => (
-                <li key={c.id}>
-                  <span><strong>{formatCita(c.inicio)}</strong><small>{c.servicio.nombre}</small></span>
+                <li key={c.id} className="fila fila--historial">
+                  <span className="fila__principal"><strong className="primera-mayuscula">{formatCita(c.inicio)}</strong><small>{c.servicio.nombre}</small></span>
                   <span className={`status status--${CITA_STATUS[c.estado].tone}`}>{CITA_STATUS[c.estado].label}</span>
                 </li>
               ))}
             </ul>
-          )}
+          ))}
+
+          {vista === 'notas' && (data.notas.length === 0 ? <div className="vacio"><p>Sin notas de peluquería, guardería u otros servicios.</p></div> : (
+            <ul className="clinical__list consultas">
+              {data.notas.map((n) => (
+                <li key={n.id}><strong>{n.servicio} · {formatCita(n.fecha)}</strong><p>{n.texto}</p><small>{n.registrado_por}</small></li>
+              ))}
+            </ul>
+          ))}
         </div>
       </div>
 

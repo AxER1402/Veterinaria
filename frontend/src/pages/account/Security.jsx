@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Navigate } from 'react-router-dom'
 import { ShieldCheck, ShieldAlert } from 'lucide-react'
 import qrcode from 'qrcode-generator'
-import PageHeader from '../../components/PageHeader'
+import CuentaMarco from '../../components/CuentaMarco'
 import CambiarPassword from '../../components/CambiarPassword'
 import Field from '../../components/Field'
 import Loading from '../../components/Loading'
@@ -15,22 +15,18 @@ export default function Security() {
   if (!user) return <Navigate to="/cuenta" state={{ from: '/cuenta/seguridad' }} replace />
 
   return (
-    <>
-      <PageHeader compact title="Seguridad de la cuenta" text={user.google ? 'Tu cuenta entra con Google.' : 'Verificación en dos pasos con una app de autenticación.'} />
-      <section className="section">
-        <div className="container account">
-          {user.google ? (
-            <p>Tu contraseña y la verificación en dos pasos se administran desde tu cuenta de Google.</p>
-          ) : (
-            <>
-              {user.mfa ? <Desactivar /> : <Activar />}
-              <CambiarPassword />
-            </>
-          )}
-          <Link to="/cuenta/citas" className="link-arrow">← Mis citas</Link>
+    <CuentaMarco titulo="Seguridad" texto={user.google ? 'Tu cuenta entra con Google.' : 'Protege tu cuenta con una contraseña fuerte y la verificación en dos pasos.'}>
+      {user.google ? (
+        <div className="cuenta__tarjeta">
+          <p>Tu contraseña y la verificación en dos pasos se administran desde tu cuenta de Google.</p>
         </div>
-      </section>
-    </>
+      ) : (
+        <div className="seguridad">
+          {user.mfa ? <Desactivar /> : <Activar />}
+          <CambiarPassword />
+        </div>
+      )}
+    </CuentaMarco>
   )
 }
 
@@ -76,7 +72,7 @@ function Activar() {
   if (!config) {
     return (
       <div className="mfa">
-        <p className="mfa__estado"><ShieldAlert size={22} /> La verificación en dos pasos está <strong>desactivada</strong>.</p>
+        <p className="mfa__estado"><ShieldAlert size={22} /> <span>La verificación en dos pasos está <strong>desactivada</strong>.</span></p>
         <p>Con ella, además de la contraseña se pide un código de 6 dígitos que cambia cada 30 segundos en tu teléfono
           (Google Authenticator, Authy, Microsoft Authenticator, 1Password…).</p>
         {error && <p className="form-alert">{error}</p>}
@@ -122,7 +118,7 @@ function Desactivar() {
 
   return (
     <form className="mfa account__form" onSubmit={submit}>
-      <p className="mfa__estado mfa__estado--ok"><ShieldCheck size={22} /> La verificación en dos pasos está <strong>activa</strong>.</p>
+      <p className="mfa__estado mfa__estado--ok"><ShieldCheck size={22} /> <span>La verificación en dos pasos está <strong>activa</strong>.</span></p>
       <p>Para desactivarla, confirma tu contraseña y un código vigente de la app.</p>
       <Field label="Contraseña">
         <input type="password" value={values.password} onChange={(e) => setValues((v) => ({ ...v, password: e.target.value }))} autoComplete="current-password" required />

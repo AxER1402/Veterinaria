@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { CalendarHeart, Info, MapPin, Phone } from 'lucide-react'
-import PageHeader from '../../components/PageHeader'
-import AccountBar from '../../components/AccountBar'
+import CuentaMarco from '../../components/CuentaMarco'
 import Loading from '../../components/Loading'
 import Modal from '../../components/Modal'
 import SlotPicker from '../../components/SlotPicker'
@@ -18,6 +17,8 @@ const TABS = [
   { id: 'canceladas', label: 'Canceladas' },
 ]
 const tel = TELEFONO_CLINICA.replace(/[^+\d]/g, '')
+const MES = new Intl.DateTimeFormat('es-GT', { month: 'short' })
+const DIA_SEMANA = new Intl.DateTimeFormat('es-GT', { weekday: 'short' })
 
 export default function Appointments() {
   const { user, checking } = useAuth()
@@ -27,12 +28,13 @@ export default function Appointments() {
   const [reprogramar, setReprogramar] = useState(null)
 
   useEffect(() => {
-    if (!user) return
+    if (!user || user.rol === 'tienda') return
     api('/api/citas').then((d) => setCitas(d.citas)).catch((e) => setError(e.message))
   }, [user])
 
   if (checking) return <Loading />
   if (!user) return <Navigate to="/cuenta" state={{ from: '/cuenta/citas' }} replace />
+  if (user.rol === 'tienda') return <Navigate to="/cuenta/pedidos" replace />
 
   // El servidor manda de la más lejana a la más antigua: las próximas se muestran en orden de llegada.
   const ahora = new Date()
@@ -46,10 +48,7 @@ export default function Appointments() {
 
   return (
     <>
-      <PageHeader compact title="Mis citas" text="Tus reservas en la clínica, la guardería y con los paseadores." />
-      <section className="section">
-        <div className="container">
-          <AccountBar />
+      <CuentaMarco titulo="Mis citas" texto="Tus reservas en la clínica, la guardería y con los paseadores." acciones={<Link to="/reservar" className="btn btn--primary btn--sm">Nueva cita</Link>}>
           {error && <p className="form-alert">{error}</p>}
           {!citas && !error && <Loading />}
           {citas && citas.length === 0 && (
@@ -69,7 +68,6 @@ export default function Appointments() {
                     </button>
                   ))}
                 </div>
-                <Link to="/reservar" className="btn btn--primary btn--sm">Nueva cita</Link>
               </div>
               {grupos[tab].length === 0 ? (
                 <p className="booking__muted">{tab === 'proximas' ? 'No tienes citas próximas.' : tab === 'pasadas' ? 'Todavía no hay citas pasadas.' : 'No has cancelado citas.'}</p>
@@ -79,14 +77,16 @@ export default function Appointments() {
                 </ul>
               )}
               <p className="citas__help">
-                <Info size={16} /> El <strong>código de verificación</strong> va en el correo de cada cita: muéstralo en la sede si te lo piden
-                y sirve para comprobar que la cita es tuya. Para cambiar una cita con menos de 2 horas, llámanos al{' '}
-                <a href={`tel:${tel}`}>{TELEFONO_CLINICA}</a>. Si faltas a 3 citas en 3 meses, las próximas se agendan por teléfono.
+                <Info size={16} />
+                <span>
+                  El <strong>código de verificación</strong> va en el correo de cada cita: muéstralo en la sede si te lo piden
+                  y sirve para comprobar que la cita es tuya. Para cambiar una cita con menos de 2 horas, llámanos al{' '}
+                  <a href={`tel:${tel}`}>{TELEFONO_CLINICA}</a>. Si faltas a 3 citas en 3 meses, las próximas se agendan por teléfono.
+                </span>
               </p>
             </>
           )}
-        </div>
-      </section>
+      </CuentaMarco>
       {reprogramar && (
         <Reprogramar cita={reprogramar} onClose={() => setReprogramar(null)} onDone={(c) => { replace(c); setReprogramar(null) }} />
       )}
@@ -99,6 +99,7 @@ function CitaRow({ cita, onChange, onReprogramar }) {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const status = CITA_STATUS[cita.estado]
+  const inicio = new Date(cita.inicio)
 
   const cancelar = async () => {
     setSending(true)
@@ -115,11 +116,15 @@ function CitaRow({ cita, onChange, onReprogramar }) {
   }
 
   return (
-    <li className="cita">
-      <span className="cita__icon"><PetIcon especie={cita.mascota.especie} size={26} /></span>
-      <span className="cita__main">
-        <strong>{cita.servicio.nombre} · {cita.mascota.nombre}</strong>
-        <small>{formatReserva(cita, true)}{cita.profesional && ` · con ${cita.profesional}`}</small>
+    <li className={`boleto ${onChange ? '' : 'boleto--pasado'}`}>
+      <span className="boleto__fecha" aria-hidden="true">
+        <small>{MES.format(inicio)}</small>
+        <strong>{inicio.getDate()}</strong>
+        <small>{DIA_SEMANA.format(inicio)}</small>
+      </span>
+      <span className="boleto__datos">
+        <strong className="boleto__titulo"><PetIcon especie={cita.mascota.especie} size={20} /> {cita.mascota.nombre} · {cita.servicio.nombre}</strong>
+        <small className="primera-mayuscula">{formatReserva(cita, true)}{cita.profesional && ` · con ${cita.profesional}`}</small>
         <small><MapPin size={14} /> {cita.sede.nombre}</small>
         {cita.codigo_verificacion && <small>Código de verificación: <span className="mono">{cita.codigo_verificacion}</span></small>}
         {error && <small className="field-error">{error}</small>}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Ban, Stethoscope, FileText, StickyNote, Plus, CalendarCheck, Search, X, RefreshCw } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { ChevronLeft, ChevronRight, Ban, Stethoscope, Plus, CalendarCheck, Search, X } from 'lucide-react'
 import Loading from '../../components/Loading'
 import PetIcon from '../../components/PetIcon'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -13,6 +13,8 @@ import { Reprogramar } from '../account/Appointments'
 import { CITA_STATUS, addDays, formatCita, formatDay, formatReserva, ymd } from '../account/citas'
 import DateInput from '../../components/DateInput'
 import Select from '../../components/Select'
+import Subvistas from './Subvistas'
+import MenuAcciones from '../../components/MenuAcciones'
 
 const SEDES = [
   { value: '', label: 'Todas' },
@@ -43,7 +45,10 @@ const sedeCorta = (codigo) => SEDES.find((s) => s.value === codigo)?.label || co
 const rango = (b) => (b.hora_inicio ? `${b.hora_inicio}–${b.hora_fin}` : 'Todo el día')
 const lugar = (c) => c.profesional || (c.servicio.slug === 'veterinaria' ? `Consultorio ${c.cupo}` : c.servicio.slug === 'peluqueria' ? `Mesa ${c.cupo}` : `Lugar ${c.cupo}`)
 
+const APARTADOS = [{ id: 'citas', label: 'Citas' }, { id: 'bloqueos', label: 'Bloqueos' }, { id: 'equipo', label: 'Equipo y horarios' }]
+
 export default function AdminAgenda() {
+  const [apartado, setApartado] = useState('citas')
   const { user } = useAuth()
   const veterinario = ['admin', 'veterinario'].includes(user.rol)
   const [params, setParams] = useSearchParams()
@@ -111,60 +116,59 @@ export default function AdminAgenda() {
   const nCanceladas = todas.filter((c) => c.estado === 'cancelada').length
   const visibles = todas.filter((c) => canceladas || c.estado !== 'cancelada')
   const activas = todas.length - nCanceladas
-  const porHora = visibles.reduce((g, c) => {
-    // Un hospedaje que empezó otro día se agrupa como «En la sede».
-    const h = c.inicio.slice(0, 10) === fecha ? c.inicio.slice(11, 16) : 'Estadías'
-    ;(g[h] ||= []).push(c)
-    return g
-  }, {})
 
   return (
     <>
-      <div className="admin-card">
-        <div className="admin-card__head">
-          <h2>
-            Agenda · <span className="agenda__day">{formatDay(fecha)}</span>
-            {vigente && <small> · {activas} {activas === 1 ? 'cita' : 'citas'}</small>}
-          </h2>
-          <div className="agenda__nav">
-            <button className="icon-btn" onClick={() => mover(-1)} aria-label="Día anterior"><ChevronLeft size={18} /></button>
+      <Subvistas vistas={APARTADOS} activa={apartado} onChange={setApartado} />
+      {apartado === 'citas' && (
+      <>
+        <div className="dia">
+          <div className="dia__nav">
+            <button className="dia__flecha" onClick={() => mover(-1)} aria-label="Día anterior"><ChevronLeft size={20} /></button>
+            <button className="dia__flecha" onClick={() => mover(1)} aria-label="Día siguiente"><ChevronRight size={20} /></button>
+            <h2 className="agenda__day">{formatDay(fecha)}</h2>
+            {vigente && <span className="dia__total">{activas} {activas === 1 ? 'cita' : 'citas'}</span>}
+          </div>
+          <div className="dia__acciones">
+            {fecha !== hoy && <button className="btn btn--ghost btn--xs" onClick={() => setFiltro({ fecha: '' })}>Hoy</button>}
             <DateInput value={fecha} onChange={(e) => e.target.value && setFiltro({ fecha: e.target.value })} aria-label="Fecha" />
-            <button className="icon-btn" onClick={() => mover(1)} aria-label="Día siguiente"><ChevronRight size={18} /></button>
-            {fecha !== hoy && <button className="link-btn" onClick={() => setFiltro({ fecha: '' })}>Hoy</button>}
-            <button className="icon-btn" onClick={cargar} aria-label="Actualizar" title="Se actualiza sola cada minuto"><RefreshCw size={16} /></button>
+            <button className="btn btn--primary btn--xs" onClick={() => setDialogo({ tipo: 'agendar' })}><Plus size={16} /> Agendar cita</button>
           </div>
         </div>
 
         {semana && (
-          <div className="week-strip" role="group" aria-label="Semana">
+          <div className="semana" role="group" aria-label="Semana">
             {semana.map((d) => (
-              <button key={d.fecha} className={`week-strip__day ${d.fecha === fecha ? 'active' : ''} ${d.fecha === hoy ? 'week-strip__day--hoy' : ''}`}
-                onClick={() => setFiltro({ fecha: d.fecha })} aria-pressed={d.fecha === fecha}>
+              <button key={d.fecha} className={`semana__dia ${d.fecha === fecha ? 'active' : ''} ${d.fecha === hoy ? 'es-hoy' : ''}`}
+                onClick={() => setFiltro({ fecha: d.fecha })} aria-pressed={d.fecha === fecha} title={d.pendientes > 0 ? `${d.pendientes} por confirmar` : undefined}>
                 <span>{formatDay(d.fecha, true)}</span>
                 <strong>{d.activas}</strong>
-                {d.pendientes > 0 && <small>{d.pendientes} por confirmar</small>}
+                {d.pendientes > 0 && <i aria-label={`${d.pendientes} por confirmar`} />}
               </button>
             ))}
           </div>
         )}
 
-        <div className="agenda__toolbar">
-          <div className="admin-filters" role="group" aria-label="Sede">
-            {SEDES.map((s) => (
-              <button key={s.value} className={`chip ${sede === s.value ? 'chip--active' : ''}`} aria-pressed={sede === s.value} onClick={() => setFiltro({ sede: s.value })}>
-                {s.label}
-              </button>
-            ))}
-          </div>
-          <form className="search admin-search agenda__search" onSubmit={buscarCitas} role="search">
+        <div className="barra">
+          <form className="search admin-search" onSubmit={buscarCitas} role="search">
             <Search size={18} />
             <input type="search" value={buscar} onChange={(e) => { setBuscar(e.target.value); if (!e.target.value) setResultados(null) }}
               placeholder="Buscar mascota, cliente o teléfono" aria-label="Buscar citas" />
           </form>
-          <div className="agenda__buttons">
-            <button className="btn btn--ghost btn--xs" onClick={() => setDialogo({ tipo: 'confirmar-dia' })}><CalendarCheck size={14} /> Confirmar las de mañana</button>
-            <button className="btn btn--primary btn--xs" onClick={() => setDialogo({ tipo: 'agendar' })}><Plus size={14} /> Agendar cita</button>
+          <div className="segmentos" role="group" aria-label="Sede">
+            {SEDES.map((s) => (
+              <button key={s.value} className={sede === s.value ? 'is-activo' : ''} aria-pressed={sede === s.value} onClick={() => setFiltro({ sede: s.value })}>{s.label}</button>
+            ))}
           </div>
+          <div className="segmentos" role="group" aria-label="Vista">
+            <button className={vista === 'hora' ? 'is-activo' : ''} aria-pressed={vista === 'hora'} onClick={() => setVista('hora')}>Por hora</button>
+            <button className={vista === 'columnas' ? 'is-activo' : ''} aria-pressed={vista === 'columnas'} onClick={() => setVista('columnas')}>Por persona</button>
+          </div>
+          <MenuAcciones etiqueta="Más opciones de la agenda" items={[
+            { label: 'Confirmar las citas de mañana', onClick: () => setDialogo({ tipo: 'confirmar-dia' }) },
+            { label: 'Actualizar ahora', onClick: cargar },
+            ...(nCanceladas > 0 ? [{ label: canceladas ? 'Ocultar canceladas' : `Mostrar canceladas (${nCanceladas})`, onClick: () => setCanceladas((v) => !v) }] : []),
+          ]} />
         </div>
 
         {error && <p className="form-alert" role="alert">{error}</p>}
@@ -176,7 +180,7 @@ export default function AdminAgenda() {
               {resultados.length} {resultados.length === 1 ? 'resultado' : 'resultados'} para «{buscar}»
               <button className="link-btn" onClick={() => { setResultados(null); setBuscar('') }}>Volver al día</button>
             </p>
-            <ul className="agenda-cards">
+            <ul className="lista">
               {resultados.map((c) => <CitaCard key={c.id} cita={c} conFecha veterinario={veterinario} hoy={hoy} onAccion={setDialogo}
                 onIr={() => { setResultados(null); setFiltro({ fecha: c.inicio.slice(0, 10) }) }} />)}
             </ul>
@@ -194,35 +198,22 @@ export default function AdminAgenda() {
               </ul>
             )}
             {!vigente ? <Loading /> : todas.length === 0 ? (
-              <p className="summary__hint">No hay citas este día{sede ? ' en esta sede' : ''}.</p>
+              <div className="vacio"><CalendarCheck size={32} aria-hidden="true" /><p>No hay citas este día{sede ? ' en esta sede' : ''}.</p></div>
+            ) : visibles.length === 0 ? (
+              <div className="vacio"><CalendarCheck size={32} aria-hidden="true" /><p>Todas las citas de este día están canceladas.</p></div>
+            ) : vista === 'columnas' ? (
+              <div className="admin-card"><AgendaColumnas citas={visibles} fecha={fecha} onAccion={setDialogo} /></div>
             ) : (
-              <>
-                <div className="agenda__view">
-                  <div className="tabs" role="tablist" aria-label="Vista">
-                    <button role="tab" aria-selected={vista === 'hora'} className={`tab ${vista === 'hora' ? 'tab--active' : ''}`} onClick={() => setVista('hora')}>Por hora</button>
-                    <button role="tab" aria-selected={vista === 'columnas'} className={`tab ${vista === 'columnas' ? 'tab--active' : ''}`} onClick={() => setVista('columnas')}>Por consultorio</button>
-                  </div>
-                  {nCanceladas > 0 && (
-                    <button className="link-btn agenda__toggle" onClick={() => setCanceladas((v) => !v)}>
-                      {canceladas ? 'Ocultar canceladas' : `Mostrar canceladas (${nCanceladas})`}
-                    </button>
-                  )}
-                </div>
-                {vista === 'columnas' && <AgendaColumnas citas={visibles} fecha={fecha} onAccion={setDialogo} />}
-                {vista === 'hora' && Object.entries(porHora).map(([hora, citas]) => (
-                  <section key={hora} className="agenda-hour">
-                    <h3 className="agenda-hour__label">{hora}</h3>
-                    <ul className="agenda-cards">
-                      {citas.map((c) => <CitaCard key={c.id} cita={c} veterinario={veterinario} hoy={hoy} fecha={fecha} onAccion={setDialogo} />)}
-                    </ul>
-                  </section>
-                ))}
-              </>
+              <ul className="lista">
+                {visibles.map((c) => <CitaCard key={c.id} cita={c} veterinario={veterinario} hoy={hoy} fecha={fecha} onAccion={setDialogo} />)}
+              </ul>
             )}
           </>
         )}
-      </div>
+      </>
+      )}
 
+      {apartado === 'bloqueos' && (
       <div className="admin-grid admin-grid--even">
         <BlockForm fecha={fecha >= hoy ? fecha : hoy} sede={sede} onSaved={(n) => listo(n ? `Bloqueo guardado. Se cancelaron ${n} citas y se avisó a cada cliente.` : 'Bloqueo guardado: esos turnos ya no se pueden reservar.')}
           onConflicto={(datos, citas) => setDialogo({ tipo: 'bloquear-con-citas', datos, citas })} />
@@ -245,7 +236,8 @@ export default function AdminAgenda() {
           )}
         </div>
       </div>
-      <Equipo editable={user.rol === 'admin'} />
+      )}
+      {apartado === 'equipo' && <Equipo editable={user.rol === 'admin'} />}
 
       {dialogo?.tipo === 'estado' && (() => {
         const { cita, nuevo } = dialogo
@@ -300,35 +292,36 @@ function CitaCard({ cita: c, veterinario, hoy, fecha, conFecha = false, onAccion
   const opciones = NEXT[c.estado].filter((n) => (!['atendida', 'no_asistio'].includes(n) || dia <= hoy) && !(n === 'atendida' && c.clinica && c.estado !== 'no_asistio'))
   const puedeFicha = veterinario && c.clinica && !c.tiene_historial && ['pendiente', 'confirmada', 'atendida', 'no_asistio'].includes(c.estado) && dia <= hoy
   const activa = ['pendiente', 'confirmada'].includes(c.estado)
+  const estado = (nuevo) => onAccion({ tipo: 'estado', cita: c, nuevo })
+  // Lo siguiente que toca hacer con esta cita va a la vista; lo demás, en el menú.
+  const principal = puedeFicha ? null : ['confirmada', 'atendida'].find((n) => opciones.includes(n) && activa)
+  const resto = opciones.filter((n) => n !== principal)
+  const hora = conFecha ? formatCita(c.inicio) : c.fin ? formatReserva(c) : c.servicio.modalidad === 'dia' ? 'Todo el día' : c.inicio.slice(11, 16)
+  const menu = [
+    ...(activa ? [{ label: 'Reprogramar', onClick: () => onAccion({ tipo: 'reprogramar', cita: c }) }] : []),
+    ...(!c.clinica && c.estado !== 'cancelada' ? [{ label: 'Agregar nota', onClick: () => onAccion({ tipo: 'nota', cita: c }) }] : []),
+    ...(veterinario ? [{ label: 'Ver ficha de la mascota', to: `/admin/pacientes/${c.mascota.id}` }] : []),
+    { label: 'Ver cliente', to: `/admin/clientes/${c.cliente.id}` },
+    ...(onIr && fecha !== dia ? [{ label: 'Ver el día', onClick: onIr }] : []),
+    ...resto.map((n) => ({ label: `${ACCION[n]}${REVERSIONES.includes(`${c.estado}>${n}`) ? ' (corregir)' : ''}`, onClick: () => estado(n), peligro: n === 'cancelada' })),
+  ]
   return (
-    <li className={`agenda-card agenda-card--${c.estado}`}>
-      <div className="agenda-card__main">
-        <span className="agenda-card__when">
-          {conFecha ? formatCita(c.inicio) : c.fin ? formatReserva(c) : c.servicio.modalidad === 'dia' ? 'Todo el día' : c.inicio.slice(11, 16)}
-          <small>{sedeCorta(c.sede.codigo)} · {lugar(c)}</small>
-        </span>
-        <span className="agenda-card__who">
-          <strong className="agenda__pet"><PetIcon especie={c.mascota.especie} size={16} /> {c.mascota.nombre} · {c.servicio.nombre}</strong>
-          {(c.mascota.raza || c.notas) && <small>{[c.mascota.raza, c.notas].filter(Boolean).join(' · ')}</small>}
-          <AlertasClinicas mascota={c.mascota} compact />
-          <small>{c.cliente.nombre} · <a href={`tel:${c.cliente.telefono}`}>{c.cliente.telefono}</a>{c.codigo_verificacion && <> · <span className="mono">{c.codigo_verificacion}</span></>}</small>
-        </span>
-        <span className={`status status--${CITA_STATUS[c.estado].tone}`}>{CITA_STATUS[c.estado].label}</span>
-      </div>
-      <div className="agenda-card__actions">
+    <li className={`cita-fila ${c.estado === 'cancelada' ? 'is-apagada' : ''}`}>
+      <span className="cita-fila__hora">{hora}<small>{sedeCorta(c.sede.codigo)}</small></span>
+      <span className="cita-fila__icono"><PetIcon especie={c.mascota.especie} size={22} /></span>
+      <span className="cita-fila__datos">
+        <strong>{c.mascota.nombre} <span>· {c.servicio.nombre}</span></strong>
+        <small>{c.cliente.nombre} · <a href={`tel:${c.cliente.telefono}`}>{c.cliente.telefono}</a> · {lugar(c)}</small>
+        {c.notas && <small className="cita-fila__nota">{c.notas}</small>}
+        <AlertasClinicas mascota={c.mascota} compact />
+        {c.codigo_verificacion && <small className="mono">{c.codigo_verificacion}</small>}
+      </span>
+      <span className={`status status--${CITA_STATUS[c.estado].tone}`}>{CITA_STATUS[c.estado].label}</span>
+      <span className="cita-fila__acciones">
         {puedeFicha && <button className="btn btn--dark btn--xs" onClick={() => onAccion({ tipo: 'ficha', cita: c })}><Stethoscope size={14} /> Registrar consulta</button>}
-        {!c.clinica && c.estado !== 'cancelada' && <button className="link-btn" onClick={() => onAccion({ tipo: 'nota', cita: c })}><StickyNote size={14} /> Nota</button>}
-        {veterinario && <Link className="link-btn" to={`/admin/pacientes/${c.mascota.id}`}><FileText size={14} /> Ficha</Link>}
-        <Link className="link-btn" to={`/admin/clientes/${c.cliente.id}`}>Cliente</Link>
-        {activa && <button className="link-btn" onClick={() => onAccion({ tipo: 'reprogramar', cita: c })}>Reprogramar</button>}
-        {onIr && fecha !== dia && <button className="link-btn" onClick={onIr}>Ver el día</button>}
-        {opciones.length > 0 && (
-          <Select value="" onChange={(e) => e.target.value && onAccion({ tipo: 'estado', cita: c, nuevo: e.target.value })} aria-label={`Cambiar estado de la cita de ${c.mascota.nombre}`}>
-            <option value="">Cambiar a…</option>
-            {opciones.map((n) => <option key={n} value={n}>{CITA_STATUS[n].label}{REVERSIONES.includes(`${c.estado}>${n}`) ? ' (corregir)' : ''}</option>)}
-          </Select>
-        )}
-      </div>
+        {principal && <button className="btn btn--dark btn--xs" onClick={() => estado(principal)}>{ACCION[principal]}</button>}
+        <MenuAcciones etiqueta={`Más acciones para ${c.mascota.nombre}`} items={menu} />
+      </span>
     </li>
   )
 }
@@ -361,7 +354,8 @@ function BlockForm({ fecha, sede, onSaved, onConflicto }) {
 
   return (
     <form className="admin-card agenda__form" onSubmit={submit}>
-      <h2>Bloquear turnos <small>· feriados o mantenimiento</small></h2>
+      <h2>Nuevo bloqueo</h2>
+      <p className="summary__hint">Para feriados o mantenimiento: esos turnos dejan de poder reservarse.</p>
       <div className="agenda__form-row">
         <label>Sede
           <Select value={values.sede} onChange={set('sede')}>
