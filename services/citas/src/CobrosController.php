@@ -52,6 +52,24 @@ final class CobrosController
                       'pendiente' => round(array_sum(array_map(fn($c) => $c['estado'] === 'pendiente' ? (float) $c['total'] : 0, $filas)), 2)]];
     }
 
+    /** Cobros de una mascota o de un cliente (sus fichas en el panel). */
+    public function de(): array
+    {
+        Guard::usuario(Guard::CLINICA);
+        $mascota = $_GET['mascota'] ?? null;
+        $cliente = $_GET['cliente'] ?? null;
+        if (is_string($mascota) && preg_match('/^[0-9a-f\-]{36}$/', $mascota)) {
+            $q = Db::escritura()->prepare('SELECT * FROM cobros WHERE mascota_id = ? ORDER BY numero DESC LIMIT 200');
+            $q->execute([$mascota]);
+        } elseif (is_string($cliente) && ctype_digit($cliente)) {
+            $q = Db::escritura()->prepare('SELECT * FROM cobros WHERE id_cliente = ? ORDER BY numero DESC LIMIT 200');
+            $q->execute([(int) $cliente]);
+        } else {
+            throw new ApiError(422, 'Indica la mascota o el cliente', ['campo' => 'mascota']);
+        }
+        return [200, ['cobros' => array_map([$this, 'json'], $this->conLineas($q->fetchAll()))]];
+    }
+
     public function ver(string $id): array
     {
         Guard::usuario(Guard::CLINICA);

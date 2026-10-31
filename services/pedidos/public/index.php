@@ -20,6 +20,7 @@ $router->add('GET',   '/api/pedidos/metodos-pago', fn() => $pedidos->metodosPago
 
 // Administración.
 $router->add('GET',   '/api/pedidos/admin/todos', fn() => $pedidos->listarTodos());
+$router->add('GET',   '/api/pedidos/admin/reportes/ventas', fn() => $pedidos->reporteVentas());
 $router->add('GET',   '/api/pedidos/admin/resumen', fn() => $pedidos->resumen());
 $router->add('GET',   '/api/pedidos/admin/clima', fn() => $pedidos->clima());
 $router->add('GET',   '/api/pedidos/admin/preparacion', fn() => $pedidos->preparacion());

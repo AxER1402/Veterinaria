@@ -370,10 +370,10 @@ esperar "solo pagos y notificaciones tienen salida a Internet" "000" "$(docker c
 # ======================= Semana 4: panel de administración y evidencia =======================
 caso "CP-31 Exportación de clientes auditada (A09, A.5.34)"
 esperar "cliente no puede exportar → 403" 403 "$(codigo -H "Authorization: Bearer $T2" "$BASE/api/auth/admin/clientes/exportar")"
-csv=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auth/admin/clientes/exportar")
-esperar "CSV solo con columnas mínimas" "id,nombre,email,activo,creado" "$(head -1 <<<"$csv" | sed 's/^\xEF\xBB\xBF//')"
-grep -q 'password\|\$2y\$' <<<"$csv" && mal "el CSV contiene hashes" || ok "el CSV no contiene contraseñas ni hashes"
-esperar "EXPORTACION_CLIENTES registra cuántos registros salieron" "admin@huellitas.gt|$(($(wc -l <<<"$csv") - 1))" "$(evento_ultimo EXPORTACION_CLIENTES | jq -r '"\(.usuario_email)|\(.dato_nuevo.registros)"')"
+exp=$("${C[@]}" -H "Authorization: Bearer $ADMIN" "$BASE/api/auth/admin/clientes/exportar")
+esperar "solo con columnas mínimas" "activo,creado,email,id,nombre" "$(jq -r '.clientes[0] | keys | join(",")' <<<"$exp")"
+grep -q 'password\|\$2y\$' <<<"$exp" && mal "la exportación contiene hashes" || ok "la exportación no contiene contraseñas ni hashes"
+esperar "EXPORTACION_CLIENTES registra cuántos registros salieron" "admin@huellitas.gt|$(jq '.clientes | length' <<<"$exp")|pdf" "$(evento_ultimo EXPORTACION_CLIENTES | jq -r '"\(.usuario_email)|\(.dato_nuevo.registros)|\(.dato_nuevo.formato)"')"
 esperar "intento de un cliente de entrar al panel → ACCESO_ADMIN_PANEL FALLO" "FALLO" "$(codigo -X POST -H "Authorization: Bearer $T2" "$BASE/api/auth/admin/acceso" >/dev/null; evento_ultimo ACCESO_ADMIN_PANEL | jq -r .resultado)"
 
 caso "CP-32 Evidencia SEC-2: ≥30 registros y ≥8 tipos de evento"
@@ -1157,6 +1157,43 @@ reenvio=$(codigo -X POST -H "Authorization: Bearer $T_TI" "$BASE/api/pedidos/adm
 esperar "reenviar el comprobante responde (sale el correo o avisa que no salió)" true "$([[ $reenvio == 200 || $reenvio == 502 ]] && echo true || echo false)"
 esperar "reenviar uno sin pago → 409" 409 "$(codigo -X POST -H "Authorization: Bearer $T_TI" "$BASE/api/pedidos/admin/$SIN_PAGO/comprobante/reenviar")"
 auth_json PATCH "$ADMIN" "/api/auth/admin/usuarios/$ROL_ID/rol" '{"rol":"cliente"}' >/dev/null
+
+caso "CP-57 Cobro ligado a una mascota y reportes en PDF (A01, A09, A.5.34)"
+respiro
+esperar "un cobro sin cita ni mascota → 422" 422 "$(cobrar "$ADMIN" '{"lineas":[{"concepto":"Consulta","cantidad":1,"precio_unitario":100}]}' | tail -1)"
+esperar "solo con un nombre escrito → 422" 422 "$(cobrar "$ADMIN" '{"cliente_nombre":"Alguien","lineas":[{"concepto":"Consulta","cantidad":1,"precio_unitario":100}]}' | tail -1)"
+esperar "una mascota inexistente → 404" 404 "$(cobrar "$ADMIN" "$(jq -nc --arg m "$(cat /proc/sys/kernel/random/uuid)" '{mascota_id:$m, lineas:[{concepto:"Consulta",cantidad:1,precio_unitario:100}]}')" | tail -1)"
+r=$(cobrar "$ADMIN" "$(jq -nc --arg m "$PB" '{mascota_id:$m, pago:{metodo:"efectivo"}, lineas:[{concepto:"Baño medicado",cantidad:1,precio_unitario:95}]}')"); COBRO_M=$(head -n -1 <<<"$r" | jq -r .cobro.id)
+DUENO=$(sqlc "SELECT id_cliente FROM mascotas WHERE id='$PB'")
+esperar "el cobro queda con su mascota y su dueño" "201|$PB|$DUENO" "$(tail -1 <<<"$r")|$(head -n -1 <<<"$r" | jq -r '"\(.cobro.mascota_id)|\(.cobro.cliente.id)"')"
+esperar "aparece en los cobros de la mascota" true "$(auth_json GET "$ADMIN" "/api/citas/admin/cobros/de?mascota=$PB" | jq --arg c "$COBRO_M" '[.cobros[].id] | index($c) != null')"
+esperar "y en los de su dueño" true "$(auth_json GET "$ADMIN" "/api/citas/admin/cobros/de?cliente=$DUENO" | jq --arg c "$COBRO_M" '[.cobros[].id] | index($c) != null')"
+esperar "no en los de otra mascota" false "$(auth_json GET "$ADMIN" "/api/citas/admin/cobros/de?mascota=$PA" | jq --arg c "$COBRO_M" '[.cobros[].id] | index($c) != null')"
+esperar "sin mascota ni cliente → 422" 422 "$(codigo -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/cobros/de")"
+esperar "un cliente no consulta esa lista → 403" 403 "$(codigo -H "Authorization: Bearer $T2" "$BASE/api/citas/admin/cobros/de?mascota=$PB")"
+HOY=$(gt +%F); RANGO="desde=$HOY&hasta=$HOY"
+caja_r=$(auth_json GET "$ADMIN" "/api/citas/admin/reportes/caja?$RANGO")
+esperar "el reporte de caja suma lo cobrado hoy" true "$(jq '.total >= 95 and (.cobros | length > 0)' <<<"$caja_r")"
+esperar "y lista la mascota de cada cobro" true "$(jq --arg m "Limite B $SUF" '[.cobros[].mascota] | index($m) != null' <<<"$caja_r")"
+esperar "REPORTE_GENERADO con reporte, periodo y cantidad, sin los datos" "caja|$HOY|pdf|false" "$(evento_ultimo REPORTE_GENERADO | jq -r '"\(.dato_nuevo.reporte)|\(.dato_nuevo.desde)|\(.dato_nuevo.formato)|\(tostring | test("Baño medicado"))"')"
+citas_r=$(auth_json GET "$ADMIN" "/api/citas/admin/reportes/citas?desde=$DIA_L&hasta=$DIA_L")
+esperar "el reporte de citas trae las del periodo" true "$(jq '.citas | length > 0' <<<"$citas_r")"
+esperar "y no trae notas ni teléfono" false "$(jq '.citas[0] | has("notas") or has("telefono") or has("diagnostico")' <<<"$citas_r")"
+ventas_r=$(auth_json GET "$ADMIN" "/api/pedidos/admin/reportes/ventas?desde=$(gt -d '-2 day' +%F)&hasta=$HOY")
+esperar "el reporte de ventas no trae correo, teléfono ni dirección" false "$(jq '[.pedidos[]? | has("email") or has("telefono") or has("direccion")] | any' <<<"$ventas_r")"
+esperar "y registra su generación" ventas "$(evento_ultimo REPORTE_GENERADO | jq -r .dato_nuevo.reporte)"
+for ruta in "citas/admin/reportes/caja?$RANGO" "citas/admin/reportes/citas?$RANGO" "pedidos/admin/reportes/ventas?$RANGO"; do
+    esperar "sin token, /api/${ruta%%\?*} → 401" 401 "$(codigo "$BASE/api/$ruta")"
+    esperar "un cliente, /api/${ruta%%\?*} → 403" 403 "$(codigo -H "Authorization: Bearer $T2" "$BASE/api/$ruta")"
+done
+esperar "tienda no saca el reporte de caja → 403" 403 "$(codigo -H "Authorization: Bearer $T_TI" "$BASE/api/citas/admin/reportes/caja?$RANGO")"
+esperar "tienda sí saca el de ventas" 200 "$(codigo -H "Authorization: Bearer $T_TI" "$BASE/api/pedidos/admin/reportes/ventas?$RANGO")"
+esperar "recepción no saca el de ventas → 403" 403 "$(codigo -H "Authorization: Bearer $T_REC" "$BASE/api/pedidos/admin/reportes/ventas?$RANGO")"
+esperar "recepción sí saca el de citas" 200 "$(codigo -H "Authorization: Bearer $T_REC" "$BASE/api/citas/admin/reportes/citas?$RANGO")"
+esperar "recepción no saca el de clientes → 403" 403 "$(codigo -H "Authorization: Bearer $T_REC" "$BASE/api/auth/admin/clientes/exportar")"
+esperar "fecha no válida → 422" 422 "$(codigo -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/reportes/caja?desde=ayer&hasta=$HOY")"
+esperar "periodo invertido → 422" 422 "$(codigo -H "Authorization: Bearer $ADMIN" "$BASE/api/citas/admin/reportes/caja?desde=$HOY&hasta=2020-01-01")"
+esperar "periodo de más de un año → 422" 422 "$(codigo -H "Authorization: Bearer $ADMIN" "$BASE/api/pedidos/admin/reportes/ventas?desde=2020-01-01&hasta=$HOY")"
 
 caso "CP-16 Rate limiting en /login (gateway, se corre al final)"
 codigos=$(for i in $(seq 1 15); do codigo -X POST -H 'Content-Type: application/json' -d '{"email":"flood@correo.gt","password":"x"}' "$BASE/api/auth/login"; echo; done)

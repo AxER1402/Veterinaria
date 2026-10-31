@@ -62,6 +62,7 @@ final class AuditController
         'SEDE_ACTUALIZADA'        => ['citas-service'],
         'SEDE_ELIMINADA'          => ['citas-service'],
         'SERVICIO_ACTUALIZADO'    => ['citas-service'],
+        'REPORTE_GENERADO'        => ['citas-service', 'pedidos-service'],
         'COBRO_REGISTRADO'        => ['citas-service'],
         'COBRO_PAGADO'            => ['citas-service'],
         'COBRO_ANULADO'           => ['citas-service'],

@@ -161,7 +161,7 @@ Resultado: **E** éxito, **F** fallo, **X** fraude. ✱ = evento agregado despu�
 | `REGISTRO_CLIENTE` | auth | Registro público o alta desde el panel (`origen` y `creado_por`) | E | CP-12 |
 | `ACCESO_ADMIN_PANEL` | auth | Entrada al panel; F si el rol no es del personal | E, F | CP-12, CP-31 |
 | `TOKEN_REVOCADO` | auth | Cierre de sesión (el `jti` pasa a la lista negra) | E | CP-12 |
-| `EXPORTACION_CLIENTES` | auth | Descarga del CSV de clientes, con la cantidad de registros | E | CP-31 |
+| `EXPORTACION_CLIENTES` | auth | Generación del reporte de clientes en PDF, con la cantidad de registros | E | CP-31 |
 | `PEDIDO_CREADO` | pedidos | Checkout | E | CP-18 |
 | `PEDIDO_ESTADO_CAMBIADO` | pedidos | Cambio de estado por el personal, el cliente, el pago o el vencimiento | E | CP-22, CP-26, CP-33 |
 | `PAGO_INICIADO` | pagos | Se crea el PaymentIntent u orden de PayPal (con el tipo de cambio si es PayPal) | E, F | CP-29 |

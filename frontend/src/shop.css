@@ -2067,12 +2067,44 @@ a.paciente:hover { border-color: var(--yellow-dark); }
   .fila--cobro__acciones { justify-content: flex-end; }
   .fila--recibo { grid-template-columns: minmax(0, 1fr) auto; }
   .fila--recibo > .btn, .fila--recibo > .status { grid-column: 1 / -1; justify-self: start; }
-  .cobro__linea { grid-template-columns: minmax(0, 1fr) 64px 34px; }
+  .cobro__linea { grid-template-columns: 64px minmax(0, 1fr) 34px; }
+  .cobro__hallados button { flex-wrap: wrap; row-gap: 2px; }
+  .cobro__hallados button > small { flex-basis: 100%; padding-left: 26px; }
   .cobro__linea label:first-child { grid-column: 1 / -1; }
   .sede-admin { grid-template-columns: auto minmax(0, 1fr); }
   .sede-admin__estado { grid-column: 1 / -1; justify-content: flex-start; max-width: none; }
   .fila--servicio { grid-template-columns: minmax(0, 1fr) auto; }
   .fila--servicio .servicio-campo--precio { grid-column: 1 / -1; grid-row: 3; }
   .fila--servicio .servicio-campo:not(.servicio-campo--precio) { grid-row: 2; }
+}
+
+/* ---------- Selector de mascota del cobro y reportes ---------- */
+.cobro__mascota { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--sky); }
+.cobro__mascota .cita-fila__icono { display: grid; background: var(--white); }
+.cobro__mascota .fila__principal { flex: 1; }
+.cobro__elegir { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.cobro__rotulo { margin: 0; font-weight: 500; font-size: 0.92rem; color: var(--navy); }
+.cobro__elegir .search { max-width: none; border: 1px solid var(--line); border-radius: var(--radius-control); padding: 0 12px; background: var(--white); }
+.cobro__elegir .search input, .cobro__elegir .search input:focus { padding: 10px 0; border: 0; border-radius: 0; background: none; box-shadow: none; outline: none; }
+.cobro__elegir .search:focus-within { border-color: var(--yellow-dark); box-shadow: 0 0 0 3px rgba(255, 209, 0, 0.3); }
+.cobro__elegir .cobro__hallados { margin: 0; }
+.cobro__hallados button { align-items: center; justify-content: flex-start; }
+.cobro__hallados button > span { flex: 1; min-width: 0; }
+.cobro__hallados b { font-weight: 500; }
+.fila--cobro a { color: inherit; }
+.fila--cobro a:hover { text-decoration: underline; }
+.reportes__periodo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; padding: 12px 14px; border-radius: 12px; background: var(--white); }
+.reportes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 12px; list-style: none; margin: 0 0 14px; padding: 0; }
+.reporte { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 14px; padding: 18px; border-radius: 14px; background: var(--white); }
+.reporte__icono { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--yellow); color: var(--navy); }
+.reporte__texto h2 { margin: 0 0 2px; font-size: 1.1rem; }
+.reporte__texto p { margin: 0; font-size: 0.92rem; }
+.reporte__texto small { display: block; margin-top: 4px; color: var(--gray); font-size: 0.8rem; }
+.reporte > .btn { grid-column: 2; justify-self: start; }
+@media (max-width: 760px) {
+  .reportes__periodo { padding: 10px; }
+  .reportes__periodo .segmentos { display: flex; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  .reportes__periodo .barra__fecha { display: grid; flex: 1 1 130px; gap: 2px; }
+  .reporte { padding: 14px; }
 }
 

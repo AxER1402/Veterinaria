@@ -524,35 +524,20 @@ final class AuthController
     }
 
     /**
-     * CSV de clientes. A.5.34 (datos mínimos): sin hashes, intentos ni datos de pedidos.
+     * Datos del reporte de clientes en PDF (se arma en el navegador). A.5.34 (datos mínimos): sin hashes, intentos ni datos de pedidos.
      * Cada exportación queda en la bitácora con quién la hizo y cuántos registros salieron.
      */
-    public function exportarClientes(): never
+    public function exportarClientes(): array
     {
         $claims = Guard::usuario(['admin']);
-        $filas = Db::lectura()->query("SELECT id, nombre, email, activo, created_at FROM usuarios WHERE rol = 'cliente' ORDER BY id")->fetchAll();
+        $filas = Db::lectura()->query("SELECT id, nombre, email, activo, created_at FROM usuarios WHERE rol = 'cliente' ORDER BY nombre")->fetchAll();
 
         Auditoria::registrar('EXPORTACION_CLIENTES', 'EXITO', Auditoria::actor($claims) + [
-            'dato_nuevo' => ['registros' => count($filas), 'formato' => 'csv', 'columnas' => ['id', 'nombre', 'email', 'activo', 'creado']],
+            'dato_nuevo' => ['registros' => count($filas), 'formato' => 'pdf', 'columnas' => ['id', 'nombre', 'email', 'activo', 'creado']],
         ]);
-
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="clientes-huellitas-' . date('Ymd-His') . '.csv"');
-        header('Cache-Control: no-store');
-        $salida = fopen('php://output', 'w');
-        fwrite($salida, "\xEF\xBB\xBF");  // BOM para que Excel lea bien los acentos
-        fputcsv($salida, ['id', 'nombre', 'email', 'activo', 'creado'], ',', '"', '');
-        foreach ($filas as $f) {
-            fputcsv($salida, [$f['id'], self::celdaSegura($f['nombre']), self::celdaSegura($f['email']), $f['activo'] ? 'sí' : 'no', $f['created_at']], ',', '"', '');
-        }
-        fclose($salida);
-        exit;
-    }
-
-    /** Evita inyección de fórmulas en Excel/Sheets (=, +, -, @ al inicio de la celda). */
-    private static function celdaSegura(string $valor): string
-    {
-        return preg_match('/^[=+\-@\t\r]/', $valor) ? "'" . $valor : $valor;
+        return [200, ['clientes' => array_map(fn($f) => [
+            'id' => (int) $f['id'], 'nombre' => $f['nombre'], 'email' => $f['email'], 'activo' => (bool) $f['activo'], 'creado' => substr($f['created_at'], 0, 10),
+        ], $filas)]];
     }
 
     private function fallo(string $email, ?array $usuario, string $motivo): void

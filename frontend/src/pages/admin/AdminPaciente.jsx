@@ -5,6 +5,7 @@ import { ArrowLeft, Printer, Receipt, Stethoscope, Syringe } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useClinica } from '../../context/useClinica'
 import CobroForm from './CobroForm'
+import CobrosLista from './CobrosLista'
 import Loading from '../../components/Loading'
 import PetIcon from '../../components/PetIcon'
 import VaccineTable, { Carne } from '../../components/VaccineTable'
@@ -24,6 +25,7 @@ export default function AdminPaciente() {
   const [modal, setModal] = useState(null) // 'consulta' | 'vacuna' | 'control' | null
   const [aviso, setAviso] = useState('')
   const [vista, setVista] = useState('consultas')
+  const [versionCobros, setVersionCobros] = useState(0)
   const [imprimir, setImprimir] = useState(null) // { tipo: 'receta', consulta } | { tipo: 'carne' }
 
   const cerrarImpresion = useCallback(() => setImprimir(null), [])
@@ -57,6 +59,7 @@ export default function AdminPaciente() {
     { id: 'carne', label: 'Carné' },
     { id: 'citas', label: `Citas (${data.citas.length})` },
     { id: 'notas', label: `Notas (${data.notas.length})` },
+    { id: 'cobros', label: 'Cobros' },
   ]
 
   return (
@@ -135,6 +138,8 @@ export default function AdminPaciente() {
             </ul>
           ))}
 
+          {vista === 'cobros' && <CobrosLista mascota={m.id} version={versionCobros} />}
+
           {vista === 'notas' && (data.notas.length === 0 ? <div className="vacio"><p>Sin notas de peluquería, guardería u otros servicios.</p></div> : (
             <ul className="clinical__list consultas">
               {data.notas.map((n) => (
@@ -158,7 +163,7 @@ export default function AdminPaciente() {
       )}
       {modal === 'cobro' && (
         <CobroForm mascota={{ id: m.id, nombre: m.nombre, dueno: { nombre: nombreDueno } }} onClose={() => setModal(null)}
-          onDone={(c) => { setModal(null); setAviso(`${c.recibo} guardado. Lo ves en Caja.`) }} />
+          onDone={(c) => { setModal(null); setAviso(`${c.recibo} guardado.`); setVersionCobros((v) => v + 1); setVista('cobros') }} />
       )}
       {modal === 'fallecio' && (
         <ConfirmDialog title={`Registrar el fallecimiento de ${m.nombre}`} onClose={() => setModal(null)} peligro confirmLabel="Registrar"

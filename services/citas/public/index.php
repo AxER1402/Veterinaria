@@ -6,6 +6,7 @@ require '/var/www/shared/bootstrap.php';
 
 use App\CitasController;
 use App\CobrosController;
+use App\ReportesController;
 use App\SedesController;
 use Huellitas\Router;
 
@@ -13,6 +14,7 @@ $router = new Router();
 $citas = new CitasController();
 $sedes = new SedesController();
 $cobros = new CobrosController();
+$reportes = new ReportesController();
 
 $router->add('GET',    '/salud', fn() => [200, ['estado' => 'ok', 'servicio' => 'citas-service']]);
 
@@ -37,6 +39,9 @@ $router->add('POST',   '/api/citas/admin/sedes', fn() => $sedes->crear());
 $router->add('PATCH',  '/api/citas/admin/sedes/{codigo}', fn($p) => $sedes->guardar($p['codigo']));
 $router->add('DELETE', '/api/citas/admin/sedes/{codigo}', fn($p) => $sedes->eliminar($p['codigo']));
 $router->add('PATCH',  '/api/citas/admin/servicios/{slug}', fn($p) => $sedes->guardarServicio($p['slug']));
+$router->add('GET',    '/api/citas/admin/reportes/citas', fn() => $reportes->citas());
+$router->add('GET',    '/api/citas/admin/reportes/caja', fn() => $reportes->caja());
+$router->add('GET',    '/api/citas/admin/cobros/de', fn() => $cobros->de());
 $router->add('GET',    '/api/citas/admin/cobros', fn() => $cobros->lista());
 $router->add('POST',   '/api/citas/admin/cobros', fn() => $cobros->crear());
 $router->add('GET',    '/api/citas/admin/cobros/{id}', fn($p) => $cobros->ver($p['id']));

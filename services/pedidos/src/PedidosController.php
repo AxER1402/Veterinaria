@@ -286,6 +286,39 @@ final class PedidosController
                       'limite' => $limite, 'total' => (int) $total->fetchColumn()]];
     }
 
+    /** Datos del reporte de ventas en PDF (se arma en el navegador): sin correo, teléfono ni dirección. */
+    public function reporteVentas(): array
+    {
+        $claims = Guard::usuario(Guard::TIENDA);
+        foreach (['desde', 'hasta'] as $campo) {
+            $valor = $_GET[$campo] ?? null;
+            $f = is_string($valor) ? \DateTimeImmutable::createFromFormat('!Y-m-d', $valor) : false;
+            if (!$f || $f->format('Y-m-d') !== $valor) {
+                throw new ApiError(422, 'Fecha no válida', ['campo' => $campo]);
+            }
+        }
+        [$desde, $hasta] = [$_GET['desde'], $_GET['hasta']];
+        if ($hasta < $desde || (strtotime($hasta) - strtotime($desde)) / 86400 > 366) {
+            throw new ApiError(422, 'Elige un periodo de hasta un año', ['campo' => 'hasta']);
+        }
+        $q = Db::escritura()->prepare('SELECT p.id, p.fecha, c.nombre, p.metodo_entrega, p.estado, p.total, p.reembolso FROM pedidos p JOIN clientes c ON c.id_cliente = p.id_cliente
+                                        WHERE p.fecha >= ? AND p.fecha < ? + INTERVAL 1 DAY ORDER BY p.fecha LIMIT 5001');
+        $q->execute([$desde, $hasta]);
+        $filas = $q->fetchAll();
+        $truncado = count($filas) > 5000;
+        $filas = array_slice($filas, 0, 5000);
+        $cobrados = array_filter($filas, fn($p) => in_array($p['estado'], ['pagado', 'preparando', 'listo_retiro', 'enviado', 'entregado'], true));
+        Auditoria::registrar('REPORTE_GENERADO', 'EXITO', Auditoria::actor($claims) + [
+            'dato_nuevo' => ['reporte' => 'ventas', 'desde' => $desde, 'hasta' => $hasta, 'registros' => count($filas), 'formato' => 'pdf'],
+        ]);
+        return [200, [
+            'desde' => $desde, 'hasta' => $hasta, 'truncado' => $truncado,
+            'cobrado' => round(array_sum(array_map(fn($p) => (float) $p['total'], $cobrados)), 2), 'pedidos_cobrados' => count($cobrados),
+            'pedidos' => array_map(fn($p) => ['id' => $p['id'], 'fecha' => $p['fecha'], 'cliente' => $p['nombre'], 'entrega' => $p['metodo_entrega'],
+                                              'estado' => $p['estado'], 'total' => (float) $p['total'], 'reembolso' => $p['reembolso']], $filas),
+        ]];
+    }
+
     /** Pedidos de un cliente (ficha del cliente en el panel). */
     public function deCliente(int $clienteId): array
     {
@@ -318,11 +351,11 @@ final class PedidosController
         $db = Db::lectura();
         $porEstado = $db->query('SELECT estado, COUNT(*) AS pedidos, COALESCE(SUM(total), 0) AS monto FROM pedidos GROUP BY estado')->fetchAll();
         $porDia = $db->query("SELECT DATE(fecha) AS dia, COUNT(*) AS pedidos, COALESCE(SUM(total), 0) AS monto
-                                FROM pedidos WHERE estado IN ('pagado','preparando','enviado','entregado')
+                                FROM pedidos WHERE estado IN ('pagado','preparando','listo_retiro','enviado','entregado')
                                  AND fecha >= CURDATE() - INTERVAL 13 DAY GROUP BY DATE(fecha) ORDER BY dia")->fetchAll();
         $clientes = (int) $db->query('SELECT COUNT(*) FROM clientes')->fetchColumn();
         $reembolsos = (int) Db::escritura()->query("SELECT COUNT(*) FROM pedidos WHERE reembolso = 'pendiente'")->fetchColumn();
-        $cobrado = array_sum(array_map(fn($e) => in_array($e['estado'], ['pagado', 'preparando', 'enviado', 'entregado'], true) ? (float) $e['monto'] : 0, $porEstado));
+        $cobrado = array_sum(array_map(fn($e) => in_array($e['estado'], ['pagado', 'preparando', 'listo_retiro', 'enviado', 'entregado'], true) ? (float) $e['monto'] : 0, $porEstado));
 
         return [200, [
             'por_estado'  => array_map(fn($e) => ['estado' => $e['estado'], 'pedidos' => (int) $e['pedidos'], 'monto' => (float) $e['monto']], $porEstado),

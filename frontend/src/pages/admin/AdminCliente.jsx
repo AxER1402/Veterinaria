@@ -15,6 +15,7 @@ import { RolSelect } from './AdminClientes'
 import { AlertasClinicas } from './ClinicalRecord'
 import { ROLES } from './roles'
 import Subvistas from './Subvistas'
+import CobrosLista from './CobrosLista'
 
 const CLINICA = ['admin', 'veterinario', 'recepcion']
 const TIENDA = ['admin', 'tienda']
@@ -47,6 +48,7 @@ export default function AdminCliente() {
   const veVet = ['admin', 'veterinario'].includes(user.rol)
   const vistas = [
     ...(veCitas ? [{ id: 'citas', label: `Citas${clinica ? ` (${clinica.citas.length})` : ''}` }, { id: 'mascotas', label: `Mascotas${clinica ? ` (${clinica.mascotas.length})` : ''}` }] : []),
+    ...(veCitas ? [{ id: 'cobros', label: 'Cobros' }] : []),
     ...(pedidos !== null ? [{ id: 'pedidos', label: `Pedidos${pedidos ? ` (${pedidos.length})` : ''}` }] : []),
   ]
   const activa = vista ?? vistas[0]?.id
@@ -78,6 +80,8 @@ export default function AdminCliente() {
       )}
 
       {vistas.length > 1 && <Subvistas vistas={vistas} activa={activa} onChange={setVista} />}
+
+      {activa === 'cobros' && <CobrosLista cliente={cliente.id} />}
 
       {activa === 'mascotas' && (!clinica ? clinica === false ? <p className="summary__hint">No disponible.</p> : <Loading /> : clinica.mascotas.length === 0 ? (
         <div className="vacio"><p>Sin mascotas registradas.</p></div>

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ChevronRight, Download, Search } from 'lucide-react'
+import { ChevronRight, FileText, Search } from 'lucide-react'
 import Avatar from '../../components/Avatar'
 import Loading from '../../components/Loading'
-import { api, getToken } from '../../api'
+import { api } from '../../api'
 import { useAuth } from '../../context/useAuth'
 import { ROLES } from './roles'
 import Select from '../../components/Select'
@@ -33,7 +33,6 @@ function ListaClientes() {
   const [clientes, setClientes] = useState(null)
   const [contadores, setContadores] = useState({})
   const [error, setError] = useState('')
-  const [exportando, setExportando] = useState(false)
 
   useEffect(() => {
     api('/api/auth/admin/clientes').then((d) => setClientes(d.clientes)).catch((e) => setError(e.message))
@@ -45,24 +44,6 @@ function ListaClientes() {
     return (clientes || []).filter((c) => !t || [c.nombre, c.email, c.telefono, String(c.id)].some((x) => normalizar(x).includes(t)))
   }, [clientes, q])
 
-  // La descarga necesita el JWT en la cabecera: se baja como blob en vez de abrir un enlace.
-  const exportar = async () => {
-    setExportando(true)
-    try {
-      const res = await fetch('/api/auth/admin/clientes/exportar', { headers: { Authorization: `Bearer ${getToken()}` } })
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || 'No se pudo exportar')
-      const nombre = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] ?? 'clientes.csv'
-      const url = URL.createObjectURL(await res.blob())
-      const a = Object.assign(document.createElement('a'), { href: url, download: nombre })
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setExportando(false)
-    }
-  }
-
   return (
     <>
       <div className="barra">
@@ -72,12 +53,7 @@ function ListaClientes() {
             onChange={(e) => setParams(e.target.value ? { q: e.target.value } : {}, { replace: true })} />
         </label>
         {clientes && <span className="barra__total">{lista.length} {lista.length === 1 ? 'cliente' : 'clientes'}</span>}
-        {user.rol === 'admin' && (
-          <button className="btn btn--ghost btn--xs barra__fin" onClick={exportar} disabled={exportando}
-            title="Incluye id, nombre, correo, estado y fecha de alta. Queda registrada en la bitácora.">
-            <Download size={16} /> {exportando ? 'Exportando…' : 'Exportar CSV'}
-          </button>
-        )}
+        {user.rol === 'admin' && <Link to="/admin/reportes" className="btn btn--ghost btn--xs barra__fin"><FileText size={16} aria-hidden="true" /> Reporte en PDF</Link>}
       </div>
       {error && <p className="form-alert">{error}</p>}
       {!clientes ? !error && <Loading /> : lista.length === 0 ? (

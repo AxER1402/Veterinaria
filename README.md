@@ -127,14 +127,16 @@ Corre los casos CP-01 a CP-52 (373 comprobaciones) contra el stack levantado: TL
 
 ## Panel de administración
 
-`/admin` (solo rol admin; cada ingreso queda como `ACCESO_ADMIN_PANEL`):
+`/admin` (cada rol del personal ve solo lo suyo; cada ingreso queda como `ACCESO_ADMIN_PANEL`):
 
 - **Resumen:** ventas cobradas, pedidos pendientes, eventos de auditoría, integridad de la bitácora, clima de la ciudad y gráfica de ventas por día con Chart.js (con vista de tabla).
 - **Pedidos:** filtro por estado y cambio de estado según las transiciones permitidas.
 - **Agenda:** citas del día por sede, cambio de estado, bloqueo de turnos, *Registrar consulta* (peso, diagnóstico, tratamiento y vacunas) e historial de cada mascota. El resumen muestra la tarjeta «Citas de hoy».
 - **Catálogo:** alta de productos con sus presentaciones (botón *Nuevo producto*; el slug y los SKU los pone el servidor y la imagen debe ser de Unsplash o de la cuenta de Cloudinary de la tienda), precio, precio anterior, stock, activo y destacado. Generan `PRODUCTO_CREADO`, `PRECIO_MODIFICADO` y `PRODUCTO_AGOTADO`.
 - **Bitácora:** filtros, detalle con antes y después, y botón «Verificar integridad».
-- **Clientes:** listado y exportación a CSV (`EXPORTACION_CLIENTES`).
+- **Clientes:** listado y fichas, con sus cobros y pedidos.
+- **Caja:** cobro en mostrador ligado a una mascota, recibo numerado y anulación con motivo.
+- **Reportes:** caja, citas, ventas, inventario y clientes en PDF, con periodo y según el rol (`REPORTE_GENERADO`, `EXPORTACION_CLIENTES`).
 
 ## Respaldos y recuperación
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Plus, Printer, Receipt } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import DateInput from '../../components/DateInput'
@@ -60,7 +61,10 @@ export default function AdminCaja() {
               {vigente.cobros.map((c) => (
                 <li key={c.id} className={`fila fila--cobro ${c.estado === 'anulado' ? 'is-apagada' : ''}`}>
                   <span className="fila__principal">
-                    <strong>{c.cliente.nombre}{c.mascota && ` · ${c.mascota}`}</strong>
+                    <strong>
+                      <Link to={`/admin/clientes/${c.cliente.id}`}>{c.cliente.nombre}</Link>
+                      {c.mascota && <> · {c.mascota_id && ['admin', 'veterinario'].includes(user.rol) ? <Link to={`/admin/pacientes/${c.mascota_id}`}>{c.mascota}</Link> : c.mascota}</>}
+                    </strong>
                     <small><span className="mono">{c.recibo}</span> · {formatDate(c.cobrado_at || c.fecha)}{c.metodo && ` · ${METODOS_PAGO[c.metodo]}`}</small>
                     {c.motivo_anulacion && <small>Anulado: {c.motivo_anulacion}</small>}
                   </span>

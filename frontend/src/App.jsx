@@ -49,6 +49,7 @@ const AdminClientes = lazy(() => import('./pages/admin/AdminClientes'))
 const AdminCliente = lazy(() => import('./pages/admin/AdminCliente'))
 const AdminCaja = lazy(() => import('./pages/admin/AdminCaja'))
 const AdminSedes = lazy(() => import('./pages/admin/AdminSedes'))
+const AdminReportes = lazy(() => import('./pages/admin/AdminReportes'))
 
 // En el flujo de compra el banner de reservas distrae, así que se oculta.
 const NO_CTA = ['/carrito', '/checkout', '/cuenta']
@@ -105,6 +106,7 @@ export default function App() {
                 <Route path="clientes/:id" element={<AdminCliente />} />
                 <Route path="caja" element={<AdminCaja />} />
                 <Route path="sedes" element={<AdminSedes />} />
+                <Route path="reportes" element={<AdminReportes />} />
               </Route>
             </Route>
             <Route element={<Layout />}>
