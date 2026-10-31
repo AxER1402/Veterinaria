@@ -2,6 +2,8 @@ import { useState } from 'react'
 import Field from './Field'
 import { api } from '../api'
 import { ESPECIES, ymd } from '../pages/account/citas'
+import DateInput from './DateInput'
+import Select from './Select'
 
 const VACIA = { nombre: '', especie: 'perro', raza: '', sexo: '', esterilizado: '', color: '', microchip: '', fecha_nacimiento: '', peso_kg: '', alergias: '', enfermedades_cronicas: '', notas: '' }
 
@@ -62,18 +64,18 @@ export default function PetForm({ mascota, compact = false, onSaved, onCancel })
               <input value={values.raza} onChange={set('raza')} maxLength={60} />
             </Field>
             <Field label="Sexo" error={errors.sexo}>
-              <select value={values.sexo} onChange={set('sexo')}>
+              <Select value={values.sexo} onChange={set('sexo')}>
                 <option value="">Sin indicar</option>
                 <option value="macho">Macho</option>
                 <option value="hembra">Hembra</option>
-              </select>
+              </Select>
             </Field>
             <Field label="¿Esterilizado?" error={errors.esterilizado}>
-              <select value={values.esterilizado} onChange={set('esterilizado')}>
+              <Select value={values.esterilizado} onChange={set('esterilizado')}>
                 <option value="">Sin indicar</option>
                 <option value="si">Sí</option>
                 <option value="no">No</option>
-              </select>
+              </Select>
             </Field>
             <Field label="Color o señas (opcional)" error={errors.color}>
               <input value={values.color} onChange={set('color')} maxLength={40} placeholder="Atigrado, mancha en el ojo…" />
@@ -82,7 +84,7 @@ export default function PetForm({ mascota, compact = false, onSaved, onCancel })
               <input value={values.microchip} onChange={set('microchip')} maxLength={15} inputMode="numeric" placeholder="15 dígitos" />
             </Field>
             <Field label="Fecha de nacimiento" error={errors.fecha_nacimiento}>
-              <input type="date" max={ymd(new Date())} value={values.fecha_nacimiento} onChange={set('fecha_nacimiento')} />
+              <DateInput max={ymd(new Date())} value={values.fecha_nacimiento} onChange={set('fecha_nacimiento')} />
             </Field>
             <Field label="Peso en kg (opcional)" error={errors.peso_kg}>
               <input type="number" min="0.1" max="150" step="0.1" inputMode="decimal" value={values.peso_kg} onChange={set('peso_kg')} />

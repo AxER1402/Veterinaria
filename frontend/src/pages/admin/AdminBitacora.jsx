@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Loading from '../../components/Loading'
 import { api } from '../../api'
+import Select from '../../components/Select'
 
 const ACCIONES = ['LOGIN_CLIENTE_EXITOSO', 'LOGIN_CLIENTE_FALLIDO', 'REGISTRO_CLIENTE', 'PEDIDO_CREADO', 'PAGO_INICIADO', 'PAGO_CONFIRMADO',
   'PAGO_FALLIDO', 'PEDIDO_ESTADO_CAMBIADO', 'PRODUCTO_CREADO', 'PRODUCTO_ACTUALIZADO', 'PRECIO_MODIFICADO', 'PRODUCTO_AGOTADO', 'EXPORTACION_CLIENTES', 'ACCESO_ADMIN_PANEL',
@@ -44,14 +45,14 @@ export default function AdminBitacora() {
         </p>
       )}
       <div className="admin-filters">
-        <select value={filtros.accion} onChange={set('accion')} aria-label="Evento">
+        <Select value={filtros.accion} onChange={set('accion')} aria-label="Evento">
           <option value="">Todos los eventos</option>
           {ACCIONES.map((a) => <option key={a}>{a}</option>)}
-        </select>
-        <select value={filtros.resultado} onChange={set('resultado')} aria-label="Resultado">
+        </Select>
+        <Select value={filtros.resultado} onChange={set('resultado')} aria-label="Resultado">
           <option value="">Todos los resultados</option>
           <option>EXITO</option><option>FALLO</option><option>FRAUDE</option>
-        </select>
+        </Select>
         <input type="search" placeholder="Correo del usuario" value={filtros.usuario_email} onChange={set('usuario_email')} aria-label="Correo del usuario" />
       </div>
       {error && <p className="form-alert">{error}</p>}

@@ -6,6 +6,8 @@ import Loading from '../../components/Loading'
 import { api } from '../../api'
 import { formatPrice } from '../../data/shop'
 import { STATUS, shortId, formatDate } from '../account/orderStatus'
+import DateInput from '../../components/DateInput'
+import Select from '../../components/Select'
 
 const POR_PAGINA = 50
 
@@ -67,12 +69,12 @@ export default function AdminPedidos() {
           <input type="search" value={buscar} onChange={(e) => { setBuscar(e.target.value); if (!e.target.value) setFiltro({ q: '' }) }}
             placeholder="Código, cliente, correo o teléfono" aria-label="Buscar pedido" />
         </form>
-        <select value={filtros.estado} onChange={(e) => setFiltro({ estado: e.target.value })} aria-label="Filtrar por estado">
+        <Select value={filtros.estado} onChange={(e) => setFiltro({ estado: e.target.value })} aria-label="Filtrar por estado">
           <option value="">Todos los estados</option>
           {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-        </select>
-        <label className="admin-filters__date">Desde <input type="date" value={filtros.desde} onChange={(e) => setFiltro({ desde: e.target.value })} /></label>
-        <label className="admin-filters__date">Hasta <input type="date" value={filtros.hasta} onChange={(e) => setFiltro({ hasta: e.target.value })} /></label>
+        </Select>
+        <label className="admin-filters__date">Desde <DateInput value={filtros.desde} onChange={(e) => setFiltro({ desde: e.target.value })} /></label>
+        <label className="admin-filters__date">Hasta <DateInput value={filtros.hasta} onChange={(e) => setFiltro({ hasta: e.target.value })} /></label>
         {filtros.reembolso && <button className="chip chip--active" onClick={() => setFiltro({ reembolso: '' })}>Reembolso pendiente ✕</button>}
       </div>
       {error && <p className="form-alert">{error}</p>}

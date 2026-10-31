@@ -5,6 +5,7 @@ import { api } from '../../api'
 import ProductoForm from './ProductoForm'
 import AdminResenas from './AdminResenas'
 import { categories } from '../../data/shop'
+import Select from '../../components/Select'
 
 const normalizar = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 
@@ -72,10 +73,10 @@ export default function AdminCatalogo() {
           <Search size={18} />
           <input type="search" value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Nombre, marca o SKU" aria-label="Buscar producto" />
         </label>
-        <select value={categoria} onChange={(e) => setCategoria(e.target.value)} aria-label="Categoría">
+        <Select value={categoria} onChange={(e) => setCategoria(e.target.value)} aria-label="Categoría">
           <option value="">Todas las categorías</option>
           {categories.map((c) => <option key={c.slug} value={c.slug}>{c.label}</option>)}
-        </select>
+        </Select>
       </div>
       {editando && (
         <ProductoForm producto={editando === 'nuevo' ? null : editando} onClose={() => setEditando(null)} onSaved={guardado} />

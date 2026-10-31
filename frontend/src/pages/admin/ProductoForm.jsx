@@ -4,6 +4,7 @@ import Modal from '../../components/Modal'
 import ImagenProducto from './ImagenProducto'
 import { api } from '../../api'
 import { pets, categories, brands } from '../../data/shop'
+import Select from '../../components/Select'
 
 const ETIQUETAS = ['Nuevo', 'Oferta', 'Más vendido']
 const VARIANTE = { etiqueta: '', precio: '', precio_anterior: '', stock: '' }
@@ -66,14 +67,14 @@ export default function ProductoForm({ producto, onClose, onSaved }) {
             <input list="marcas" value={values.marca} onChange={set('marca')} minLength={2} maxLength={60} required />
           </label>
           <label>Mascota
-            <select value={values.mascota} onChange={set('mascota')}>
+            <Select value={values.mascota} onChange={set('mascota')}>
               {pets.map((p) => <option key={p.slug} value={p.slug}>{p.label}</option>)}
-            </select>
+            </Select>
           </label>
           <label>Categoría
-            <select value={values.categoria} onChange={set('categoria')}>
+            <Select value={values.categoria} onChange={set('categoria')}>
               {categories.map((c) => <option key={c.slug} value={c.slug}>{c.label}</option>)}
-            </select>
+            </Select>
           </label>
         </div>
         <datalist id="marcas">{brands.map((b) => <option key={b} value={b} />)}</datalist>

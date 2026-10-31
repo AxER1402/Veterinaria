@@ -5,6 +5,8 @@ import PetIcon from '../../components/PetIcon'
 import { api } from '../../api'
 import { formatCita, ymd } from '../account/citas'
 import { fechaCorta } from '../account/vacunas'
+import DateInput from '../../components/DateInput'
+import Select from '../../components/Select'
 
 const VACUNAS_COMUNES = ['Rabia', 'Séxtuple', 'Parvovirus', 'Moquillo', 'Triple felina', 'Leucemia felina', 'Bordetella']
 const DESPARASITANTES = ['Drontal Plus', 'Milbemax', 'Bravecto', 'NexGard Spectra', 'Simparica Trio', 'Revolution']
@@ -102,22 +104,22 @@ export function ConsultaForm({ cita, mascota, onClose, onSaved }) {
           </div>
           <div className="agenda__form-row agenda__form-row--3">
             <label>Mucosas
-              <select value={values.mucosas} onChange={set('mucosas')}>
+              <Select value={values.mucosas} onChange={set('mucosas')}>
                 <option value="">Sin evaluar</option>
                 {Object.entries(MUCOSAS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-              </select>
+              </Select>
             </label>
             <label>Hidratación
-              <select value={values.hidratacion} onChange={set('hidratacion')}>
+              <Select value={values.hidratacion} onChange={set('hidratacion')}>
                 <option value="">Sin evaluar</option>
                 {Object.entries(HIDRATACION).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-              </select>
+              </Select>
             </label>
             <label>Condición corporal <small>1 a 9</small>
-              <select value={values.condicion_corporal} onChange={set('condicion_corporal')}>
+              <Select value={values.condicion_corporal} onChange={set('condicion_corporal')}>
                 <option value="">Sin evaluar</option>
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => <option key={n} value={n}>{n}{n === 5 ? ' · ideal' : n < 4 ? ' · delgado' : n > 6 ? ' · sobrepeso' : ''}</option>)}
-              </select>
+              </Select>
             </label>
           </div>
         </fieldset>
@@ -158,7 +160,7 @@ export function ConsultaForm({ cita, mascota, onClose, onSaved }) {
           <textarea rows="2" value={values.indicaciones} onChange={set('indicaciones')} maxLength={1000} />
         </label>
         <label className="clinical-form__short">Próximo control (opcional)
-          <input type="date" min={dia} value={values.proximo_control} onChange={set('proximo_control')} />
+          <DateInput min={dia} value={values.proximo_control} onChange={set('proximo_control')} />
         </label>
 
         <fieldset className="clinical-form__vaccines">
@@ -185,10 +187,10 @@ function VacunaRows({ vacunas, setVacunas, min }) {
       {vacunas.map((v, i) => (
         <div key={i} className="vaccine-row vaccine-row--tipo">
           <label>Tipo
-            <select value={v.tipo} onChange={set(i, 'tipo')}>
+            <Select value={v.tipo} onChange={set(i, 'tipo')}>
               <option value="vacuna">Vacuna</option>
               <option value="desparasitacion">Desparasitación</option>
-            </select>
+            </Select>
           </label>
           <label>Nombre
             <input list={v.tipo === 'vacuna' ? 'vacunas-comunes' : 'desparasitantes'} value={v.nombre} onChange={set(i, 'nombre')} maxLength={80} required />
@@ -197,7 +199,7 @@ function VacunaRows({ vacunas, setVacunas, min }) {
             <input value={v.lote} onChange={set(i, 'lote')} maxLength={40} />
           </label>
           <label>Próxima dosis
-            <input type="date" min={min} value={v.proxima_dosis} onChange={set(i, 'proxima_dosis')} />
+            <DateInput min={min} value={v.proxima_dosis} onChange={set(i, 'proxima_dosis')} />
           </label>
           <button type="button" className="icon-btn icon-btn--ghost" aria-label={`Quitar ${i + 1}`}
             onClick={() => setVacunas((l) => l.filter((_, j) => j !== i))}><Trash2 size={16} /></button>
@@ -243,10 +245,10 @@ export function VacunaExternaForm({ mascota, onClose, onSaved }) {
       <form className="clinical-form" onSubmit={submit}>
         <div className="agenda__form-row">
           <label>Tipo
-            <select value={values.tipo} onChange={set('tipo')}>
+            <Select value={values.tipo} onChange={set('tipo')}>
               <option value="vacuna">Vacuna</option>
               <option value="desparasitacion">Desparasitación</option>
-            </select>
+            </Select>
           </label>
           <label>Nombre
             <input list={values.tipo === 'vacuna' ? 'vacunas-ext' : 'desparasitantes-ext'} value={values.nombre} onChange={set('nombre')} minLength={2} maxLength={80} required />
@@ -256,10 +258,10 @@ export function VacunaExternaForm({ mascota, onClose, onSaved }) {
         <datalist id="desparasitantes-ext">{DESPARASITANTES.map((n) => <option key={n} value={n} />)}</datalist>
         <div className="agenda__form-row">
           <label>Aplicada el
-            <input type="date" max={ymd(new Date())} value={values.fecha_aplicacion} onChange={set('fecha_aplicacion')} required />
+            <DateInput max={ymd(new Date())} value={values.fecha_aplicacion} onChange={set('fecha_aplicacion')} required />
           </label>
           <label>Próxima dosis (opcional)
-            <input type="date" min={values.fecha_aplicacion || undefined} value={values.proxima_dosis} onChange={set('proxima_dosis')} />
+            <DateInput min={values.fecha_aplicacion || undefined} value={values.proxima_dosis} onChange={set('proxima_dosis')} />
           </label>
         </div>
         <div className="agenda__form-row">
@@ -437,11 +439,11 @@ function SubirAdjunto({ historialId, onUpdated }) {
       <input ref={input} type="file" accept={TIPOS_ADJUNTO.join(',')} onChange={subir} hidden />
       {estado === 'eligiendo' ? (
         <>
-          <select value={tipo} onChange={(e) => setTipo(e.target.value)} aria-label="Tipo de archivo">
+          <Select value={tipo} onChange={(e) => setTipo(e.target.value)} aria-label="Tipo de archivo">
             <option value="laboratorio">Laboratorio</option>
             <option value="radiografia">Radiografía</option>
             <option value="otro">Otro</option>
-          </select>
+          </Select>
           <button className="link-btn" onClick={() => input.current.click()}>Elegir archivo</button>
           <button className="link-btn" onClick={() => setEstado('')}>Cancelar</button>
         </>

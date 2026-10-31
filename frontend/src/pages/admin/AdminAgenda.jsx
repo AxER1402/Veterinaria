@@ -11,6 +11,8 @@ import AgendarCita from './AgendarCita'
 import Equipo from './Equipo'
 import { Reprogramar } from '../account/Appointments'
 import { CITA_STATUS, addDays, formatCita, formatDay, formatReserva, ymd } from '../account/citas'
+import DateInput from '../../components/DateInput'
+import Select from '../../components/Select'
 
 const SEDES = [
   { value: '', label: 'Todas' },
@@ -126,7 +128,7 @@ export default function AdminAgenda() {
           </h2>
           <div className="agenda__nav">
             <button className="icon-btn" onClick={() => mover(-1)} aria-label="Día anterior"><ChevronLeft size={18} /></button>
-            <input type="date" value={fecha} onChange={(e) => e.target.value && setFiltro({ fecha: e.target.value })} aria-label="Fecha" />
+            <DateInput value={fecha} onChange={(e) => e.target.value && setFiltro({ fecha: e.target.value })} aria-label="Fecha" />
             <button className="icon-btn" onClick={() => mover(1)} aria-label="Día siguiente"><ChevronRight size={18} /></button>
             {fecha !== hoy && <button className="link-btn" onClick={() => setFiltro({ fecha: '' })}>Hoy</button>}
             <button className="icon-btn" onClick={cargar} aria-label="Actualizar" title="Se actualiza sola cada minuto"><RefreshCw size={16} /></button>
@@ -321,10 +323,10 @@ function CitaCard({ cita: c, veterinario, hoy, fecha, conFecha = false, onAccion
         {activa && <button className="link-btn" onClick={() => onAccion({ tipo: 'reprogramar', cita: c })}>Reprogramar</button>}
         {onIr && fecha !== dia && <button className="link-btn" onClick={onIr}>Ver el día</button>}
         {opciones.length > 0 && (
-          <select value="" onChange={(e) => e.target.value && onAccion({ tipo: 'estado', cita: c, nuevo: e.target.value })} aria-label={`Cambiar estado de la cita de ${c.mascota.nombre}`}>
+          <Select value="" onChange={(e) => e.target.value && onAccion({ tipo: 'estado', cita: c, nuevo: e.target.value })} aria-label={`Cambiar estado de la cita de ${c.mascota.nombre}`}>
             <option value="">Cambiar a…</option>
             {opciones.map((n) => <option key={n} value={n}>{CITA_STATUS[n].label}{REVERSIONES.includes(`${c.estado}>${n}`) ? ' (corregir)' : ''}</option>)}
-          </select>
+          </Select>
         )}
       </div>
     </li>
@@ -362,12 +364,12 @@ function BlockForm({ fecha, sede, onSaved, onConflicto }) {
       <h2>Bloquear turnos <small>· feriados o mantenimiento</small></h2>
       <div className="agenda__form-row">
         <label>Sede
-          <select value={values.sede} onChange={set('sede')}>
+          <Select value={values.sede} onChange={set('sede')}>
             {SEDES.filter((s) => s.value).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
+          </Select>
         </label>
         <label>Fecha
-          <input type="date" value={values.fecha} min={ymd(new Date())} onChange={set('fecha')} required />
+          <DateInput value={values.fecha} min={ymd(new Date())} onChange={set('fecha')} required />
         </label>
       </div>
       <label className="agenda__check">
@@ -376,14 +378,14 @@ function BlockForm({ fecha, sede, onSaved, onConflicto }) {
       {!values.todo && (
         <div className="agenda__form-row">
           <label>Desde
-            <select value={values.hora_inicio} onChange={set('hora_inicio')}>
+            <Select value={values.hora_inicio} onChange={set('hora_inicio')}>
               {HORAS.slice(0, -1).map((h) => <option key={h}>{h}</option>)}
-            </select>
+            </Select>
           </label>
           <label>Hasta
-            <select value={values.hora_fin} onChange={set('hora_fin')}>
+            <Select value={values.hora_fin} onChange={set('hora_fin')}>
               {HORAS.slice(1).map((h) => <option key={h}>{h}</option>)}
-            </select>
+            </Select>
           </label>
         </div>
       )}

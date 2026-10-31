@@ -6,6 +6,7 @@ import SlotPicker from '../../components/SlotPicker'
 import { cuerpoReserva, eleccionLista } from '../../components/reserva'
 import { api } from '../../api'
 import { ESPECIES, formatReserva } from '../account/citas'
+import Select from '../../components/Select'
 
 const normalizar = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
@@ -187,9 +188,9 @@ export default function AgendarCita({ inicial = {}, onClose, onDone }) {
                   <input value={nueva.nombre} onChange={(e) => setNueva((n) => ({ ...n, nombre: e.target.value }))} maxLength={60} />
                 </label>
                 <label>Especie
-                  <select value={nueva.especie} onChange={(e) => setNueva((n) => ({ ...n, especie: e.target.value }))}>
+                  <Select value={nueva.especie} onChange={(e) => setNueva((n) => ({ ...n, especie: e.target.value }))}>
                     {ESPECIES.map((e) => <option key={e.value} value={e.value}>{e.label}</option>)}
-                  </select>
+                  </Select>
                 </label>
                 <span className="pet-form__actions">
                   <button type="button" className="btn btn--dark btn--xs" disabled={!nueva.nombre.trim()} onClick={registrarMascota}>Registrar</button>
@@ -203,16 +204,16 @@ export default function AgendarCita({ inicial = {}, onClose, onDone }) {
         {cliente && mascotaId && servicios && (
           <>
             <label>Servicio
-              <select value={servicio} onChange={(e) => { setServicio(e.target.value); setProfesional(''); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
+              <Select value={servicio} onChange={(e) => { setServicio(e.target.value); setProfesional(''); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
                 {servicios.map((s) => <option key={s.slug} value={s.slug}>{s.nombre} · {s.sede.nombre.split(' · ')[0]}</option>)}
-              </select>
+              </Select>
             </label>
             {elegido?.profesionales?.length > 0 && (
               <label>Con quién
-                <select value={profesional} onChange={(e) => { setProfesional(e.target.value); setEleccion((x) => ({ ...x, hora: '' })) }}>
+                <Select value={profesional} onChange={(e) => { setProfesional(e.target.value); setEleccion((x) => ({ ...x, hora: '' })) }}>
                   <option value="">Quien tenga lugar</option>
                   {elegido.profesionales.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                </select>
+                </Select>
               </label>
             )}
             {elegido && <SlotPicker servicio={servicio} modalidad={elegido.modalidad} value={eleccion} onChange={setEleccion} numerado={false} profesional={profesional} />}

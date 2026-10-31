@@ -1,15 +1,20 @@
 import { Link } from 'react-router-dom'
-import PageHeader from '../components/PageHeader'
+import PageHero from '../components/PageHero'
 import Reveal from '../components/Reveal'
 import Faq from '../components/Faq'
-import { services } from '../data/content'
+import { images, services } from '../data/content'
 
 export default function Services() {
   return (
     <>
-      <PageHeader
-        title="Servicios"
-        text="Todo lo que tu mascota necesita para una vida sana y feliz, en un solo lugar."
+      <PageHero
+        cara="><(((º>"
+        title={<>Todo para tu mascota, <span className="highlight">en un solo lugar</span></>}
+        text="Salud, higiene, paseos, entrenamiento y cuidado para una vida sana y feliz."
+        cta={{ to: '/reservar', label: 'Reservar cita' }}
+        image={images.servicios}
+        alt="Perro pastor australiano sonriendo en la playa"
+        tag={<><strong>{services.length}</strong> servicios para tu mascota</>}
       />
       <section className="section">
         <div className="container service-list">

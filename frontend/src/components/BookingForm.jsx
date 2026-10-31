@@ -11,6 +11,7 @@ import { useAuth } from '../context/useAuth'
 import { formatPrice } from '../data/shop'
 import PetIcon from './PetIcon'
 import { TELEFONO_CLINICA, formatReserva } from '../pages/account/citas'
+import Select from './Select'
 
 // Lo elegido antes de ir a ingresar: al volver, la reserva sigue donde estaba.
 const DRAFT_KEY = 'huellitas-reserva'
@@ -90,11 +91,11 @@ export default function BookingForm() {
             <div className="booking__steps">
               <div className="form-grid form-grid--tight">
                 <Field label="1. Servicio" full>
-                  <select value={servicio} onChange={(e) => { setServicio(e.target.value); setProfesional(''); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
+                  <Select value={servicio} onChange={(e) => { setServicio(e.target.value); setProfesional(''); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
                     {servicios.map((s) => (
                       <option key={s.slug} value={s.slug}>{s.nombre}</option>
                     ))}
-                  </select>
+                  </Select>
                 </Field>
               </div>
               {elegido && (
@@ -104,10 +105,10 @@ export default function BookingForm() {
               {elegido?.profesionales?.length > 0 && (
                 <div className="form-grid form-grid--tight">
                   <Field label="¿Con quién? (opcional)" full>
-                    <select value={profesional} onChange={(e) => { setProfesional(e.target.value); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
+                    <Select value={profesional} onChange={(e) => { setProfesional(e.target.value); setEleccion({ fecha: '', hora: '', salida: '' }) }}>
                       <option value="">Con quien tenga lugar</option>
                       {elegido.profesionales.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                    </select>
+                    </Select>
                   </Field>
                 </div>
               )}

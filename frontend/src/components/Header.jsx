@@ -35,35 +35,32 @@ export default function Header() {
               {link.label}
             </NavLink>
           ))}
-          {isStaff && (
-            <NavLink to="/admin" className="nav__link nav__admin-mobile">
-              Panel de la clínica
-            </NavLink>
-          )}
-          <Link to="/reservar" className="btn btn--primary nav__cta-mobile">
-            Reservar cita
-          </Link>
+          {/* En celulares, lo secundario va aquí para que el encabezado solo lleve el logo, el carrito y el menú. */}
+          <div className="nav__extra">
+            <Link to={user ? '/cuenta/citas' : '/cuenta'} className="nav__link"><User size={20} /> {user ? 'Mi cuenta' : 'Ingresar'}</Link>
+            <Link to="/favoritos" className="nav__link"><Heart size={20} /> Favoritos{wishlist.length > 0 && ` (${wishlist.length})`}</Link>
+            {isStaff && <NavLink to="/admin" className="nav__link"><ShieldCheck size={20} /> Panel de la clínica</NavLink>}
+            <a href={`tel:${business.tel}`} className="nav__link"><Phone size={20} /> {business.phone}</a>
+            <Link to="/reservar" className="btn btn--primary btn--block">Reservar cita</Link>
+          </div>
         </nav>
 
         <div className="header__actions">
-          <a href={`tel:${business.tel}`} className="header__phone">
-            <Phone size={18} /> {business.phone}
-          </a>
           {isStaff && (
             <Link to="/admin" className="header__panel" title="Panel de la clínica">
-              <ShieldCheck size={20} /> <span>Panel</span>
+              <ShieldCheck size={18} /> <span>Panel</span>
             </Link>
           )}
-          <Link to={user ? '/cuenta/citas' : '/cuenta'} className="header__icon" aria-label={user ? `Mi cuenta (${user.nombre})` : 'Ingresar'}>
-            <User size={22} />
+          <Link to={user ? '/cuenta/citas' : '/cuenta'} className="header__icon header__icon--escritorio" aria-label={user ? `Mi cuenta (${user.nombre})` : 'Ingresar'} title={user ? 'Mi cuenta' : 'Ingresar'}>
+            <User size={20} />
             {user && <span className="header__dot" />}
           </Link>
-          <Link to="/favoritos" className="header__icon" aria-label={`Favoritos (${wishlist.length})`}>
-            <Heart size={22} />
+          <Link to="/favoritos" className="header__icon header__icon--escritorio" aria-label={`Favoritos (${wishlist.length})`} title="Favoritos">
+            <Heart size={20} />
             {wishlist.length > 0 && <span className="header__count">{wishlist.length}</span>}
           </Link>
-          <button className="header__icon" onClick={openDrawer} aria-label={`Carrito (${totals.count})`}>
-            <ShoppingBag size={22} />
+          <button className="header__icon" onClick={openDrawer} aria-label={`Carrito (${totals.count})`} title="Carrito">
+            <ShoppingBag size={20} />
             {totals.count > 0 && <span className="header__count">{totals.count}</span>}
           </button>
           <Link to="/reservar" className="btn btn--primary btn--sm header__reservar">
@@ -75,7 +72,7 @@ export default function Header() {
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
           >
-            {open ? <X size={26} /> : <Menu size={26} />}
+            {open ? <X size={24} /> : <Menu size={24} />}
           </button>
         </div>
       </div>

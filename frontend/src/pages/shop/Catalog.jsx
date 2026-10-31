@@ -6,6 +6,7 @@ import ProductCard from '../../components/shop/ProductCard'
 import { pets, categories, brands, minPrice, isOnSale } from '../../data/shop'
 import { useShop } from '../../context/useShop'
 import Loading from '../../components/Loading'
+import Select from '../../components/Select'
 
 const sorts = {
   relevancia: { label: 'Relevancia', fn: (a, b) => Number(!!b.featured) - Number(!!a.featured) },
@@ -81,12 +82,12 @@ export default function Catalog() {
             </FilterGroup>
 
             <FilterGroup title="Marca">
-              <select value={brand} onChange={(e) => update('marca', e.target.value)} className="select">
+              <Select value={brand} onChange={(e) => update('marca', e.target.value)} className="select">
                 <option value="">Todas las marcas</option>
                 {brandList.map((b) => (
                   <option key={b}>{b}</option>
                 ))}
-              </select>
+              </Select>
             </FilterGroup>
 
             <label className="toggle">
@@ -119,13 +120,13 @@ export default function Catalog() {
               <button className="btn btn--outline btn--sm filters-toggle" onClick={() => setFiltersOpen(true)}>
                 <SlidersHorizontal size={16} /> Filtros {activeCount > 0 && `(${activeCount})`}
               </button>
-              <select value={sort} onChange={(e) => update('orden', e.target.value)} className="select" aria-label="Ordenar">
+              <Select value={sort} onChange={(e) => update('orden', e.target.value)} className="select" aria-label="Ordenar">
                 {Object.entries(sorts).map(([key, s]) => (
                   <option key={key} value={key}>
                     {s.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <p className="toolbar__count">
               {results.length} {results.length === 1 ? 'producto' : 'productos'}

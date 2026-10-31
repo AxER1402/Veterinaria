@@ -598,3 +598,20 @@ Al terminar se borraron los dos archivos de Cloudinary (`destroy`) y sus filas d
 - **Personal:** no entra con Google. Una cuenta de Google no puede pasar a tener rol de personal, ni cambiar contraseña o activar MFA aquí (`409`).
 - **Identificador:** se usa `sub`, no el correo (`usuarios.google_sub`, `db/master/23-google.sql`, también en `ops/migrar-v2.sh`). Estas cuentas guardan una contraseña aleatoria que nadie conoce.
 - **Comprobado:** CP-52 (31 casos) con tokens firmados por una clave propia; suite 373 de 373.
+
+## 2026-10-31 · Encabezado, selectores y calendario propios
+
+- **Encabezado:** 72 px, enlaces sin fondo (el activo se subraya) e iconos sin círculo. Se quitó el teléfono. En celular solo quedan el logo, el carrito y el menú; cuenta, favoritos, panel, teléfono y «Reservar cita» pasan al menú.
+- **`Select.jsx` y `DateInput.jsx`** reemplazan a los 30 `<select>` y 11 `<input type="date">`, con el mismo uso (`value`, `<option>`, `e.target.value`). Comparten `Flotante.jsx`.
+  - **Modales:** el panel se monta dentro del `<dialog>`, porque fuera quedaría debajo. Esc cierra solo el panel: con el panel abierto se intercepta el evento `cancel`, ya que detener la tecla no basta.
+  - **Teclado:** flechas, Inicio, Fin, Enter, Esc y búsqueda por letras; en el calendario también Re Pág y Av Pág.
+  - **Compromiso:** en celular ya no se abre la rueda del sistema y la fecha no se puede escribir, solo elegir en el calendario.
+- **Bordes:** `--radius-control` (10 px) en botones, entradas, selectores y pestañas. Las tarjetas y las etiquetas de estado no cambiaron.
+- **Comprobado** en Chromium, de 360 a 1366 px y con una cuenta admin: sin desborde, listas dentro de modales, teclado, límites de fecha y filtros. Falta un teléfono real y Safari.
+
+## 2026-10-31 · Encabezado de Servicios, Nosotros, Preguntas y Contacto
+
+- **`PageHero.jsx`**, con el estilo de la portada de la tienda: fondo amarillo, título resaltado, botón, foto en arco y círculo flotante. Es más bajo (440 px en escritorio) para llegar rápido al contenido. El resto de páginas sigue con `PageHeader`.
+- **Datos del círculo:** salen de `content.js` (cantidad de servicios, sedes, respuestas y el horario), así que no hay que actualizarlos a mano.
+- **Textos nuevos por confirmar con el negocio:** los títulos de las cuatro páginas, por ejemplo «Una familia que cuida a tu familia». Las fotos siguen siendo de stock.
+

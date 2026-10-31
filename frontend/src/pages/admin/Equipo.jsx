@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
 import Loading from '../../components/Loading'
 import { api } from '../../api'
+import Select from '../../components/Select'
 
 const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 const HORAS = Array.from({ length: 25 }, (_, i) => `${String(8 + Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`)
@@ -74,9 +75,9 @@ function ProfesionalForm({ inicial, servicios, onCancel, onSave }) {
           <input value={v.nombre} onChange={set('nombre')} minLength={3} maxLength={80} required />
         </label>
         <label>Servicio
-          <select value={v.servicio} onChange={set('servicio')} disabled={!nuevo}>
+          <Select value={v.servicio} onChange={set('servicio')} disabled={!nuevo}>
             {servicios.map((s) => <option key={s.slug} value={s.slug}>{s.nombre}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
       <div className="chips-row" role="group" aria-label="Días que atiende">
@@ -86,10 +87,10 @@ function ProfesionalForm({ inicial, servicios, onCancel, onSave }) {
       </div>
       <div className="agenda__form-row agenda__form-row--3">
         <label>Entra
-          <select value={v.hora_inicio} onChange={set('hora_inicio')}>{HORAS.slice(0, -1).map((h) => <option key={h}>{h}</option>)}</select>
+          <Select value={v.hora_inicio} onChange={set('hora_inicio')}>{HORAS.slice(0, -1).map((h) => <option key={h}>{h}</option>)}</Select>
         </label>
         <label>Sale
-          <select value={v.hora_fin} onChange={set('hora_fin')}>{HORAS.slice(1).map((h) => <option key={h}>{h}</option>)}</select>
+          <Select value={v.hora_fin} onChange={set('hora_fin')}>{HORAS.slice(1).map((h) => <option key={h}>{h}</option>)}</Select>
         </label>
         <label className="check-row"><input type="checkbox" checked={v.activo} onChange={set('activo')} /> Activo</label>
       </div>

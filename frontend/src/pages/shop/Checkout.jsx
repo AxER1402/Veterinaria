@@ -11,6 +11,7 @@ import Field from '../../components/Field'
 import Loading from '../../components/Loading'
 import MapEmbed from '../../components/MapEmbed'
 import PaymentPanel from '../../components/shop/PaymentPanel'
+import Select from '../../components/Select'
 
 function validate(v) {
   const e = {}
@@ -144,12 +145,12 @@ function CheckoutForm({ user, lines, coupon, onDone }) {
             {pickup ? (
               <div className="form-grid">
                 <Field label="Sede" error={errors.sede} full>
-                  <select value={values.sede} onChange={set('sede')}>
+                  <Select value={values.sede} onChange={set('sede')}>
                     <option value="">Elige una sede…</option>
                     {sedes.map((s) => (
                       <option key={s} value={s}>{s}</option>
                     ))}
-                  </select>
+                  </Select>
                 </Field>
                 {values.sede && (
                   <div className="field--full">

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CalendarX2 } from 'lucide-react'
 import { api } from '../api'
 import { MAX_DIAS, addDays, formatDay, noches, ymd } from '../pages/account/citas'
+import DateInput from './DateInput'
 
 const DIAS_VISIBLES = 12
 
@@ -88,10 +89,8 @@ export default function SlotPicker({ servicio, modalidad, value, onChange, numer
                 {d.estado !== 'libre' && <small>{d.estado === 'lleno' ? 'lleno' : 'cerrado'}</small>}
               </button>
             ))}
-            <label className={`day-chip day-chip--input ${otraFecha ? 'active' : ''}`}>
-              <span>Otra fecha</span>
-              <input type="date" min={hoy} max={max} value={otraFecha ? fecha : ''} onChange={(e) => e.target.value && elegir(e.target.value)} />
-            </label>
+            <DateInput className={`day-chip day-chip--input ${otraFecha ? 'active' : ''}`} etiqueta={otraFecha ? formatDay(fecha, true) : 'Otra fecha'} aria-label="Otra fecha"
+              min={hoy} max={max} value={otraFecha ? fecha : ''} onChange={(e) => e.target.value && elegir(e.target.value)} />
           </div>
         )}
       </fieldset>
@@ -133,7 +132,7 @@ export default function SlotPicker({ servicio, modalidad, value, onChange, numer
         <fieldset className="booking__group">
           <legend>{n(3)}Salida</legend>
           <label className="booking__salida">
-            <input type="date" min={ymd(addDays(new Date(`${fecha}T12:00:00`), 1))} max={ymd(addDays(new Date(`${fecha}T12:00:00`), 30))}
+            <DateInput min={ymd(addDays(new Date(`${fecha}T12:00:00`), 1))} max={ymd(addDays(new Date(`${fecha}T12:00:00`), 30))}
               value={salida || ''} onChange={(e) => onChange({ ...value, hora: '08:00', salida: e.target.value })} />
             {salida && <span>{noches(fecha, salida)} {noches(fecha, salida) === 1 ? 'noche' : 'noches'} · entrada y salida a las 08:00</span>}
           </label>

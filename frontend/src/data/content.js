@@ -39,6 +39,10 @@ export const images = {
   happyPets: unsplash('photo-1450778869180-41d0601e046e', 900, 900),
   about: unsplash('photo-1587300003388-59208cc962cb', 900, 1000),
   cta: unsplash('photo-1583337130417-3346a1be7dee', 700, 700),
+  servicios: unsplash('photo-1587300003388-59208cc962cb', 900, 900),
+  nosotros: unsplash('photo-1628009368231-7bb7cfcb0def', 900, 900),
+  preguntas: unsplash('photo-1560807707-8cc77767d783', 900, 900),
+  contacto: unsplash('photo-1561037404-61cd46aa615b', 900, 900),
 }
 
 export const services = [

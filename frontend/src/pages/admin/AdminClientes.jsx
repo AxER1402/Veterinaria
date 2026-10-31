@@ -6,6 +6,7 @@ import { api, getToken } from '../../api'
 import { useAuth } from '../../context/useAuth'
 import { formatDate } from '../account/orderStatus'
 import { ROLES } from './roles'
+import Select from '../../components/Select'
 
 const normalizar = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
@@ -161,8 +162,8 @@ function Personal({ yo }) {
 
 export function RolSelect({ valor, onChange, nombre }) {
   return (
-    <select value={valor} onChange={(e) => e.target.value !== valor && onChange(e.target.value)} aria-label={`Rol de ${nombre}`}>
+    <Select value={valor} onChange={(e) => e.target.value !== valor && onChange(e.target.value)} aria-label={`Rol de ${nombre}`}>
       {Object.entries(ROLES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-    </select>
+    </Select>
   )
 }
